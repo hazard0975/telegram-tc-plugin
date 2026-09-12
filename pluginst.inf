@@ -1,0 +1,5 @@
+[plugininstall]
+description=Telegram VFS
+type=wfx
+file=TgVfsPlugin.wfx
+defaultdir=TelegramVFS

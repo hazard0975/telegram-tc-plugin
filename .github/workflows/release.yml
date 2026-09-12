@@ -1,0 +1,47 @@
+name: Build and Release WFX Plugin
+
+on:
+  push:
+    branches:
+      - main # Срабатывает при любом пуше в ветку main
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+          
+      - name: Build 64-bit (win-x64)
+        run: dotnet publish src/TgVfsPlugin/TgVfsPlugin.csproj -c Release -r win-x64 /p:NativeLib=Shared /p:SelfContained=true -o out_x64
+        
+      - name: Build 32-bit (win-x86)
+        run: dotnet publish src/TgVfsPlugin/TgVfsPlugin.csproj -c Release -r win-x86 /p:NativeLib=Shared /p:SelfContained=true -o out_x86
+        
+      - name: Prepare Plugin Package
+        run: |
+          mkdir ReleasePackage
+          copy out_x64\TgVfsPlugin.dll ReleasePackage\TgVfsPlugin.wfx64
+          copy out_x86\TgVfsPlugin.dll ReleasePackage\TgVfsPlugin.wfx
+          copy pluginst.inf ReleasePackage\pluginst.inf
+          
+      - name: Zip Plugin
+        run: Compress-Archive -Path ReleasePackage\* -DestinationPath TelegramVFS.zip
+        
+      - name: Update Continuous Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TelegramVFS.zip
+          name: Latest Build
+          tag_name: latest
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
