@@ -15,6 +15,7 @@ public static unsafe class WfxExports
     private static VfsDatabase? _db;
     private static int _pluginNumber;
     private static IntPtr _pProgressProc;
+    private static string? _lastMirrorPath;
 
     // Класс для хранения состояния поиска
     private class FindState
@@ -143,6 +144,7 @@ public static unsafe class WfxExports
         {
             if (dirPath == "\\" || dirPath == "/")
             {
+                _lastMirrorPath = null;
                 // Корень: возвращаем каналы
                 Logger.Log("Fetching channels for root.");
                 state.Items.Add(new VfsDatabase.VfsItem 
@@ -172,11 +174,15 @@ public static unsafe class WfxExports
                         localPathToSet = System.IO.Path.Combine(mount.LocalPath, System.IO.Path.Combine(subParts));
                     }
                     
-                    Logger.Log($"Entering Mirror folder '{channelTitle}'. Sending CD '{localPathToSet}' to target panel.");
-                    // Cannot use async/await in unsafe context, use ContinueWith or thread pool
-                    System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => {
-                        Win32Api.ChangeInactivePanelDir(localPathToSet);
-                    });
+                    if (!string.Equals(_lastMirrorPath, localPathToSet, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _lastMirrorPath = localPathToSet;
+                        Logger.Log($"Entering Mirror folder '{channelTitle}'. Sending CD '{localPathToSet}' to target panel.");
+                        // Cannot use async/await in unsafe context, use ContinueWith or thread pool
+                        System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => {
+                            Win32Api.ChangeInactivePanelDir(localPathToSet);
+                        });
+                    }
                 }
                 
                 Logger.Log($"Fetching files for channel: '{channelTitle}'");
@@ -557,7 +563,6 @@ public static unsafe class WfxExports
             });
 
             Logger.Log($"FsPutFile: File '{fileName}' successfully added to database.");
-            Win32Api.RefreshActivePanel();
 
             return Win32Api.FS_FILE_OK;
         }
