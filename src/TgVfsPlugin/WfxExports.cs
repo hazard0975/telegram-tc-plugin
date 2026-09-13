@@ -124,48 +124,37 @@ public static unsafe class WfxExports
         {
             Logger.Log($"FsInit called (Plugin Number: {pluginNumber})");
             
-            // Инициализируем DllImportResolver ДО первого обращения к любым типам SQLite
+            // Принудительно загружаем DLL в память процесса до того, как к ней обратится SQLite
             try
             {
-                System.Runtime.InteropServices.NativeLibrary.SetDllImportResolver(typeof(SQLitePCL.raw).Assembly, (libraryName, assembly, searchPath) =>
+                string basePath = AppContext.BaseDirectory;
+                
+                using var processModule = System.Diagnostics.Process.GetCurrentProcess().Modules.Cast<System.Diagnostics.ProcessModule>()
+                    .FirstOrDefault(m => m.ModuleName != null && m.ModuleName.StartsWith("TgVfsPlugin", StringComparison.OrdinalIgnoreCase));
+                    
+                if (processModule != null && !string.IsNullOrEmpty(processModule.FileName))
                 {
-                    if (libraryName == "e_sqlite3" || libraryName == "sqlite3")
-                    {
-                        string pluginPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                        if (string.IsNullOrEmpty(pluginPath))
-                        {
-                            pluginPath = AppContext.BaseDirectory; 
-                        }
-                        
-                        string basePath = System.IO.Path.GetDirectoryName(pluginPath) ?? AppContext.BaseDirectory;
-                        
-                        using var processModule = System.Diagnostics.Process.GetCurrentProcess().Modules.Cast<System.Diagnostics.ProcessModule>()
-                            .FirstOrDefault(m => m.ModuleName != null && m.ModuleName.StartsWith("TgVfsPlugin", StringComparison.OrdinalIgnoreCase));
-                            
-                        if (processModule != null && !string.IsNullOrEmpty(processModule.FileName))
-                        {
-                            basePath = System.IO.Path.GetDirectoryName(processModule.FileName) ?? basePath;
-                        }
+                    basePath = System.IO.Path.GetDirectoryName(processModule.FileName) ?? basePath;
+                }
 
-                        string arch = IntPtr.Size == 8 ? "x64" : "x86";
-                        string libPath = System.IO.Path.Combine(basePath, arch, "e_sqlite3.dll");
-                        
-                        Logger.Log($"Attempting to load sqlite from: {libPath}");
-                        
-                        if (System.Runtime.InteropServices.NativeLibrary.TryLoad(libPath, out IntPtr handle))
-                        {
-                            Logger.Log($"Successfully loaded e_sqlite3.dll from {arch}");
-                            return handle;
-                        }
-                        Logger.Log($"Failed to load e_sqlite3.dll from specific path: {libPath}");
-                    }
-                    return IntPtr.Zero;
-                });
-                Logger.Log("DllImportResolver registered successfully.");
+                string arch = IntPtr.Size == 8 ? "x64" : "x86";
+                string libPath = System.IO.Path.Combine(basePath, arch, "e_sqlite3.dll");
+                
+                Logger.Log($"Manually loading SQLite DLL from: {libPath}");
+                
+                if (System.IO.File.Exists(libPath))
+                {
+                    IntPtr libHandle = System.Runtime.InteropServices.NativeLibrary.Load(libPath);
+                    Logger.Log($"Load successful, handle: {libHandle}");
+                }
+                else
+                {
+                    Logger.Log($"ERROR: File does not exist at {libPath}");
+                }
             }
             catch (Exception ex)
             {
-                Logger.Log($"Error setting DllImportResolver: {ex}");
+                Logger.Log($"Manual DLL load failed: {ex}");
             }
 
             // Инициализируем базу данных при запуске плагина
