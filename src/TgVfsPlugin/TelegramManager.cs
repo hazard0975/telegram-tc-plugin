@@ -30,7 +30,7 @@ public static class TelegramManager
             case "verification_code": return InputDialog.Show("Enter the verification code sent to your Telegram app:", "Telegram Login") ?? "";
             case "password": return InputDialog.Show("Enter your 2FA password:", "Telegram Login", isPassword: true) ?? "";
             case "session_pathname": return SessionFile;
-            default: return null;
+            default: return "";
         }
     }
 

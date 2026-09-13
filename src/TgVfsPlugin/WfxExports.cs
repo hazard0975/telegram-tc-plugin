@@ -288,16 +288,20 @@ public static unsafe class WfxExports
 
         if (path.EndsWith("[ Login required.txt ]"))
         {
-            // Запускаем асинхронный логин в синхронном контексте (чтобы не блокировать UI намертво, но дождаться)
-            System.Threading.Tasks.Task.Run(async () => 
+            // Запускаем асинхронный логин в синхронном контексте без await (Task.Run)
+            System.Threading.Tasks.Task.Run(() => 
             {
-                bool success = await TelegramManager.LoginAsync();
-                if (success)
+                try
                 {
-                    Logger.Log("Login successful! Requesting panel refresh.");
-                    // В реальном плагине нужно дернуть панель, чтобы она обновилась.
-                    // Обычно это делается посылкой сообщения WM_USER+... в MainWin
-                    // Для прототипа пользователь может сам нажать Ctrl+R.
+                    bool success = TelegramManager.LoginAsync().GetAwaiter().GetResult();
+                    if (success)
+                    {
+                        Logger.Log("Login successful! Requesting panel refresh.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Login task failed: {ex}");
                 }
             }).GetAwaiter().GetResult();
             
