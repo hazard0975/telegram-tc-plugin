@@ -39,8 +39,11 @@ public static class Win32Api
         IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
         if (tcWindow != IntPtr.Zero)
         {
-            // cm_RereadSource = 540
-            PostMessage(tcWindow, WM_USER + 51, new IntPtr(540), IntPtr.Zero);
+            // Run on a background thread with a small delay so FsExecuteFile returns first
+            System.Threading.Tasks.Task.Run(async () => {
+                await System.Threading.Tasks.Task.Delay(100);
+                PostMessage(tcWindow, WM_USER + 51, new IntPtr(540), IntPtr.Zero);
+            });
         }
     }
 

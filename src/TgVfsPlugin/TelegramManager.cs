@@ -81,7 +81,7 @@ public static class TelegramManager
         try
         {
             Logger.Log($"Starting LoginAsync (silent: {silent})...");
-            EnsureCredentialsExist();
+            EnsureSettingsExist(requirePhone: !silent);
             
             if (File.Exists(SessionFile))
             {
@@ -179,25 +179,24 @@ public static class TelegramManager
 
     private static string GetApiId()
     {
-        EnsureCredentialsExist();
         return GetSetting("api_id") ?? "";
     }
 
     private static string GetApiHash()
     {
-        EnsureCredentialsExist();
         return GetSetting("api_hash") ?? "";
     }
 
-    private static void EnsureCredentialsExist()
+    private static void EnsureSettingsExist(bool requirePhone)
     {
         Logger.Log($"Checking credentials in: {SettingsFile}");
         string? apiId = GetSetting("api_id");
         string? apiHash = GetSetting("api_hash");
+        string? phone = GetSetting("phone_number");
 
-        bool isValid = !string.IsNullOrWhiteSpace(apiId) && !string.IsNullOrWhiteSpace(apiHash) && apiHash.Length == 32;
+        bool isValidApi = !string.IsNullOrWhiteSpace(apiId) && !string.IsNullOrWhiteSpace(apiHash) && apiHash.Length == 32;
 
-        if (!isValid)
+        if (!isValidApi)
         {
             Logger.Log("Credentials missing or invalid. Prompting user via UI...");
             apiId = InputDialog.Show("Enter your Telegram API_ID (get it from my.telegram.org):", "Initial Setup");
@@ -219,6 +218,20 @@ public static class TelegramManager
             SaveSetting("api_id", apiId);
             SaveSetting("api_hash", apiHash);
             Logger.Log($"Successfully saved new credentials to settings.ini");
+        }
+
+        if (requirePhone && string.IsNullOrWhiteSpace(phone))
+        {
+            phone = InputDialog.Show("Enter your phone number (with +):", "Telegram Login");
+            if (!string.IsNullOrWhiteSpace(phone))
+            {
+                SaveSetting("phone_number", phone.Trim());
+                Logger.Log($"Successfully saved phone number to settings.ini");
+            }
+            else
+            {
+                throw new Exception("Phone number is required for login.");
+            }
         }
     }
 

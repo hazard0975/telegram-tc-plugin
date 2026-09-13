@@ -356,6 +356,7 @@ public static unsafe class WfxExports
                     if (success)
                     {
                         Logger.Log("Login successful! Requesting panel refresh.");
+                        Win32Api.RefreshActivePanel();
                     }
                 }
                 catch (Exception ex)
