@@ -77,21 +77,39 @@ public static unsafe class WfxExports
 
     private static FindState? CreateStateForPath(string pathStr)
     {
-        if (_db == null) return null;
+        Logger.Log($"Requested path: '{pathStr}'");
+
+        if (_db == null)
+        {
+            Logger.Log("Error: Database is null.");
+            return null;
+        }
 
         pathStr = pathStr.TrimEnd('\\', '/');
         
         var state = new FindState();
-        if (string.IsNullOrEmpty(pathStr))
+        try
         {
-            // Корень: возвращаем каналы
-            state.Items = _db.GetChannels();
+            if (string.IsNullOrEmpty(pathStr))
+            {
+                // Корень: возвращаем каналы
+                Logger.Log("Fetching channels for root.");
+                state.Items = _db.GetChannels();
+            }
+            else
+            {
+                // Внутри канала (наш путь начинается с \ или /, например \Work Chat)
+                string channelTitle = pathStr.TrimStart('\\', '/');
+                Logger.Log($"Fetching files for channel: '{channelTitle}'");
+                state.Items = _db.GetFiles(channelTitle);
+            }
+
+            Logger.Log($"Found {state.Items.Count} items.");
         }
-        else
+        catch (Exception ex)
         {
-            // Внутри канала (наш путь начинается с \ или /, например \Work Chat)
-            string channelTitle = pathStr.TrimStart('\\', '/');
-            state.Items = _db.GetFiles(channelTitle);
+            Logger.Log($"Exception in CreateStateForPath: {ex}");
+            return null;
         }
 
         if (state.Items.Count == 0) return null;
@@ -104,15 +122,17 @@ public static unsafe class WfxExports
     {
         try
         {
+            Logger.Log($"FsInit called (Plugin Number: {pluginNumber})");
             // Инициализируем базу данных при запуске плагина
             if (_db == null)
             {
                 _db = new VfsDatabase();
+                Logger.Log("VfsDatabase successfully initialized.");
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // В реальном проекте тут нужно логирование, пока игнорируем
+            Logger.Log($"Critical Exception in FsInit: {ex}");
         }
         return 0; // успех
     }
