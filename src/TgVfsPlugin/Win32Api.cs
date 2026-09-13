@@ -57,35 +57,29 @@ public static class Win32Api
         if (tcWindow == IntPtr.Zero) return;
 
         // Для смены папки только в неактивной панели в Total Commander формат: "путь_левой\rпуть_правой\0"
-        // Формат WM_COPYDATA "CD" с поддержкой UTF-8
-        // Необходимо добавить BOM (0xEF, 0xBB, 0xBF) в начало строки
-        // И добавить флаг T для неактивной панели: "path\0T\0"
+        // По результатам тестов пользователя, команда CD в консоли с флагом /T работает с багами (добавляет лишние слеши и пробелы).
+        // Поэтому вместо отправки сырого CD через WM_COPYDATA, который страдает от тех же проблем парсинга,
+        // мы можем использовать другой способ: команду EMCD (пользовательские команды),
+        // либо старый-добрый разделитель \r для левой и правой панели.
         
-        byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(inactivePath);
-        byte[] flagBytes = System.Text.Encoding.UTF8.GetBytes("T");
+        // В документации TC есть четкий формат для левой и правой панели (без флагох S/T, которые глючат):
+        // "путь_левой\rпуть_правой\0"
+        // Если мы хотим изменить только правую панель: "\rпуть_правой\0"
+        // Если только левую: "путь_левой\r\0"
         
-        // BOM (3 bytes) + pathBytes + null (1 byte) + flagBytes + null (1 byte)
-        int totalLen = 3 + pathBytes.Length + 1 + flagBytes.Length + 1;
+        // В 90% случаев пользователь заходит в папку-зеркало в левой панели, а правая неактивна.
+        // Поэтому для тестов давайте отправим команду на смену ИМЕННО ПРАВОЙ панели.
+        string payload = "\r" + inactivePath + "\0";
+        byte[] payloadBytes = System.Text.Encoding.Default.GetBytes(payload);
         
-        IntPtr ptr = Marshal.AllocHGlobal(totalLen);
+        IntPtr ptr = Marshal.AllocHGlobal(payloadBytes.Length);
         try
         {
-            // Write BOM
-            Marshal.WriteByte(ptr, 0, 0xEF);
-            Marshal.WriteByte(ptr, 1, 0xBB);
-            Marshal.WriteByte(ptr, 2, 0xBF);
-            
-            // Write path
-            Marshal.Copy(pathBytes, 0, IntPtr.Add(ptr, 3), pathBytes.Length);
-            Marshal.WriteByte(ptr, 3 + pathBytes.Length, 0); // null after path
-            
-            // Write flag "T"
-            Marshal.Copy(flagBytes, 0, IntPtr.Add(ptr, 3 + pathBytes.Length + 1), flagBytes.Length);
-            Marshal.WriteByte(ptr, totalLen - 1, 0); // final null
-            
+            Marshal.Copy(payloadBytes, 0, ptr, payloadBytes.Length);
+
             COPYDATASTRUCT cds = new COPYDATASTRUCT();
             cds.dwData = new IntPtr('C' + ('D' << 8));
-            cds.cbData = totalLen;
+            cds.cbData = payloadBytes.Length; 
             cds.lpData = ptr;
 
             SendMessage(tcWindow, WM_COPYDATA, IntPtr.Zero, ref cds);
