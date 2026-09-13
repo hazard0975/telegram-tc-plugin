@@ -24,11 +24,57 @@ public static class TelegramManager
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
         "TelegramVFS");
 
-    private static readonly string ApiCredentialsFile = Path.Combine(ConfigPath, "api_credentials.txt");
+    private static readonly string SettingsFile = Path.Combine(ConfigPath, "settings.ini");
     private static readonly string SessionFile = Path.Combine(ConfigPath, "WTelegram.session");
-    private static readonly string PhoneFile = Path.Combine(ConfigPath, "phone.txt");
 
     public static bool IsLoggedIn => _user != null;
+
+    private static string? GetSetting(string key)
+    {
+        if (!File.Exists(SettingsFile)) return null;
+        try
+        {
+            foreach (var line in File.ReadAllLines(SettingsFile))
+            {
+                var parts = line.Split('=', 2);
+                if (parts.Length == 2 && parts[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
+                {
+                    return parts[1].Trim();
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private static void SaveSetting(string key, string value)
+    {
+        try
+        {
+            Directory.CreateDirectory(ConfigPath);
+            var lines = File.Exists(SettingsFile) ? File.ReadAllLines(SettingsFile).ToList() : new List<string>();
+            bool found = false;
+            
+            for (int i = 0; i < lines.Count; i++)
+            {
+                var parts = lines[i].Split('=', 2);
+                if (parts.Length >= 1 && parts[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
+                {
+                    lines[i] = $"{key}={value}";
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) lines.Add($"{key}={value}");
+            
+            File.WriteAllLines(SettingsFile, lines);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error saving setting {key}: {ex}");
+        }
+    }
 
     public static async Task<bool> LoginAsync(bool silent = false)
     {
@@ -94,14 +140,11 @@ public static class TelegramManager
             case "api_id": result = GetApiId(); break;
             case "api_hash": result = GetApiHash(); break;
             case "phone_number": 
-                if (File.Exists(PhoneFile))
+                result = GetSetting("phone_number");
+                if (!string.IsNullOrEmpty(result))
                 {
-                    result = File.ReadAllText(PhoneFile).Trim();
-                    if (!string.IsNullOrEmpty(result))
-                    {
-                        Logger.Log("Returning cached phone_number from phone.txt");
-                        break;
-                    }
+                    Logger.Log("Returning cached phone_number from settings.ini");
+                    break;
                 }
 
                 if (_isSilentLogin) 
@@ -112,7 +155,7 @@ public static class TelegramManager
                 result = InputDialog.Show("Enter your phone number (with +):", "Telegram Login"); 
                 if (!string.IsNullOrEmpty(result))
                 {
-                    try { File.WriteAllText(PhoneFile, result); } catch { }
+                    SaveSetting("phone_number", result);
                 }
                 break;
             case "verification_code": 
@@ -137,43 +180,28 @@ public static class TelegramManager
     private static string GetApiId()
     {
         EnsureCredentialsExist();
-        var lines = File.ReadAllLines(ApiCredentialsFile);
-        return lines.Length > 0 ? lines[0].Trim() : "";
+        return GetSetting("api_id") ?? "";
     }
 
     private static string GetApiHash()
     {
         EnsureCredentialsExist();
-        var lines = File.ReadAllLines(ApiCredentialsFile);
-        return lines.Length > 1 ? lines[1].Trim() : "";
+        return GetSetting("api_hash") ?? "";
     }
 
     private static void EnsureCredentialsExist()
     {
-        Logger.Log($"Checking credentials in: {ApiCredentialsFile}");
-        bool isValid = false;
-        if (File.Exists(ApiCredentialsFile))
-        {
-            var lines = File.ReadAllLines(ApiCredentialsFile);
-            if (lines.Length >= 2 && !string.IsNullOrWhiteSpace(lines[0]) && !string.IsNullOrWhiteSpace(lines[1]))
-            {
-                if (lines[1].Trim().Length == 32)
-                {
-                    isValid = true;
-                    Logger.Log("Found valid existing api_credentials.txt");
-                }
-                else
-                {
-                    Logger.Log("Existing API_HASH is invalid (must be 32 chars). Forcing prompt.");
-                }
-            }
-        }
+        Logger.Log($"Checking credentials in: {SettingsFile}");
+        string? apiId = GetSetting("api_id");
+        string? apiHash = GetSetting("api_hash");
+
+        bool isValid = !string.IsNullOrWhiteSpace(apiId) && !string.IsNullOrWhiteSpace(apiHash) && apiHash.Length == 32;
 
         if (!isValid)
         {
             Logger.Log("Credentials missing or invalid. Prompting user via UI...");
-            string? apiId = InputDialog.Show("Enter your Telegram API_ID (get it from my.telegram.org):", "Initial Setup");
-            string? apiHash = InputDialog.Show("Enter your Telegram API_HASH (32 chars):", "Initial Setup");
+            apiId = InputDialog.Show("Enter your Telegram API_ID (get it from my.telegram.org):", "Initial Setup");
+            apiHash = InputDialog.Show("Enter your Telegram API_HASH (32 chars):", "Initial Setup");
             
             if (string.IsNullOrWhiteSpace(apiId) || string.IsNullOrWhiteSpace(apiHash))
             {
@@ -188,17 +216,9 @@ public static class TelegramManager
                 throw new Exception("API_HASH must be exactly 32 characters long. Please check your credentials.");
             }
 
-            try
-            {
-                Directory.CreateDirectory(ConfigPath);
-                File.WriteAllLines(ApiCredentialsFile, new[] { apiId, apiHash });
-                Logger.Log($"Successfully saved new credentials to file at: {ApiCredentialsFile}");
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"CRITICAL ERROR writing credentials file: {ex}");
-                throw;
-            }
+            SaveSetting("api_id", apiId);
+            SaveSetting("api_hash", apiHash);
+            Logger.Log($"Successfully saved new credentials to settings.ini");
         }
     }
 
