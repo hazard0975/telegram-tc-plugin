@@ -50,29 +50,48 @@ public static class TelegramManager
 
     private static void EnsureCredentialsExist()
     {
+        Logger.Log($"Checking credentials in: {ApiCredentialsFile}");
         bool isValid = false;
         if (File.Exists(ApiCredentialsFile))
         {
             var lines = File.ReadAllLines(ApiCredentialsFile);
             if (lines.Length >= 2 && !string.IsNullOrWhiteSpace(lines[0]) && !string.IsNullOrWhiteSpace(lines[1]))
             {
-                isValid = true;
+                // API Hash in Telegram must be a 32-character hex string
+                if (lines[1].Trim().Length == 32)
+                {
+                    isValid = true;
+                    Logger.Log("Found valid existing api_credentials.txt");
+                }
+                else
+                {
+                    Logger.Log("Existing API_HASH is invalid (must be 32 chars). Forcing prompt.");
+                }
             }
         }
 
         if (!isValid)
         {
-            Logger.Log("Credentials missing or invalid. Prompting user...");
+            Logger.Log("Credentials missing or invalid. Prompting user via UI...");
             string? apiId = InputDialog.Show("Enter your Telegram API_ID (get it from my.telegram.org):", "Initial Setup");
-            string? apiHash = InputDialog.Show("Enter your Telegram API_HASH:", "Initial Setup");
+            string? apiHash = InputDialog.Show("Enter your Telegram API_HASH (32 chars):", "Initial Setup");
             
             if (string.IsNullOrWhiteSpace(apiId) || string.IsNullOrWhiteSpace(apiHash))
             {
                 throw new Exception("API ID and API Hash are required to use Telegram VFS.");
             }
 
+            apiId = apiId.Trim();
+            apiHash = apiHash.Trim();
+
+            if (apiHash.Length != 32)
+            {
+                throw new Exception("API_HASH must be exactly 32 characters long. Please check your credentials.");
+            }
+
             Directory.CreateDirectory(ConfigPath);
-            File.WriteAllLines(ApiCredentialsFile, new[] { apiId.Trim(), apiHash.Trim() });
+            File.WriteAllLines(ApiCredentialsFile, new[] { apiId, apiHash });
+            Logger.Log("Successfully saved new credentials to file.");
         }
     }
 
@@ -80,17 +99,18 @@ public static class TelegramManager
     {
         try
         {
+            Logger.Log("Starting LoginAsync...");
             if (_client == null)
             {
-                // WTelegramClient logs a lot by default, we can redirect it to our Logger
                 Helpers.Log = (lvl, str) => Logger.Log($"[WTelegram] {lvl}: {str}");
+                Logger.Log("Creating new WTelegramClient instance...");
                 _client = new Client(Config);
             }
 
+            Logger.Log("Calling LoginUserIfNeeded...");
             _user = await _client.LoginUserIfNeeded();
             Logger.Log($"Successfully logged in as {_user.username ?? _user.first_name}");
             
-            // TODO: Here we should look for "TGvfs" channel, create it if missing, and sync DB.
             return true;
         }
         catch (Exception ex)
@@ -99,10 +119,12 @@ public static class TelegramManager
             if (ex.Message.Contains("session file") || ex.Message.Contains("rgbKey") || ex.Message.Contains("algorithm"))
             {
                 Logger.Log("Detected corrupted session or invalid API_HASH. Nuking credentials to force reset.");
-                if (File.Exists(SessionFile)) File.Delete(SessionFile);
-                if (File.Exists(ApiCredentialsFile)) File.Delete(ApiCredentialsFile);
-                _client?.Dispose();
+                
+                try { _client?.Dispose(); } catch (Exception e) { Logger.Log($"Dispose error: {e.Message}"); }
                 _client = null;
+                
+                try { if (File.Exists(SessionFile)) { File.Delete(SessionFile); Logger.Log("Deleted WTelegram.session"); } } catch (Exception e) { Logger.Log($"Delete session error: {e.Message}"); }
+                try { if (File.Exists(ApiCredentialsFile)) { File.Delete(ApiCredentialsFile); Logger.Log("Deleted api_credentials.txt"); } } catch (Exception e) { Logger.Log($"Delete credentials error: {e.Message}"); }
             }
             return false;
         }

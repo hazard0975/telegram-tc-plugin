@@ -16,7 +16,7 @@ public static class InputDialog
         {
             try
             {
-                // Инициализируем визуальные стили для красивого отображения (опционально, но желательно)
+                Logger.Log("Initializing WinForms dialog...");
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
@@ -50,14 +50,20 @@ public static class InputDialog
                 promptForm.AcceptButton = confirmation;
                 promptForm.CancelButton = cancel;
 
+                Logger.Log($"Showing dialog for: {title}");
                 if (promptForm.ShowDialog() == DialogResult.OK)
                 {
                     result = inputBox.Text;
+                    Logger.Log("Dialog closed with OK.");
+                }
+                else
+                {
+                    Logger.Log("Dialog closed with Cancel or dismissed.");
                 }
             }
             catch (Exception ex)
             {
-                Logger.Log($"UI Error: {ex.Message}");
+                Logger.Log($"UI Error: {ex}");
             }
         });
 
