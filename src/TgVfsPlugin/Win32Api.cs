@@ -57,13 +57,13 @@ public static class Win32Api
         IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
         if (tcWindow == IntPtr.Zero) return;
 
-        string dataStr = "\r" + inactivePath + "\0";
+        string dataStr = "\r" + inactivePath;
         IntPtr ptr = Marshal.StringToHGlobalAnsi(dataStr);
         try
         {
             COPYDATASTRUCT cds = new COPYDATASTRUCT();
             cds.dwData = new IntPtr('C' + ('D' << 8));
-            cds.cbData = dataStr.Length;
+            cds.cbData = dataStr.Length + 1; // +1 for null terminator
             cds.lpData = ptr;
 
             SendMessage(tcWindow, WM_COPYDATA, IntPtr.Zero, ref cds);

@@ -404,15 +404,33 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsSetDirectory", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsSetDirectory(IntPtr RemoteName, int OpMode)
     {
-        string pathStr = Marshal.PtrToStringAnsi(RemoteName) ?? "";
-        return HandleSetDirectory(pathStr) ? 1 : 0;
+        try
+        {
+            Logger.Log($"FsSetDirectory called, ptr: {RemoteName}, opMode: {OpMode}");
+            string pathStr = Marshal.PtrToStringAnsi(RemoteName) ?? "";
+            return HandleSetDirectory(pathStr) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Exception in FsSetDirectory: {ex}");
+            return 0;
+        }
     }
 
     [UnmanagedCallersOnly(EntryPoint = "FsSetDirectoryW", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsSetDirectoryW(IntPtr RemoteName, int OpMode)
     {
-        string pathStr = Marshal.PtrToStringUni(RemoteName) ?? "";
-        return HandleSetDirectory(pathStr) ? 1 : 0;
+        try
+        {
+            Logger.Log($"FsSetDirectoryW called, ptr: {RemoteName}, opMode: {OpMode}");
+            string pathStr = Marshal.PtrToStringUni(RemoteName) ?? "";
+            return HandleSetDirectory(pathStr) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Exception in FsSetDirectoryW: {ex}");
+            return 0;
+        }
     }
 
     private static bool HandleSetDirectory(string pathStr)
