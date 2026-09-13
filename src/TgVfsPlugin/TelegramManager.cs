@@ -116,8 +116,17 @@ public static class TelegramManager
         if (_client == null || _user == null) throw new Exception("Not logged in");
         Logger.Log($"Creating channel: {title}");
         
-        var channel = await _client.Channels_CreateChannel(title, description, broadcast: true);
-        var chat = channel.chats.Values.FirstOrDefault();
+        var updatesBase = await _client.Channels_CreateChannel(title, description, broadcast: true);
+        
+        ChatBase? chat = null;
+        if (updatesBase is Updates updates)
+        {
+            chat = updates.chats?.Values.FirstOrDefault();
+        }
+        else if (updatesBase is UpdatesCombined combined)
+        {
+            chat = combined.chats?.Values.FirstOrDefault();
+        }
         
         if (chat == null) throw new Exception("Failed to get channel ID after creation.");
         return chat.ID;
