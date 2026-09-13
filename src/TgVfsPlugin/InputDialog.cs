@@ -41,8 +41,8 @@ public static class InputDialog
                     inputBox.UseSystemPasswordChar = true;
                 }
 
-                Button confirmation = new Button() { Text = "OK", Left = 320, Width = 100, Top = 105, DialogResult = DialogResult.OK };
-                Button cancel = new Button() { Text = "Cancel", Left = 210, Width = 100, Top = 105, DialogResult = DialogResult.Cancel };
+                Button confirmation = new Button() { Text = "OK", Left = 320, Width = 100, Height = 30, Top = 115, DialogResult = DialogResult.OK };
+                Button cancel = new Button() { Text = "Cancel", Left = 210, Width = 100, Height = 30, Top = 115, DialogResult = DialogResult.Cancel };
 
                 promptForm.Controls.Add(textLabel);
                 promptForm.Controls.Add(inputBox);

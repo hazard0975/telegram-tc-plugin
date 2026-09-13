@@ -50,9 +50,12 @@ public static class TelegramManager
             {
                 Helpers.Log = (lvl, str) => Logger.Log($"[WTelegram] {lvl}: {str}");
                 Logger.Log("Creating new WTelegramClient instance...");
-                _client = new Client(what => Config(what, silent));
+                _client = new Client(what => Config(what));
             }
 
+            // Устанавливаем флаг перед вызовом
+            _isSilentLogin = silent;
+            
             Logger.Log("Calling LoginUserIfNeeded...");
             _user = await _client.LoginUserIfNeeded();
             Logger.Log($"Successfully logged in as {_user.username ?? _user.first_name}");
@@ -73,9 +76,15 @@ public static class TelegramManager
             }
             return false;
         }
+        finally
+        {
+            _isSilentLogin = false; // сбрасываем обратно
+        }
     }
 
-    private static string? Config(string what, bool silent = false)
+    private static bool _isSilentLogin = false;
+
+    private static string? Config(string what)
     {
         Logger.Log($"[WTelegram Config] Requested: {what}");
         string? result = null;
@@ -84,7 +93,7 @@ public static class TelegramManager
             case "api_id": result = GetApiId(); break;
             case "api_hash": result = GetApiHash(); break;
             case "phone_number": 
-                if (silent) 
+                if (_isSilentLogin) 
                 {
                     Logger.Log("Silent login requested, returning null for phone_number to prevent UI prompt.");
                     return null; 
@@ -92,11 +101,11 @@ public static class TelegramManager
                 result = InputDialog.Show("Enter your phone number (with +):", "Telegram Login"); 
                 break;
             case "verification_code": 
-                if (silent) return null;
+                if (_isSilentLogin) return null;
                 result = InputDialog.Show("Enter the verification code sent to your Telegram app:", "Telegram Login"); 
                 break;
             case "password": 
-                if (silent) return null;
+                if (_isSilentLogin) return null;
                 result = InputDialog.Show("Enter your 2FA password:", "Telegram Login", isPassword: true); 
                 break;
             case "session_pathname": result = SessionFile; break;
