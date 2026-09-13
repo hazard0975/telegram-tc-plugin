@@ -1,6 +1,0 @@
-{
-  "name": "Telegram VFS Plugin Architecture",
-  "description": "Архитектурный концепт плагина виртуальной файловой системы Telegram для Total Commander.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

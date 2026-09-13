@@ -38,30 +38,41 @@ public static class TelegramManager
     {
         EnsureCredentialsExist();
         var lines = File.ReadAllLines(ApiCredentialsFile);
-        return lines.Length > 0 ? lines[0] : "";
+        return lines.Length > 0 ? lines[0].Trim() : "";
     }
 
     private static string GetApiHash()
     {
         EnsureCredentialsExist();
         var lines = File.ReadAllLines(ApiCredentialsFile);
-        return lines.Length > 1 ? lines[1] : "";
+        return lines.Length > 1 ? lines[1].Trim() : "";
     }
 
     private static void EnsureCredentialsExist()
     {
-        if (!File.Exists(ApiCredentialsFile))
+        bool isValid = false;
+        if (File.Exists(ApiCredentialsFile))
         {
+            var lines = File.ReadAllLines(ApiCredentialsFile);
+            if (lines.Length >= 2 && !string.IsNullOrWhiteSpace(lines[0]) && !string.IsNullOrWhiteSpace(lines[1]))
+            {
+                isValid = true;
+            }
+        }
+
+        if (!isValid)
+        {
+            Logger.Log("Credentials missing or invalid. Prompting user...");
             string? apiId = InputDialog.Show("Enter your Telegram API_ID (get it from my.telegram.org):", "Initial Setup");
             string? apiHash = InputDialog.Show("Enter your Telegram API_HASH:", "Initial Setup");
             
-            if (string.IsNullOrEmpty(apiId) || string.IsNullOrEmpty(apiHash))
+            if (string.IsNullOrWhiteSpace(apiId) || string.IsNullOrWhiteSpace(apiHash))
             {
                 throw new Exception("API ID and API Hash are required to use Telegram VFS.");
             }
 
             Directory.CreateDirectory(ConfigPath);
-            File.WriteAllLines(ApiCredentialsFile, new[] { apiId, apiHash });
+            File.WriteAllLines(ApiCredentialsFile, new[] { apiId.Trim(), apiHash.Trim() });
         }
     }
 
@@ -85,6 +96,14 @@ public static class TelegramManager
         catch (Exception ex)
         {
             Logger.Log($"Login failed: {ex.Message}");
+            if (ex.Message.Contains("session file") || ex.Message.Contains("rgbKey") || ex.Message.Contains("algorithm"))
+            {
+                Logger.Log("Detected corrupted session or invalid API_HASH. Nuking credentials to force reset.");
+                if (File.Exists(SessionFile)) File.Delete(SessionFile);
+                if (File.Exists(ApiCredentialsFile)) File.Delete(ApiCredentialsFile);
+                _client?.Dispose();
+                _client = null;
+            }
             return false;
         }
     }
