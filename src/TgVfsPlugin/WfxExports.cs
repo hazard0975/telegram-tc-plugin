@@ -81,15 +81,31 @@ public static unsafe class WfxExports
 
         if (!TelegramManager.IsLoggedIn)
         {
-            var loginState = new FindState();
-            loginState.Items.Add(new VfsDatabase.VfsItem 
-            { 
-                Name = "[ Login required.txt ]", 
-                IsDirectory = false, 
-                Size = 100, 
-                Date = DateTime.Now 
-            });
-            return loginState;
+            // Попытка тихо авторизоваться, если есть сессия, но _user еще null
+            try
+            {
+                if (System.IO.File.Exists(TelegramManager.ConfigPath + "\\WTelegram.session"))
+                {
+                    System.Threading.Tasks.Task.Run(() => TelegramManager.LoginAsync()).GetAwaiter().GetResult();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Silent login failed: {ex}");
+            }
+
+            if (!TelegramManager.IsLoggedIn)
+            {
+                var loginState = new FindState();
+                loginState.Items.Add(new VfsDatabase.VfsItem 
+                { 
+                    Name = "[ Login required.txt ]", 
+                    IsDirectory = false, 
+                    Size = 100, 
+                    Date = DateTime.Now 
+                });
+                return loginState;
+            }
         }
 
         if (_db == null)
