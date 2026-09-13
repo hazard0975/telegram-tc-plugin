@@ -51,8 +51,8 @@ public static class CreateFolderDialog
                     pathBox.Enabled = modeMirror.Checked;
                 };
 
-                Button okBtn = new Button() { Text = "OK", Left = 340, Width = 100, Top = 235, DialogResult = DialogResult.OK };
-                Button cancelBtn = new Button() { Text = "Отмена", Left = 230, Width = 100, Top = 235, DialogResult = DialogResult.Cancel };
+                Button okBtn = new Button() { Text = "OK", Left = 340, Width = 100, Height = 30, Top = 235, DialogResult = DialogResult.OK };
+                Button cancelBtn = new Button() { Text = "Отмена", Left = 230, Width = 100, Height = 30, Top = 235, DialogResult = DialogResult.Cancel };
 
                 form.Controls.Add(nameLabel);
                 form.Controls.Add(nameBox);
