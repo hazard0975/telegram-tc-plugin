@@ -51,25 +51,75 @@ public static class Win32Api
         }
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct GUITHREADINFO
+    {
+        public int cbSize;
+        public uint flags;
+        public IntPtr hwndActive;
+        public IntPtr hwndFocus;
+        public IntPtr hwndCapture;
+        public IntPtr hwndMenuOwner;
+        public IntPtr hwndMoveSize;
+        public IntPtr hwndCaret;
+        public RECT rcCaret;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
+
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
+
     public static void ChangeInactivePanelDir(string inactivePath)
     {
         IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
         if (tcWindow == IntPtr.Zero) return;
 
-        // Для смены папки только в неактивной панели в Total Commander формат: "путь_левой\rпуть_правой\0"
-        // По результатам тестов пользователя, команда CD в консоли с флагом /T работает с багами (добавляет лишние слеши и пробелы).
-        // Поэтому вместо отправки сырого CD через WM_COPYDATA, который страдает от тех же проблем парсинга,
-        // мы можем использовать другой способ: команду EMCD (пользовательские команды),
-        // либо старый-добрый разделитель \r для левой и правой панели.
-        
-        // В документации TC есть четкий формат для левой и правой панели (без флагох S/T, которые глючат):
+        // По умолчанию считаем, что активна левая панель (самый частый кейс)
+        bool isLeftPanelActive = true;
+        try
+        {
+            uint threadId = GetWindowThreadProcessId(tcWindow, IntPtr.Zero);
+            if (threadId != 0)
+            {
+                GUITHREADINFO gui = new GUITHREADINFO();
+                gui.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
+                if (GetGUIThreadInfo(threadId, ref gui) && gui.hwndFocus != IntPtr.Zero)
+                {
+                    if (GetWindowRect(tcWindow, out RECT tcRect) && GetWindowRect(gui.hwndFocus, out RECT focusRect))
+                    {
+                        int tcMidX = tcRect.Left + (tcRect.Right - tcRect.Left) / 2;
+                        int focusCenterX = focusRect.Left + (focusRect.Right - focusRect.Left) / 2;
+                        isLeftPanelActive = focusCenterX < tcMidX;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error determining active panel side: {ex.Message}");
+        }
+
+        Logger.Log($"ChangeInactivePanelDir: Active panel is {(isLeftPanelActive ? "Left" : "Right")}. Sending target directory to {(isLeftPanelActive ? "Right" : "Left")} panel.");
+
+        // В Total Commander формат команды смены директории через WM_COPYDATA ('CD'):
         // "путь_левой\rпуть_правой\0"
-        // Если мы хотим изменить только правую панель: "\rпуть_правой\0"
-        // Если только левую: "путь_левой\r\0"
-        
-        // В 90% случаев пользователь заходит в папку-зеркало в левой панели, а правая неактивна.
-        // Поэтому для тестов давайте отправим команду на смену ИМЕННО ПРАВОЙ панели.
-        string payload = "\r" + inactivePath + "\0";
+        // Если активна левая панель -> меняем правую: "\r" + path + "\0"
+        // Если активна правая панель -> меняем левую: path + "\r\0"
+        string payload = isLeftPanelActive ? ("\r" + inactivePath + "\0") : (inactivePath + "\r\0");
         byte[] payloadBytes = System.Text.Encoding.Default.GetBytes(payload);
         
         IntPtr ptr = Marshal.AllocHGlobal(payloadBytes.Length);
