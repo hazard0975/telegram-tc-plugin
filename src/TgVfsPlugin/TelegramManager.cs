@@ -26,6 +26,7 @@ public static class TelegramManager
 
     private static readonly string ApiCredentialsFile = Path.Combine(ConfigPath, "api_credentials.txt");
     private static readonly string SessionFile = Path.Combine(ConfigPath, "WTelegram.session");
+    private static readonly string PhoneFile = Path.Combine(ConfigPath, "phone.txt");
 
     public static bool IsLoggedIn => _user != null;
 
@@ -93,12 +94,26 @@ public static class TelegramManager
             case "api_id": result = GetApiId(); break;
             case "api_hash": result = GetApiHash(); break;
             case "phone_number": 
+                if (File.Exists(PhoneFile))
+                {
+                    result = File.ReadAllText(PhoneFile).Trim();
+                    if (!string.IsNullOrEmpty(result))
+                    {
+                        Logger.Log("Returning cached phone_number from phone.txt");
+                        break;
+                    }
+                }
+
                 if (_isSilentLogin) 
                 {
                     Logger.Log("Silent login requested, returning null for phone_number to prevent UI prompt.");
                     return null; 
                 }
                 result = InputDialog.Show("Enter your phone number (with +):", "Telegram Login"); 
+                if (!string.IsNullOrEmpty(result))
+                {
+                    try { File.WriteAllText(PhoneFile, result); } catch { }
+                }
                 break;
             case "verification_code": 
                 if (_isSilentLogin) return null;
