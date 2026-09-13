@@ -56,13 +56,22 @@ public static class Win32Api
         IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
         if (tcWindow == IntPtr.Zero) return;
 
-        string dataStr = "T" + inactivePath; // T = Target (inactive panel)
-        IntPtr ptr = Marshal.StringToHGlobalAnsi(dataStr);
+        // Формат WM_COPYDATA для TC: "path\0T\0" (T означает Target / неактивная панель)
+        byte[] pathBytes = System.Text.Encoding.Default.GetBytes(inactivePath);
+        byte[] flagBytes = System.Text.Encoding.Default.GetBytes("T");
+        int totalLen = pathBytes.Length + 1 + flagBytes.Length + 1;
+        
+        IntPtr ptr = Marshal.AllocHGlobal(totalLen);
         try
         {
+            Marshal.Copy(pathBytes, 0, ptr, pathBytes.Length);
+            Marshal.WriteByte(ptr, pathBytes.Length, 0); // null terminator for path
+            Marshal.Copy(flagBytes, 0, IntPtr.Add(ptr, pathBytes.Length + 1), flagBytes.Length);
+            Marshal.WriteByte(ptr, totalLen - 1, 0); // null terminator for flag
+
             COPYDATASTRUCT cds = new COPYDATASTRUCT();
             cds.dwData = new IntPtr('C' + ('D' << 8));
-            cds.cbData = dataStr.Length + 1; // +1 for null terminator
+            cds.cbData = totalLen;
             cds.lpData = ptr;
 
             SendMessage(tcWindow, WM_COPYDATA, IntPtr.Zero, ref cds);
