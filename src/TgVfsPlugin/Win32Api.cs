@@ -13,6 +13,11 @@ public static class Win32Api
     public const uint FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
     public const uint FILE_ATTRIBUTE_NORMAL = 0x00000080;
     public const int INVALID_HANDLE_VALUE = -1;
+    
+    [DllImport("kernel32.dll")]
+    public static extern void SetLastError(uint dwErrCode);
+
+    public const uint ERROR_NO_MORE_FILES = 18;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct COPYDATASTRUCT

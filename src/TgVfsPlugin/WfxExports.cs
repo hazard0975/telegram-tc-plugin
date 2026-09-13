@@ -117,12 +117,29 @@ public static unsafe class WfxExports
             return null;
         }
 
-        pathStr = pathStr.TrimEnd('\\', '/');
+        string dirPath = pathStr;
+        
+        // Удаляем маску поиска (например *.*) если она есть в конце пути
+        int lastSlash = dirPath.LastIndexOf('\\');
+        if (lastSlash == -1) lastSlash = dirPath.LastIndexOf('/');
+        if (lastSlash >= 0)
+        {
+            string lastPart = dirPath.Substring(lastSlash + 1);
+            if (lastPart.Contains("*") || lastPart.Contains("?"))
+            {
+                dirPath = dirPath.Substring(0, lastSlash);
+            }
+        }
+
+        dirPath = dirPath.TrimEnd('\\', '/');
+        if (string.IsNullOrEmpty(dirPath)) dirPath = "\\";
+
+        Logger.Log($"Parsed directory path for search: '{dirPath}'");
         
         var state = new FindState();
         try
         {
-            if (string.IsNullOrEmpty(pathStr) || pathStr == "\\" || pathStr == "/")
+            if (dirPath == "\\" || dirPath == "/")
             {
                 // Корень: возвращаем каналы
                 Logger.Log("Fetching channels for root.");
@@ -138,7 +155,10 @@ public static unsafe class WfxExports
             else
             {
                 // Внутри канала (наш путь начинается с \ или /, например \Work Chat)
-                string channelTitle = pathStr.TrimStart('\\', '/');
+                string fullPath = dirPath.TrimStart('\\', '/');
+                string[] parts = fullPath.Split(new[] { '\\', '/' });
+                string channelTitle = parts[0];
+                
                 Logger.Log($"Fetching files for channel: '{channelTitle}'");
                 state.Items = _db.GetFiles(channelTitle);
             }
@@ -217,7 +237,11 @@ public static unsafe class WfxExports
         string pathStr = Marshal.PtrToStringAnsi((IntPtr)path) ?? "";
         
         var state = CreateStateForPath(pathStr);
-        if (state == null || state.Items.Count == 0) return new IntPtr(Win32Api.INVALID_HANDLE_VALUE);
+        if (state == null || state.Items.Count == 0) 
+        {
+            Win32Api.SetLastError(Win32Api.ERROR_NO_MORE_FILES);
+            return new IntPtr(Win32Api.INVALID_HANDLE_VALUE);
+        }
 
         Win32Api.WIN32_FIND_DATAA* data = (Win32Api.WIN32_FIND_DATAA*)findFileData;
         FillFindDataA(data, state.Items[0]);
@@ -242,6 +266,7 @@ public static unsafe class WfxExports
                 return 1; // true
             }
         }
+        Win32Api.SetLastError(Win32Api.ERROR_NO_MORE_FILES);
         return 0; // false (больше нет файлов)
     }
 
@@ -252,7 +277,11 @@ public static unsafe class WfxExports
         string pathStr = Marshal.PtrToStringUni((IntPtr)path) ?? "";
 
         var state = CreateStateForPath(pathStr);
-        if (state == null || state.Items.Count == 0) return new IntPtr(Win32Api.INVALID_HANDLE_VALUE);
+        if (state == null || state.Items.Count == 0)
+        {
+            Win32Api.SetLastError(Win32Api.ERROR_NO_MORE_FILES);
+            return new IntPtr(Win32Api.INVALID_HANDLE_VALUE);
+        }
 
         Win32Api.WIN32_FIND_DATAW* data = (Win32Api.WIN32_FIND_DATAW*)findFileData;
         FillFindDataW(data, state.Items[0]);
@@ -277,6 +306,7 @@ public static unsafe class WfxExports
                 return 1; // true
             }
         }
+        Win32Api.SetLastError(Win32Api.ERROR_NO_MORE_FILES);
         return 0; // false
     }
 
