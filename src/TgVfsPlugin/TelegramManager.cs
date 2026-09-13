@@ -20,7 +20,53 @@ public static class TelegramManager
 
     public static bool IsLoggedIn => _user != null;
 
-    private static string? Config(string what)
+    public static async Task<bool> LoginAsync(bool silent = false)
+    {
+        try
+        {
+            Logger.Log($"Starting LoginAsync (silent: {silent})...");
+            EnsureCredentialsExist();
+            
+            if (File.Exists(SessionFile))
+            {
+                var fi = new FileInfo(SessionFile);
+                if (fi.Length == 0)
+                {
+                    Logger.Log("Found 0-byte session file! Deleting it proactively before WTelegramClient touches it.");
+                    File.Delete(SessionFile);
+                }
+            }
+
+            if (_client == null)
+            {
+                Helpers.Log = (lvl, str) => Logger.Log($"[WTelegram] {lvl}: {str}");
+                Logger.Log("Creating new WTelegramClient instance...");
+                _client = new Client(what => Config(what, silent));
+            }
+
+            Logger.Log("Calling LoginUserIfNeeded...");
+            _user = await _client.LoginUserIfNeeded();
+            Logger.Log($"Successfully logged in as {_user.username ?? _user.first_name}");
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Login failed: {ex.Message}");
+            if (ex.Message.Contains("session file") || ex.Message.Contains("rgbKey") || ex.Message.Contains("algorithm"))
+            {
+                Logger.Log("Detected corrupted session or invalid API_HASH. Resetting client only, preserving credentials.");
+                
+                try { _client?.Dispose(); } catch (Exception e) { Logger.Log($"Dispose error: {e.Message}"); }
+                _client = null;
+                
+                try { if (File.Exists(SessionFile)) { File.Delete(SessionFile); Logger.Log("Deleted WTelegram.session"); } } catch (Exception e) { Logger.Log($"Delete session error: {e.Message}"); }
+            }
+            return false;
+        }
+    }
+
+    private static string? Config(string what, bool silent = false)
     {
         Logger.Log($"[WTelegram Config] Requested: {what}");
         string? result = null;
@@ -28,9 +74,22 @@ public static class TelegramManager
         {
             case "api_id": result = GetApiId(); break;
             case "api_hash": result = GetApiHash(); break;
-            case "phone_number": result = InputDialog.Show("Enter your phone number (with +):", "Telegram Login"); break;
-            case "verification_code": result = InputDialog.Show("Enter the verification code sent to your Telegram app:", "Telegram Login"); break;
-            case "password": result = InputDialog.Show("Enter your 2FA password:", "Telegram Login", isPassword: true); break;
+            case "phone_number": 
+                if (silent) 
+                {
+                    Logger.Log("Silent login requested, returning null for phone_number to prevent UI prompt.");
+                    return null; 
+                }
+                result = InputDialog.Show("Enter your phone number (with +):", "Telegram Login"); 
+                break;
+            case "verification_code": 
+                if (silent) return null;
+                result = InputDialog.Show("Enter the verification code sent to your Telegram app:", "Telegram Login"); 
+                break;
+            case "password": 
+                if (silent) return null;
+                result = InputDialog.Show("Enter your 2FA password:", "Telegram Login", isPassword: true); 
+                break;
             case "session_pathname": result = SessionFile; break;
         }
 
@@ -65,7 +124,6 @@ public static class TelegramManager
             var lines = File.ReadAllLines(ApiCredentialsFile);
             if (lines.Length >= 2 && !string.IsNullOrWhiteSpace(lines[0]) && !string.IsNullOrWhiteSpace(lines[1]))
             {
-                // API Hash in Telegram must be a 32-character hex string
                 if (lines[1].Trim().Length == 32)
                 {
                     isValid = true;
@@ -130,51 +188,5 @@ public static class TelegramManager
         
         if (chat == null) throw new Exception("Failed to get channel ID after creation.");
         return chat.ID;
-    }
-
-    public static async Task<bool> LoginAsync()
-    {
-        try
-        {
-            Logger.Log("Starting LoginAsync...");
-            EnsureCredentialsExist();
-            
-            if (File.Exists(SessionFile))
-            {
-                var fi = new FileInfo(SessionFile);
-                if (fi.Length == 0)
-                {
-                    Logger.Log("Found 0-byte session file! Deleting it proactively before WTelegramClient touches it.");
-                    File.Delete(SessionFile);
-                }
-            }
-
-            if (_client == null)
-            {
-                Helpers.Log = (lvl, str) => Logger.Log($"[WTelegram] {lvl}: {str}");
-                Logger.Log("Creating new WTelegramClient instance...");
-                _client = new Client(Config);
-            }
-
-            Logger.Log("Calling LoginUserIfNeeded...");
-            _user = await _client.LoginUserIfNeeded();
-            Logger.Log($"Successfully logged in as {_user.username ?? _user.first_name}");
-            
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Login failed: {ex.Message}");
-            if (ex.Message.Contains("session file") || ex.Message.Contains("rgbKey") || ex.Message.Contains("algorithm"))
-            {
-                Logger.Log("Detected corrupted session or invalid API_HASH. Resetting client only, preserving credentials.");
-                
-                try { _client?.Dispose(); } catch (Exception e) { Logger.Log($"Dispose error: {e.Message}"); }
-                _client = null;
-                
-                try { if (File.Exists(SessionFile)) { File.Delete(SessionFile); Logger.Log("Deleted WTelegram.session"); } } catch (Exception e) { Logger.Log($"Delete session error: {e.Message}"); }
-            }
-            return false;
-        }
     }
 }
