@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using WTelegram;
+using TL;
 
 namespace TgVfsPlugin;
 
