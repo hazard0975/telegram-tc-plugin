@@ -44,9 +44,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: TelegramVFS.zip
-          name: Build: ${{ steps.commit_msg.outputs.msg }}
+          name: "Build: ${{ steps.commit_msg.outputs.msg }}"
           body: "Auto-generated build for commit: ${{ github.sha }}"
           tag_name: latest
-          prerelease: true
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
