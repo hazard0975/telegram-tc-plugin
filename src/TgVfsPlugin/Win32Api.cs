@@ -56,19 +56,33 @@ public static class Win32Api
         IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
         if (tcWindow == IntPtr.Zero) return;
 
-        // Формат WM_COPYDATA для TC: "path\0T\0" (T означает Target / неактивная панель)
-        byte[] pathBytes = System.Text.Encoding.Default.GetBytes(inactivePath);
-        byte[] flagBytes = System.Text.Encoding.Default.GetBytes("T");
-        int totalLen = pathBytes.Length + 1 + flagBytes.Length + 1;
+        // Для смены папки только в неактивной панели в Total Commander формат: "путь_левой\rпуть_правой\0"
+        // Формат WM_COPYDATA "CD" с поддержкой UTF-8
+        // Необходимо добавить BOM (0xEF, 0xBB, 0xBF) в начало строки
+        // И добавить флаг T для неактивной панели: "path\0T\0"
+        
+        byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(inactivePath);
+        byte[] flagBytes = System.Text.Encoding.UTF8.GetBytes("T");
+        
+        // BOM (3 bytes) + pathBytes + null (1 byte) + flagBytes + null (1 byte)
+        int totalLen = 3 + pathBytes.Length + 1 + flagBytes.Length + 1;
         
         IntPtr ptr = Marshal.AllocHGlobal(totalLen);
         try
         {
-            Marshal.Copy(pathBytes, 0, ptr, pathBytes.Length);
-            Marshal.WriteByte(ptr, pathBytes.Length, 0); // null terminator for path
-            Marshal.Copy(flagBytes, 0, IntPtr.Add(ptr, pathBytes.Length + 1), flagBytes.Length);
-            Marshal.WriteByte(ptr, totalLen - 1, 0); // null terminator for flag
-
+            // Write BOM
+            Marshal.WriteByte(ptr, 0, 0xEF);
+            Marshal.WriteByte(ptr, 1, 0xBB);
+            Marshal.WriteByte(ptr, 2, 0xBF);
+            
+            // Write path
+            Marshal.Copy(pathBytes, 0, IntPtr.Add(ptr, 3), pathBytes.Length);
+            Marshal.WriteByte(ptr, 3 + pathBytes.Length, 0); // null after path
+            
+            // Write flag "T"
+            Marshal.Copy(flagBytes, 0, IntPtr.Add(ptr, 3 + pathBytes.Length + 1), flagBytes.Length);
+            Marshal.WriteByte(ptr, totalLen - 1, 0); // final null
+            
             COPYDATASTRUCT cds = new COPYDATASTRUCT();
             cds.dwData = new IntPtr('C' + ('D' << 8));
             cds.cbData = totalLen;
