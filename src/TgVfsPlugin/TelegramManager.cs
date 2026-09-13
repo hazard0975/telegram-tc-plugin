@@ -22,16 +22,24 @@ public static class TelegramManager
 
     private static string Config(string what)
     {
+        Logger.Log($"[WTelegram Config] Requested: {what}");
+        string result = "";
         switch (what)
         {
-            case "api_id": return GetApiId();
-            case "api_hash": return GetApiHash();
-            case "phone_number": return InputDialog.Show("Enter your phone number (with +):", "Telegram Login") ?? "";
-            case "verification_code": return InputDialog.Show("Enter the verification code sent to your Telegram app:", "Telegram Login") ?? "";
-            case "password": return InputDialog.Show("Enter your 2FA password:", "Telegram Login", isPassword: true) ?? "";
-            case "session_pathname": return SessionFile;
-            default: return "";
+            case "api_id": result = GetApiId(); break;
+            case "api_hash": result = GetApiHash(); break;
+            case "phone_number": result = InputDialog.Show("Enter your phone number (with +):", "Telegram Login") ?? ""; break;
+            case "verification_code": result = InputDialog.Show("Enter the verification code sent to your Telegram app:", "Telegram Login") ?? ""; break;
+            case "password": result = InputDialog.Show("Enter your 2FA password:", "Telegram Login", isPassword: true) ?? ""; break;
+            case "session_pathname": result = SessionFile; break;
         }
+
+        if (what == "api_hash" || what == "password" || what == "phone_number")
+            Logger.Log($"[WTelegram Config] Returning for {what}: {(string.IsNullOrEmpty(result) ? "EMPTY!" : "***")}");
+        else
+            Logger.Log($"[WTelegram Config] Returning for {what}: {result}");
+
+        return result;
     }
 
     private static string GetApiId()
@@ -89,9 +97,17 @@ public static class TelegramManager
                 throw new Exception("API_HASH must be exactly 32 characters long. Please check your credentials.");
             }
 
-            Directory.CreateDirectory(ConfigPath);
-            File.WriteAllLines(ApiCredentialsFile, new[] { apiId, apiHash });
-            Logger.Log("Successfully saved new credentials to file.");
+            try
+            {
+                Directory.CreateDirectory(ConfigPath);
+                File.WriteAllLines(ApiCredentialsFile, new[] { apiId, apiHash });
+                Logger.Log($"Successfully saved new credentials to file at: {ApiCredentialsFile}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"CRITICAL ERROR writing credentials file: {ex}");
+                throw;
+            }
         }
     }
 
@@ -102,6 +118,16 @@ public static class TelegramManager
             Logger.Log("Starting LoginAsync...");
             EnsureCredentialsExist();
             
+            if (File.Exists(SessionFile))
+            {
+                var fi = new FileInfo(SessionFile);
+                if (fi.Length == 0)
+                {
+                    Logger.Log("Found 0-byte session file! Deleting it proactively before WTelegramClient touches it.");
+                    File.Delete(SessionFile);
+                }
+            }
+
             if (_client == null)
             {
                 Helpers.Log = (lvl, str) => Logger.Log($"[WTelegram] {lvl}: {str}");
@@ -120,13 +146,12 @@ public static class TelegramManager
             Logger.Log($"Login failed: {ex.Message}");
             if (ex.Message.Contains("session file") || ex.Message.Contains("rgbKey") || ex.Message.Contains("algorithm"))
             {
-                Logger.Log("Detected corrupted session or invalid API_HASH. Nuking credentials to force reset.");
+                Logger.Log("Detected corrupted session or invalid API_HASH. Resetting client only, preserving credentials.");
                 
                 try { _client?.Dispose(); } catch (Exception e) { Logger.Log($"Dispose error: {e.Message}"); }
                 _client = null;
                 
                 try { if (File.Exists(SessionFile)) { File.Delete(SessionFile); Logger.Log("Deleted WTelegram.session"); } } catch (Exception e) { Logger.Log($"Delete session error: {e.Message}"); }
-                try { if (File.Exists(ApiCredentialsFile)) { File.Delete(ApiCredentialsFile); Logger.Log("Deleted api_credentials.txt"); } } catch (Exception e) { Logger.Log($"Delete credentials error: {e.Message}"); }
             }
             return false;
         }
