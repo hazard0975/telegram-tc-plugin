@@ -87,8 +87,8 @@ public static unsafe class WfxExports
                 if (System.IO.File.Exists(TelegramManager.ConfigPath + "\\WTelegram.session"))
                 {
                     Logger.Log("Found session file, attempting silent login...");
-                    // Вызываем синхронно, чтобы дождаться результата
-                    System.Threading.Tasks.Task.Run(() => TelegramManager.LoginAsync()).GetAwaiter().GetResult();
+                    // Вызываем синхронно, передаем true для тихого режима
+                    System.Threading.Tasks.Task.Run(() => TelegramManager.LoginAsync(true)).GetAwaiter().GetResult();
                 }
             }
             catch (Exception ex)
@@ -333,6 +333,7 @@ public static unsafe class WfxExports
                         });
                         
                         Logger.Log($"Folder created successfully: {result.Name}");
+                        Win32Api.RefreshActivePanel();
                     }
                 }
                 catch (Exception ex)

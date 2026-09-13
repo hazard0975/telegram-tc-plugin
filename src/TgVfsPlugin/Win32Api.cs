@@ -28,7 +28,21 @@ public static class Win32Api
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern IntPtr PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
     public const uint WM_COPYDATA = 0x004A;
+    public const uint WM_USER = 0x0400;
+
+    public static void RefreshActivePanel()
+    {
+        IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
+        if (tcWindow != IntPtr.Zero)
+        {
+            // cm_RereadSource = 540
+            PostMessage(tcWindow, WM_USER + 51, new IntPtr(540), IntPtr.Zero);
+        }
+    }
 
     public static void ChangeInactivePanelDir(string inactivePath)
     {

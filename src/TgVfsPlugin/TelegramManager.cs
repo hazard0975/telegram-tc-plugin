@@ -11,6 +11,15 @@ public static class TelegramManager
     private static Client? _client;
     private static User? _user;
     
+    static TelegramManager()
+    {
+        AppDomain.CurrentDomain.ProcessExit += (s, e) => 
+        {
+            Logger.Log("ProcessExit triggered, disposing WTelegramClient to flush session...");
+            _client?.Dispose();
+        };
+    }
+
     public static readonly string ConfigPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
         "TelegramVFS");

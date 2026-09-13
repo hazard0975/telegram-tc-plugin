@@ -27,31 +27,32 @@ public static class CreateFolderDialog
 
                 using Form form = new Form()
                 {
-                    Width = 420,
-                    Height = 290,
+                    Width = 480,
+                    Height = 330,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Создать папку (Канал)",
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
-                    TopMost = true
+                    TopMost = true,
+                    Font = new Font("Segoe UI", 9)
                 };
 
-                Label nameLabel = new Label() { Left = 20, Top = 20, Width = 360, Text = "Название папки:" };
-                TextBox nameBox = new TextBox() { Left = 20, Top = 40, Width = 360 };
+                Label nameLabel = new Label() { Left = 20, Top = 20, Width = 420, Text = "Название папки:" };
+                TextBox nameBox = new TextBox() { Left = 20, Top = 45, Width = 420 };
 
-                RadioButton modeMirror = new RadioButton() { Left = 20, Top = 70, Width = 360, Text = "Зеркало (Бэкап локальной папки)", Checked = true };
-                RadioButton modeContainer = new RadioButton() { Left = 20, Top = 95, Width = 360, Text = "Контейнер (Обычная виртуальная папка)" };
+                RadioButton modeMirror = new RadioButton() { Left = 20, Top = 85, Width = 420, Text = "Зеркало (Бэкап локальной папки)", Checked = true };
+                RadioButton modeContainer = new RadioButton() { Left = 20, Top = 115, Width = 420, Text = "Контейнер (Обычная виртуальная папка)" };
 
-                Label pathLabel = new Label() { Left = 20, Top = 125, Width = 360, Text = "Локальный путь (только для Зеркала):" };
-                TextBox pathBox = new TextBox() { Left = 20, Top = 145, Width = 360 };
+                Label pathLabel = new Label() { Left = 20, Top = 155, Width = 420, Text = "Локальный путь (только для Зеркала):" };
+                TextBox pathBox = new TextBox() { Left = 20, Top = 180, Width = 420 };
 
                 modeMirror.CheckedChanged += (s, e) => {
                     pathBox.Enabled = modeMirror.Checked;
                 };
 
-                Button okBtn = new Button() { Text = "OK", Left = 280, Width = 100, Top = 190, DialogResult = DialogResult.OK };
-                Button cancelBtn = new Button() { Text = "Отмена", Left = 170, Width = 100, Top = 190, DialogResult = DialogResult.Cancel };
+                Button okBtn = new Button() { Text = "OK", Left = 340, Width = 100, Top = 235, DialogResult = DialogResult.OK };
+                Button cancelBtn = new Button() { Text = "Отмена", Left = 230, Width = 100, Top = 235, DialogResult = DialogResult.Cancel };
 
                 form.Controls.Add(nameLabel);
                 form.Controls.Add(nameBox);

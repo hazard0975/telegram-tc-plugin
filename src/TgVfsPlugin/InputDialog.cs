@@ -22,26 +22,27 @@ public static class InputDialog
 
                 using Form promptForm = new Form()
                 {
-                    Width = 400,
-                    Height = 180,
+                    Width = 460,
+                    Height = 200,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = title,
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
-                    TopMost = true
+                    TopMost = true,
+                    Font = new Font("Segoe UI", 9)
                 };
 
-                Label textLabel = new Label() { Left = 20, Top = 20, Width = 340, Text = prompt };
-                TextBox inputBox = new TextBox() { Left = 20, Top = 50, Width = 340 };
+                Label textLabel = new Label() { Left = 20, Top = 20, Width = 400, Height = 40, Text = prompt };
+                TextBox inputBox = new TextBox() { Left = 20, Top = 65, Width = 400 };
                 
                 if (isPassword)
                 {
                     inputBox.UseSystemPasswordChar = true;
                 }
 
-                Button confirmation = new Button() { Text = "OK", Left = 260, Width = 100, Top = 90, DialogResult = DialogResult.OK };
-                Button cancel = new Button() { Text = "Cancel", Left = 150, Width = 100, Top = 90, DialogResult = DialogResult.Cancel };
+                Button confirmation = new Button() { Text = "OK", Left = 320, Width = 100, Top = 105, DialogResult = DialogResult.OK };
+                Button cancel = new Button() { Text = "Cancel", Left = 210, Width = 100, Top = 105, DialogResult = DialogResult.Cancel };
 
                 promptForm.Controls.Add(textLabel);
                 promptForm.Controls.Add(inputBox);
