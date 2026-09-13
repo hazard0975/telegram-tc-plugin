@@ -100,6 +100,8 @@ public static class TelegramManager
         try
         {
             Logger.Log("Starting LoginAsync...");
+            EnsureCredentialsExist();
+            
             if (_client == null)
             {
                 Helpers.Log = (lvl, str) => Logger.Log($"[WTelegram] {lvl}: {str}");
