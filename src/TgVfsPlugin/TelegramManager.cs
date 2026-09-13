@@ -111,6 +111,18 @@ public static class TelegramManager
         }
     }
 
+    public static async Task<long> CreateChannelAsync(string title, string description = "")
+    {
+        if (_client == null || _user == null) throw new Exception("Not logged in");
+        Logger.Log($"Creating channel: {title}");
+        
+        var channel = await _client.Channels_CreateChannel(title, description, broadcast: true);
+        var chat = channel.chats.Values.FirstOrDefault();
+        
+        if (chat == null) throw new Exception("Failed to get channel ID after creation.");
+        return chat.ID;
+    }
+
     public static async Task<bool> LoginAsync()
     {
         try

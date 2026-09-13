@@ -15,6 +15,44 @@ public static class Win32Api
     public const int INVALID_HANDLE_VALUE = -1;
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct COPYDATASTRUCT
+    {
+        public IntPtr dwData;
+        public int cbData;
+        public IntPtr lpData;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, ref COPYDATASTRUCT lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+    public const uint WM_COPYDATA = 0x004A;
+
+    public static void ChangeInactivePanelDir(string inactivePath)
+    {
+        IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
+        if (tcWindow == IntPtr.Zero) return;
+
+        string dataStr = "\r" + inactivePath + "\0";
+        IntPtr ptr = Marshal.StringToHGlobalAnsi(dataStr);
+        try
+        {
+            COPYDATASTRUCT cds = new COPYDATASTRUCT();
+            cds.dwData = new IntPtr('C' + ('D' << 8));
+            cds.cbData = dataStr.Length;
+            cds.lpData = ptr;
+
+            SendMessage(tcWindow, WM_COPYDATA, IntPtr.Zero, ref cds);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct FILETIME
     {
         public uint dwLowDateTime;

@@ -34,50 +34,34 @@ public class VfsDatabase : IDisposable
     {
         var command = _connection.CreateCommand();
         command.CommandText = @"
-            CREATE TABLE IF NOT EXISTS channels (
-                id INTEGER PRIMARY KEY,
-                username TEXT,
-                title TEXT,
-                updated_at DATETIME
+            -- Для прототипа: очищаем старую структуру, если она есть, 
+            -- чтобы применить новую (Adjacency List + Mounts)
+            DROP TABLE IF EXISTS files;
+            DROP TABLE IF EXISTS channels;
+
+            CREATE TABLE IF NOT EXISTS mounts (
+                id TEXT PRIMARY KEY,
+                local_path TEXT,
+                channel_id INTEGER,
+                channel_name TEXT,
+                mode INTEGER,
+                created_at DATETIME
             );
 
             CREATE TABLE IF NOT EXISTS files (
-                id INTEGER PRIMARY KEY,
-                channel_id INTEGER,
-                message_id INTEGER,
+                uid TEXT PRIMARY KEY,
+                mount_id TEXT,
+                isdir INTEGER,
                 name TEXT NOT NULL,
+                parent TEXT,
+                mtime DATETIME,
                 size INTEGER,
-                created_at DATETIME,
-                FOREIGN KEY(channel_id) REFERENCES channels(id)
+                tg_message_id INTEGER,
+                ver INTEGER,
+                FOREIGN KEY(mount_id) REFERENCES mounts(id)
             );
         ";
         command.ExecuteNonQuery();
-        
-        SeedFakeData();
-    }
-
-    private void SeedFakeData()
-    {
-        var countCmd = _connection.CreateCommand();
-        countCmd.CommandText = "SELECT COUNT(*) FROM channels";
-        var count = (long)countCmd.ExecuteScalar()!;
-
-        if (count == 0)
-        {
-            var insertCmd = _connection.CreateCommand();
-            insertCmd.CommandText = @"
-                INSERT INTO channels (id, username, title, updated_at) VALUES 
-                (1, 'work_chat', 'Work Chat', '2026-09-12 10:00:00'),
-                (2, 'memes_daily', 'Memes Daily', '2026-09-12 12:00:00');
-
-                INSERT INTO files (id, channel_id, message_id, name, size, created_at) VALUES 
-                (1, 1, 100, 'Q3_Report.pdf', 1048576, '2026-09-10 09:30:00'),
-                (2, 1, 101, 'presentation.pptx', 5242880, '2026-09-11 14:15:00'),
-                (3, 2, 200, 'funny_cat.mp4', 15728640, '2026-09-12 11:20:00'),
-                (4, 2, 201, 'meme.jpg', 256000, '2026-09-12 11:25:00');
-            ";
-            insertCmd.ExecuteNonQuery();
-        }
     }
 
     // Вспомогательный класс для представления элементов ФС
@@ -89,11 +73,56 @@ public class VfsDatabase : IDisposable
         public DateTime Date { get; set; }
     }
 
-    public System.Collections.Generic.List<VfsItem> GetChannels()
+    public class MountInfo
+    {
+        public string Id { get; set; } = "";
+        public string LocalPath { get; set; } = "";
+        public long ChannelId { get; set; }
+        public string ChannelName { get; set; } = "";
+        public int Mode { get; set; }
+    }
+
+    public void AddMount(MountInfo mount)
+    {
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO mounts (id, local_path, channel_id, channel_name, mode, created_at)
+            VALUES (@id, @path, @cid, @cname, @mode, @dt)
+        ";
+        cmd.Parameters.AddWithValue("@id", mount.Id);
+        cmd.Parameters.AddWithValue("@path", mount.LocalPath);
+        cmd.Parameters.AddWithValue("@cid", mount.ChannelId);
+        cmd.Parameters.AddWithValue("@cname", mount.ChannelName);
+        cmd.Parameters.AddWithValue("@mode", mount.Mode);
+        cmd.Parameters.AddWithValue("@dt", DateTime.Now);
+        cmd.ExecuteNonQuery();
+    }
+
+    public MountInfo? GetMountByName(string name)
+    {
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT id, local_path, channel_id, mode FROM mounts WHERE channel_name = @cname";
+        cmd.Parameters.AddWithValue("@cname", name);
+        using var reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            return new MountInfo
+            {
+                Id = reader.GetString(0),
+                LocalPath = reader.GetString(1),
+                ChannelId = reader.GetInt64(2),
+                ChannelName = name,
+                Mode = reader.GetInt32(3)
+            };
+        }
+        return null;
+    }
+
+    public System.Collections.Generic.List<VfsItem> GetMounts()
     {
         var items = new System.Collections.Generic.List<VfsItem>();
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT title, updated_at FROM channels";
+        cmd.CommandText = "SELECT channel_name, created_at FROM mounts";
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
@@ -108,24 +137,24 @@ public class VfsDatabase : IDisposable
         return items;
     }
 
-    public System.Collections.Generic.List<VfsItem> GetFiles(string channelTitle)
+    public System.Collections.Generic.List<VfsItem> GetFiles(string channelName)
     {
         var items = new System.Collections.Generic.List<VfsItem>();
         var cmd = _connection.CreateCommand();
         cmd.CommandText = @"
-            SELECT f.name, f.size, f.created_at 
+            SELECT f.name, f.size, f.mtime, f.isdir 
             FROM files f
-            JOIN channels c ON f.channel_id = c.id
-            WHERE c.title = @title
+            JOIN mounts m ON f.mount_id = m.id
+            WHERE m.channel_name = @cname AND (f.parent IS NULL OR f.parent = 'false')
         ";
-        cmd.Parameters.AddWithValue("@title", channelTitle);
+        cmd.Parameters.AddWithValue("@cname", channelName);
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
             items.Add(new VfsItem 
             { 
                 Name = reader.GetString(0), 
-                IsDirectory = false, 
+                IsDirectory = reader.GetInt32(3) == 1, 
                 Size = reader.GetInt64(1),
                 Date = reader.GetDateTime(2)
             });

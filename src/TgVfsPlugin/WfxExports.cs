@@ -103,11 +103,18 @@ public static unsafe class WfxExports
         var state = new FindState();
         try
         {
-            if (string.IsNullOrEmpty(pathStr))
+            if (string.IsNullOrEmpty(pathStr) || pathStr == "\\" || pathStr == "/")
             {
                 // Корень: возвращаем каналы
                 Logger.Log("Fetching channels for root.");
-                state.Items = _db.GetChannels();
+                state.Items.Add(new VfsDatabase.VfsItem 
+                { 
+                    Name = "[+] Создать папку", 
+                    IsDirectory = false, 
+                    Size = 0,
+                    Date = DateTime.Now 
+                });
+                state.Items.AddRange(_db.GetMounts());
             }
             else
             {
@@ -286,6 +293,38 @@ public static unsafe class WfxExports
 
         if (verb != "open" && verb != "") return 2; // FS_EXEC_ERROR
 
+        if (path.EndsWith("[+] Создать папку"))
+        {
+            System.Threading.Tasks.Task.Run(() => 
+            {
+                try
+                {
+                    var result = CreateFolderDialog.Show();
+                    if (result != null)
+                    {
+                        string cname = "[TC] " + result.Name;
+                        long cid = TelegramManager.CreateChannelAsync(cname, "TelegramVFS channel").GetAwaiter().GetResult();
+                        
+                        _db!.AddMount(new VfsDatabase.MountInfo {
+                            Id = "tg-fldr-" + Guid.NewGuid().ToString("N").Substring(0, 8),
+                            ChannelId = cid,
+                            ChannelName = result.Name, // сохраняем без префикса для удобства
+                            Mode = result.Mode,
+                            LocalPath = result.LocalPath
+                        });
+                        
+                        Logger.Log($"Folder created successfully: {result.Name}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Create folder error: {ex}");
+                }
+            }).GetAwaiter().GetResult();
+            
+            return 0; // FS_EXEC_OK
+        }
+
         if (path.EndsWith("[ Login required.txt ]"))
         {
             // Запускаем асинхронный логин в синхронном контексте без await (Task.Run)
@@ -309,5 +348,49 @@ public static unsafe class WfxExports
         }
 
         return 2; // FS_EXEC_ERROR
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "FsSetDirectory", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsSetDirectory(IntPtr RemoteName, int OpMode)
+    {
+        string pathStr = Marshal.PtrToStringAnsi(RemoteName) ?? "";
+        return HandleSetDirectory(pathStr) ? 1 : 0;
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "FsSetDirectoryW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsSetDirectoryW(IntPtr RemoteName, int OpMode)
+    {
+        string pathStr = Marshal.PtrToStringUni(RemoteName) ?? "";
+        return HandleSetDirectory(pathStr) ? 1 : 0;
+    }
+
+    private static bool HandleSetDirectory(string pathStr)
+    {
+        Logger.Log($"FsSetDirectory called for: {pathStr}");
+        if (_db == null) return false;
+        
+        pathStr = pathStr.TrimEnd('\\', '/');
+        
+        if (string.IsNullOrEmpty(pathStr))
+        {
+            return true; // Корень всегда разрешен
+        }
+        
+        // Получаем имя канала
+        string channelTitle = pathStr.TrimStart('\\', '/');
+        var mount = _db.GetMountByName(channelTitle);
+        if (mount != null)
+        {
+            // Если это зеркало и есть локальный путь, пытаемся открыть его во второй панели
+            if (mount.Mode == 0 && !string.IsNullOrEmpty(mount.LocalPath))
+            {
+                Logger.Log($"Entering Mirror folder. Sending CD to {mount.LocalPath}");
+                Win32Api.ChangeInactivePanelDir(mount.LocalPath);
+            }
+            return true; // Успешный вход в папку
+        }
+
+        // Если не нашли mount - разрешаем вход, если есть такие папки внутри (вложенные папки)
+        return true;
     }
 }

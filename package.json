@@ -4,8 +4,9 @@
   "description": "Архитектурный концепт WFX-плагина для Total Commander, позволяющего работать с личным Telegram-каналом как с виртуальной файловой системой (VFS).",
   "main": "index.js",
   "scripts": {
-    "build": "echo \"Nothing to build for web, this is a C# project.\"",
-    "dev": "echo \"Nothing to run for web, this is a C# project.\""
+    "build": "echo \"Nothing to build for web\"",
+    "dev": "node server.js",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
