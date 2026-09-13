@@ -19,61 +19,6 @@ public class VfsDatabase : IDisposable
         "TelegramVFS", 
         "vfs_cache.db");
 
-    static VfsDatabase()
-    {
-        try
-        {
-            NativeLibrary.SetDllImportResolver(typeof(SQLitePCL.raw).Assembly, (libraryName, assembly, searchPath) =>
-            {
-                if (libraryName == "e_sqlite3" || libraryName == "sqlite3")
-                {
-                    // Для плагинов Total Commander AppContext.BaseDirectory указывает на папку установки TC (c:\totalcmd),
-                    // а не на папку плагина. Поэтому нам нужно получить путь к самой DLL плагина.
-                    string pluginPath = Assembly.GetExecutingAssembly().Location;
-                    if (string.IsNullOrEmpty(pluginPath))
-                    {
-                        // В Native AOT Location может быть пустой, используем путь текущего процесса (хотя это TC) 
-                        // или специальный трюк для Native AOT
-                        pluginPath = AppContext.BaseDirectory; 
-                    }
-                    
-                    string basePath = Path.GetDirectoryName(pluginPath) ?? AppContext.BaseDirectory;
-                    
-                    // Хак для Native AOT в Total Commander: если мы в папке TC, ищем в подпапке плагина
-                    // Но так как мы не знаем точного пути установки, лучше искать относительно нашей DLL.
-                    // Для Native AOT Assembly.Location возвращает пустую строку, поэтому мы используем путь
-                    // откуда была загружена текущая библиотека.
-                    
-                    // Получаем путь к нашему загруженному модулю (TgVfsPlugin.wfx)
-                    using var processModule = System.Diagnostics.Process.GetCurrentProcess().Modules.Cast<System.Diagnostics.ProcessModule>()
-                        .FirstOrDefault(m => m.ModuleName != null && m.ModuleName.StartsWith("TgVfsPlugin", StringComparison.OrdinalIgnoreCase));
-                        
-                    if (processModule != null && !string.IsNullOrEmpty(processModule.FileName))
-                    {
-                        basePath = Path.GetDirectoryName(processModule.FileName) ?? basePath;
-                    }
-
-                    string arch = IntPtr.Size == 8 ? "x64" : "x86";
-                    string libPath = Path.Combine(basePath, arch, "e_sqlite3.dll");
-                    
-                    Logger.Log($"Attempting to load sqlite from: {libPath}");
-                    
-                    if (NativeLibrary.TryLoad(libPath, out IntPtr handle))
-                    {
-                        Logger.Log($"Successfully loaded e_sqlite3.dll from {arch}");
-                        return handle;
-                    }
-                    Logger.Log($"Failed to load e_sqlite3.dll from specific path: {libPath}");
-                }
-                return IntPtr.Zero;
-            });
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Error setting DllImportResolver: {ex.Message}");
-        }
-    }
-
     public VfsDatabase()
     {
         // Убедимся, что директория для БД существует
