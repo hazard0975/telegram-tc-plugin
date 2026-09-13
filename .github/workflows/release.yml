@@ -29,9 +29,17 @@ jobs:
       - name: Prepare Plugin Package
         run: |
           mkdir ReleasePackage
+          mkdir ReleasePackage\x64
+          mkdir ReleasePackage\x86
           copy out_x64\TgVfsPlugin.dll ReleasePackage\TgVfsPlugin.wfx64
           copy out_x86\TgVfsPlugin.dll ReleasePackage\TgVfsPlugin.wfx
           copy pluginst.inf ReleasePackage\pluginst.inf
+          
+          $sqlite64 = Get-ChildItem -Path out_x64 -Filter e_sqlite3.dll -Recurse | Select-Object -First 1
+          if ($sqlite64) { Copy-Item $sqlite64.FullName -Destination ReleasePackage\x64\e_sqlite3.dll }
+          
+          $sqlite86 = Get-ChildItem -Path out_x86 -Filter e_sqlite3.dll -Recurse | Select-Object -First 1
+          if ($sqlite86) { Copy-Item $sqlite86.FullName -Destination ReleasePackage\x86\e_sqlite3.dll }
           
       - name: Zip Plugin
         run: Compress-Archive -Path ReleasePackage\* -DestinationPath TelegramVFS.zip

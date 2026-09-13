@@ -1,6 +1,9 @@
 using System;
 using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using Microsoft.Data.Sqlite;
+using SQLitePCL;
 
 namespace TgVfsPlugin;
 
@@ -14,6 +17,36 @@ public class VfsDatabase : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
         "TelegramVFS", 
         "vfs_cache.db");
+
+    static VfsDatabase()
+    {
+        try
+        {
+            NativeLibrary.SetDllImportResolver(typeof(SQLitePCL.raw).Assembly, (libraryName, assembly, searchPath) =>
+            {
+                if (libraryName == "e_sqlite3" || libraryName == "sqlite3")
+                {
+                    string basePath = AppContext.BaseDirectory;
+                    string arch = IntPtr.Size == 8 ? "x64" : "x86";
+                    string libPath = Path.Combine(basePath, arch, "e_sqlite3.dll");
+                    
+                    Logger.Log($"Attempting to load sqlite from: {libPath}");
+                    
+                    if (NativeLibrary.TryLoad(libPath, out IntPtr handle))
+                    {
+                        Logger.Log($"Successfully loaded e_sqlite3.dll from {arch}");
+                        return handle;
+                    }
+                    Logger.Log("Failed to load e_sqlite3.dll from specific path.");
+                }
+                return IntPtr.Zero;
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error setting DllImportResolver: {ex.Message}");
+        }
+    }
 
     public VfsDatabase()
     {
