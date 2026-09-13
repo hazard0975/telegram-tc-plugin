@@ -506,32 +506,22 @@ public static unsafe class WfxExports
             }
 
             int messageId = 0;
-            bool wasCancelled = false;
-
-            System.Threading.Tasks.Task.Run(async () =>
+            try
             {
-                try
-                {
-                    messageId = await TelegramManager.UploadAndSendFileAsync(
-                        mount.ChannelId,
-                        localPath,
-                        fileName,
-                        subPath,
-                        onProgress: (sent, total) =>
-                        {
-                            int pct = total > 0 ? (int)((sent * 100) / total) : 0;
-                            if (pct > 100) pct = 100;
-                            return ReportProgress(localPath, remotePath, pct);
-                        }
-                    );
-                }
-                catch (OperationCanceledException)
-                {
-                    wasCancelled = true;
-                }
-            }).GetAwaiter().GetResult();
-
-            if (wasCancelled)
+                messageId = TelegramManager.UploadAndSendFileAsync(
+                    mount.ChannelId,
+                    localPath,
+                    fileName,
+                    subPath,
+                    onProgress: (sent, total) =>
+                    {
+                        int pct = total > 0 ? (int)((sent * 100) / total) : 0;
+                        if (pct > 100) pct = 100;
+                        return ReportProgress(localPath, remotePath, pct);
+                    }
+                ).GetAwaiter().GetResult();
+            }
+            catch (Exception ex) when (ex is OperationCanceledException || ex.InnerException is OperationCanceledException)
             {
                 Logger.Log($"FsPutFile: Upload was cancelled by user.");
                 return Win32Api.FS_FILE_USERABORT;

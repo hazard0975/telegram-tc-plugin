@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Threading.Tasks;
 using WTelegram;
@@ -10,6 +11,7 @@ public static class TelegramManager
 {
     private static Client? _client;
     private static User? _user;
+    private static readonly ConcurrentDictionary<long, ChatBase> _chatsCache = new();
     
     static TelegramManager()
     {
@@ -28,7 +30,7 @@ public static class TelegramManager
     private static readonly string SessionFile = Path.Combine(ConfigPath, "WTelegram.session");
 
     public static bool IsLoggedIn => _user != null;
-    public static bool IsPremium => _user?.is_premium ?? false;
+    public static bool IsPremium => _user != null && (((uint)_user.flags & (1u << 28)) != 0);
 
     private static string? GetSetting(string key)
     {
@@ -254,6 +256,7 @@ public static class TelegramManager
         }
         
         if (chat == null) throw new Exception("Failed to get channel ID after creation.");
+        _chatsCache[chat.ID] = chat;
         return chat.ID;
     }
 
@@ -276,12 +279,20 @@ public static class TelegramManager
         }
 
         Logger.Log($"Resolving channel {channelId} for upload...");
-        if (_client.Chats == null || !_client.Chats.ContainsKey(channelId))
+        if (!_chatsCache.TryGetValue(channelId, out var chat))
         {
-            await _client.Messages_GetAllChats();
+            var allChats = await _client.Messages_GetAllChats();
+            if (allChats?.chats != null)
+            {
+                foreach (var kvp in allChats.chats)
+                {
+                    _chatsCache[kvp.Key] = kvp.Value;
+                }
+            }
+            _chatsCache.TryGetValue(channelId, out chat);
         }
 
-        if (!_client.Chats.TryGetValue(channelId, out var chat))
+        if (chat == null)
         {
             throw new Exception($"Channel with ID {channelId} not found in Telegram account chats.");
         }

@@ -116,7 +116,7 @@ public static class Win32Api
             if (threadId != 0)
             {
                 GUITHREADINFO gui = new GUITHREADINFO();
-                gui.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
+                gui.cbSize = Marshal.SizeOf<GUITHREADINFO>();
                 if (GetGUIThreadInfo(threadId, ref gui) && gui.hwndFocus != IntPtr.Zero)
                 {
                     if (GetWindowRect(tcWindow, out RECT tcRect) && GetWindowRect(gui.hwndFocus, out RECT focusRect))
