@@ -57,7 +57,7 @@ public static class Win32Api
         IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
         if (tcWindow == IntPtr.Zero) return;
 
-        string dataStr = "\r" + inactivePath;
+        string dataStr = "T" + inactivePath; // T = Target (inactive panel)
         IntPtr ptr = Marshal.StringToHGlobalAnsi(dataStr);
         try
         {

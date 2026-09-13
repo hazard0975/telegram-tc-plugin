@@ -159,6 +159,24 @@ public static unsafe class WfxExports
                 string[] parts = fullPath.Split(new[] { '\\', '/' });
                 string channelTitle = parts[0];
                 
+                var mount = _db.GetMountByName(channelTitle);
+                if (mount != null && mount.Mode == 0 && !string.IsNullOrEmpty(mount.LocalPath))
+                {
+                    string localPathToSet = mount.LocalPath;
+                    if (parts.Length > 1)
+                    {
+                        string[] subParts = new string[parts.Length - 1];
+                        Array.Copy(parts, 1, subParts, 0, parts.Length - 1);
+                        localPathToSet = System.IO.Path.Combine(mount.LocalPath, System.IO.Path.Combine(subParts));
+                    }
+                    
+                    Logger.Log($"Entering Mirror folder '{channelTitle}'. Sending CD '{localPathToSet}' to target panel.");
+                    System.Threading.Tasks.Task.Run(async () => {
+                        await System.Threading.Tasks.Task.Delay(100);
+                        Win32Api.ChangeInactivePanelDir(localPathToSet);
+                    });
+                }
+                
                 Logger.Log($"Fetching files for channel: '{channelTitle}'");
                 state.Items = _db.GetFiles(channelTitle);
             }
@@ -399,67 +417,5 @@ public static unsafe class WfxExports
         }
 
         return 2; // FS_EXEC_ERROR
-    }
-
-    [UnmanagedCallersOnly(EntryPoint = "FsSetDirectory", CallConvs = [typeof(CallConvStdcall)])]
-    public static int FsSetDirectory(IntPtr RemoteName, int OpMode)
-    {
-        try
-        {
-            Logger.Log($"FsSetDirectory called, ptr: {RemoteName}, opMode: {OpMode}");
-            string pathStr = Marshal.PtrToStringAnsi(RemoteName) ?? "";
-            return HandleSetDirectory(pathStr) ? 1 : 0;
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Exception in FsSetDirectory: {ex}");
-            return 0;
-        }
-    }
-
-    [UnmanagedCallersOnly(EntryPoint = "FsSetDirectoryW", CallConvs = [typeof(CallConvStdcall)])]
-    public static int FsSetDirectoryW(IntPtr RemoteName, int OpMode)
-    {
-        try
-        {
-            Logger.Log($"FsSetDirectoryW called, ptr: {RemoteName}, opMode: {OpMode}");
-            string pathStr = Marshal.PtrToStringUni(RemoteName) ?? "";
-            return HandleSetDirectory(pathStr) ? 1 : 0;
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Exception in FsSetDirectoryW: {ex}");
-            return 0;
-        }
-    }
-
-    private static bool HandleSetDirectory(string pathStr)
-    {
-        Logger.Log($"FsSetDirectory called for: {pathStr}");
-        if (_db == null) return false;
-        
-        pathStr = pathStr.TrimEnd('\\', '/');
-        
-        if (string.IsNullOrEmpty(pathStr))
-        {
-            return true; // Корень всегда разрешен
-        }
-        
-        // Получаем имя канала
-        string channelTitle = pathStr.TrimStart('\\', '/');
-        var mount = _db.GetMountByName(channelTitle);
-        if (mount != null)
-        {
-            // Если это зеркало и есть локальный путь, пытаемся открыть его во второй панели
-            if (mount.Mode == 0 && !string.IsNullOrEmpty(mount.LocalPath))
-            {
-                Logger.Log($"Entering Mirror folder. Sending CD to {mount.LocalPath}");
-                Win32Api.ChangeInactivePanelDir(mount.LocalPath);
-            }
-            return true; // Успешный вход в папку
-        }
-
-        // Если не нашли mount - разрешаем вход, если есть такие папки внутри (вложенные папки)
-        return true;
     }
 }
