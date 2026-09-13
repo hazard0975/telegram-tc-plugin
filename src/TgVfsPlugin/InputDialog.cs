@@ -8,46 +8,62 @@ public static class InputDialog
 {
     public static string? Show(string prompt, string title, bool isPassword = false)
     {
-        Form promptForm = new Form()
-        {
-            Width = 400,
-            Height = 180,
-            FormBorderStyle = FormBorderStyle.FixedDialog,
-            Text = title,
-            StartPosition = FormStartPosition.CenterScreen,
-            MinimizeBox = false,
-            MaximizeBox = false
-        };
-
-        Label textLabel = new Label() { Left = 20, Top = 20, Width = 340, Text = prompt };
-        TextBox inputBox = new TextBox() { Left = 20, Top = 50, Width = 340 };
-        
-        if (isPassword)
-        {
-            inputBox.UseSystemPasswordChar = true;
-        }
-
-        Button confirmation = new Button() { Text = "OK", Left = 260, Width = 100, Top = 90, DialogResult = DialogResult.OK };
-        Button cancel = new Button() { Text = "Cancel", Left = 150, Width = 100, Top = 90, DialogResult = DialogResult.Cancel };
-
-        confirmation.Click += (sender, e) => { promptForm.Close(); };
-        cancel.Click += (sender, e) => { promptForm.Close(); };
-
-        promptForm.Controls.Add(textLabel);
-        promptForm.Controls.Add(inputBox);
-        promptForm.Controls.Add(confirmation);
-        promptForm.Controls.Add(cancel);
-        promptForm.AcceptButton = confirmation;
-        promptForm.CancelButton = cancel;
-
-        // Ensure the form shows on top of Total Commander
-        promptForm.TopMost = true;
-
         string? result = null;
-        if (promptForm.ShowDialog() == DialogResult.OK)
+
+        // В Native AOT и плагинах TC потоки могут быть MTA или без цикла сообщений.
+        // Поэтому для WinForms-окон надежнее всего создавать выделенный STA-поток.
+        var t = new System.Threading.Thread(() =>
         {
-            result = inputBox.Text;
-        }
+            try
+            {
+                // Инициализируем визуальные стили для красивого отображения (опционально, но желательно)
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+
+                using Form promptForm = new Form()
+                {
+                    Width = 400,
+                    Height = 180,
+                    FormBorderStyle = FormBorderStyle.FixedDialog,
+                    Text = title,
+                    StartPosition = FormStartPosition.CenterScreen,
+                    MinimizeBox = false,
+                    MaximizeBox = false,
+                    TopMost = true
+                };
+
+                Label textLabel = new Label() { Left = 20, Top = 20, Width = 340, Text = prompt };
+                TextBox inputBox = new TextBox() { Left = 20, Top = 50, Width = 340 };
+                
+                if (isPassword)
+                {
+                    inputBox.UseSystemPasswordChar = true;
+                }
+
+                Button confirmation = new Button() { Text = "OK", Left = 260, Width = 100, Top = 90, DialogResult = DialogResult.OK };
+                Button cancel = new Button() { Text = "Cancel", Left = 150, Width = 100, Top = 90, DialogResult = DialogResult.Cancel };
+
+                promptForm.Controls.Add(textLabel);
+                promptForm.Controls.Add(inputBox);
+                promptForm.Controls.Add(confirmation);
+                promptForm.Controls.Add(cancel);
+                promptForm.AcceptButton = confirmation;
+                promptForm.CancelButton = cancel;
+
+                if (promptForm.ShowDialog() == DialogResult.OK)
+                {
+                    result = inputBox.Text;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"UI Error: {ex.Message}");
+            }
+        });
+
+        t.SetApartmentState(System.Threading.ApartmentState.STA);
+        t.Start();
+        t.Join(); // Ждем завершения ввода
 
         return result;
     }
