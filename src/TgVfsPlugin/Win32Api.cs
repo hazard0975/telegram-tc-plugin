@@ -19,6 +19,26 @@ public static class Win32Api
 
     public const uint ERROR_NO_MORE_FILES = 18;
 
+    // WFX Plugin Return Codes
+    public const int FS_FILE_OK = 0;
+    public const int FS_FILE_EXISTS = 1;
+    public const int FS_FILE_NOTFOUND = 2;
+    public const int FS_FILE_READERROR = 3;
+    public const int FS_FILE_WRITEERROR = 4;
+    public const int FS_FILE_USERABORT = 5;
+    public const int FS_FILE_NOTSUPPORTED = 6;
+    public const int FS_FILE_EXISTSRESUMEALLOWED = 7;
+
+    // WFX Copy Flags
+    public const int FS_COPYFLAGS_OVERWRITE = 1;
+    public const int FS_COPYFLAGS_RESUME = 2;
+    public const int FS_COPYFLAGS_MOVE = 4;
+    public const int FS_COPYFLAGS_EXISTS_SAMECASE = 8;
+    public const int FS_COPYFLAGS_EXISTS_DIFFERENTCASE = 16;
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    public delegate int ProgressProc(int pluginNr, IntPtr sourceName, IntPtr targetName, int percentDone);
+
     [StructLayout(LayoutKind.Sequential)]
     public struct COPYDATASTRUCT
     {

@@ -28,6 +28,7 @@ public static class TelegramManager
     private static readonly string SessionFile = Path.Combine(ConfigPath, "WTelegram.session");
 
     public static bool IsLoggedIn => _user != null;
+    public static bool IsPremium => _user?.is_premium ?? false;
 
     private static string? GetSetting(string key)
     {
@@ -254,5 +255,64 @@ public static class TelegramManager
         
         if (chat == null) throw new Exception("Failed to get channel ID after creation.");
         return chat.ID;
+    }
+
+    public static async Task<int> UploadAndSendFileAsync(
+        long channelId, 
+        string localPath, 
+        string fileName, 
+        string relativeCaption, 
+        Func<long, long, bool>? onProgress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_client == null || _user == null)
+        {
+            Logger.Log("UploadAndSendFileAsync: Client not logged in, attempting silent login...");
+            await LoginAsync(silent: true);
+            if (_client == null || _user == null)
+            {
+                throw new InvalidOperationException("Not logged in to Telegram.");
+            }
+        }
+
+        Logger.Log($"Resolving channel {channelId} for upload...");
+        if (_client.Chats == null || !_client.Chats.ContainsKey(channelId))
+        {
+            await _client.Messages_GetAllChats();
+        }
+
+        if (!_client.Chats.TryGetValue(channelId, out var chat))
+        {
+            throw new Exception($"Channel with ID {channelId} not found in Telegram account chats.");
+        }
+
+        Logger.Log($"Uploading file '{localPath}' to Telegram servers...");
+        InputFileBase inputFile = await _client.UploadFileAsync(localPath, (progress, total) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (onProgress != null)
+            {
+                bool abort = onProgress(progress, total);
+                if (abort)
+                {
+                    throw new OperationCanceledException("Upload cancelled by user in Total Commander.");
+                }
+            }
+        });
+
+        Logger.Log($"Sending uploaded file '{fileName}' as document to channel {channelId}...");
+        var media = new InputMediaUploadedDocument
+        {
+            file = inputFile,
+            mime_type = "application/octet-stream",
+            attributes = new DocumentAttribute[]
+            {
+                new DocumentAttributeFilename { file_name = fileName }
+            }
+        };
+
+        var message = await _client.SendMediaAsync(chat, relativeCaption, media);
+        Logger.Log($"File uploaded successfully! Telegram Message ID: {message.id}");
+        return message.id;
     }
 }

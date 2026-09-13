@@ -26,6 +26,13 @@ public class VfsDatabase : IDisposable
 
         _connection = new SqliteConnection($"Data Source={DbPath}");
         _connection.Open();
+
+        // Включаем WAL режим для параллельного чтения и записи
+        using (var walCmd = _connection.CreateCommand())
+        {
+            walCmd.CommandText = "PRAGMA journal_mode=WAL;";
+            walCmd.ExecuteNonQuery();
+        }
         
         InitializeSchema();
     }
@@ -34,11 +41,6 @@ public class VfsDatabase : IDisposable
     {
         var command = _connection.CreateCommand();
         command.CommandText = @"
-            -- Для прототипа: очищаем старую структуру, если она есть, 
-            -- чтобы применить новую (Adjacency List + Mounts)
-            DROP TABLE IF EXISTS files;
-            DROP TABLE IF EXISTS channels;
-
             CREATE TABLE IF NOT EXISTS mounts (
                 id TEXT PRIMARY KEY,
                 local_path TEXT,
@@ -57,11 +59,24 @@ public class VfsDatabase : IDisposable
                 mtime DATETIME,
                 size INTEGER,
                 tg_message_id INTEGER,
+                in_trash INTEGER DEFAULT 0,
                 ver INTEGER,
                 FOREIGN KEY(mount_id) REFERENCES mounts(id)
             );
         ";
         command.ExecuteNonQuery();
+
+        // Миграция: если таблица files уже была создана ранее без колонки in_trash
+        try
+        {
+            using var alterCmd = _connection.CreateCommand();
+            alterCmd.CommandText = "ALTER TABLE files ADD COLUMN in_trash INTEGER DEFAULT 0;";
+            alterCmd.ExecuteNonQuery();
+        }
+        catch
+        {
+            // Колонка уже существует
+        }
     }
 
     // Вспомогательный класс для представления элементов ФС
@@ -137,6 +152,94 @@ public class VfsDatabase : IDisposable
         return items;
     }
 
+    public class FileRecord
+    {
+        public string Uid { get; set; } = "";
+        public string MountId { get; set; } = "";
+        public bool IsDir { get; set; }
+        public string Name { get; set; } = "";
+        public string? Parent { get; set; }
+        public DateTime MTime { get; set; }
+        public long Size { get; set; }
+        public int TgMessageId { get; set; }
+        public int InTrash { get; set; }
+        public int Ver { get; set; } = 1;
+    }
+
+    public FileRecord? GetFile(string mountId, string fileName, string? parent = null)
+    {
+        var cmd = _connection.CreateCommand();
+        if (string.IsNullOrEmpty(parent))
+        {
+            cmd.CommandText = @"
+                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+                FROM files
+                WHERE mount_id = @mid AND name = @name AND (parent IS NULL OR parent = 'false') AND (in_trash IS NULL OR in_trash = 0)
+                LIMIT 1
+            ";
+        }
+        else
+        {
+            cmd.CommandText = @"
+                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+                FROM files
+                WHERE mount_id = @mid AND name = @name AND parent = @parent AND (in_trash IS NULL OR in_trash = 0)
+                LIMIT 1
+            ";
+            cmd.Parameters.AddWithValue("@parent", parent);
+        }
+
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        cmd.Parameters.AddWithValue("@name", fileName);
+
+        using var reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            return new FileRecord
+            {
+                Uid = reader.GetString(0),
+                MountId = reader.GetString(1),
+                IsDir = reader.GetInt32(2) == 1,
+                Name = reader.GetString(3),
+                Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
+                MTime = reader.GetDateTime(5),
+                Size = reader.GetInt64(6),
+                TgMessageId = reader.GetInt32(7),
+                InTrash = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9)
+            };
+        }
+        return null;
+    }
+
+    public void MoveFileToTrash(string uid)
+    {
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = "UPDATE files SET in_trash = 1 WHERE uid = @uid";
+        cmd.Parameters.AddWithValue("@uid", uid);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void AddFile(FileRecord file)
+    {
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO files (uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver)
+            VALUES (@uid, @mid, @isdir, @name, @parent, @mtime, @size, @msgid, @trash, @ver)
+        ";
+        cmd.Parameters.AddWithValue("@uid", file.Uid);
+        cmd.Parameters.AddWithValue("@mid", file.MountId);
+        cmd.Parameters.AddWithValue("@isdir", file.IsDir ? 1 : 0);
+        cmd.Parameters.AddWithValue("@name", file.Name);
+        cmd.Parameters.AddWithValue("@parent", (object?)file.Parent ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@mtime", file.MTime);
+        cmd.Parameters.AddWithValue("@size", file.Size);
+        cmd.Parameters.AddWithValue("@msgid", file.TgMessageId);
+        cmd.Parameters.AddWithValue("@trash", file.InTrash);
+        cmd.Parameters.AddWithValue("@ver", file.Ver);
+        cmd.ExecuteNonQuery();
+    }
+
     public System.Collections.Generic.List<VfsItem> GetFiles(string channelName)
     {
         var items = new System.Collections.Generic.List<VfsItem>();
@@ -145,7 +248,9 @@ public class VfsDatabase : IDisposable
             SELECT f.name, f.size, f.mtime, f.isdir 
             FROM files f
             JOIN mounts m ON f.mount_id = m.id
-            WHERE m.channel_name = @cname AND (f.parent IS NULL OR f.parent = 'false')
+            WHERE m.channel_name = @cname 
+              AND (f.parent IS NULL OR f.parent = 'false')
+              AND (f.in_trash IS NULL OR f.in_trash = 0)
         ";
         cmd.Parameters.AddWithValue("@cname", channelName);
         using var reader = cmd.ExecuteReader();

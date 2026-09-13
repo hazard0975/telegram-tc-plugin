@@ -13,6 +13,8 @@ namespace TgVfsPlugin;
 public static unsafe class WfxExports
 {
     private static VfsDatabase? _db;
+    private static int _pluginNumber;
+    private static IntPtr _pProgressProc;
 
     // Класс для хранения состояния поиска
     private class FindState
@@ -200,6 +202,8 @@ public static unsafe class WfxExports
         try
         {
             Logger.Log($"FsInit called (Plugin Number: {pluginNumber})");
+            _pluginNumber = pluginNumber;
+            _pProgressProc = pProgressProc;
             
             // Принудительно загружаем DLL в память процесса до того, как к ней обратится SQLite
             try
@@ -417,5 +421,178 @@ public static unsafe class WfxExports
         }
 
         return 2; // FS_EXEC_ERROR
+    }
+
+    private static bool ReportProgress(string localName, string remoteName, int percentDone)
+    {
+        if (_pProgressProc == IntPtr.Zero) return false;
+        try
+        {
+            var proc = Marshal.GetDelegateForFunctionPointer<Win32Api.ProgressProc>(_pProgressProc);
+            IntPtr pSrc = Marshal.StringToHGlobalAnsi(localName);
+            IntPtr pDst = Marshal.StringToHGlobalAnsi(remoteName);
+            try
+            {
+                int res = proc(_pluginNumber, pSrc, pDst, percentDone);
+                return res == 1; // 1 = пользователь нажал Отмена
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(pSrc);
+                Marshal.FreeHGlobal(pDst);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Progress callback error: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static int HandlePutFile(string localPath, string remotePath, int copyFlags)
+    {
+        Logger.Log($"FsPutFile called: Local='{localPath}', Remote='{remotePath}', Flags={copyFlags}");
+
+        if (!System.IO.File.Exists(localPath))
+        {
+            Logger.Log($"FsPutFile: Local file does not exist: '{localPath}'");
+            return Win32Api.FS_FILE_NOTFOUND;
+        }
+
+        if (_db == null)
+        {
+            Logger.Log("FsPutFile: Database is not initialized.");
+            return Win32Api.FS_FILE_WRITEERROR;
+        }
+
+        string cleanRemote = remotePath.TrimStart('\\', '/');
+        int firstSlash = cleanRemote.IndexOfAny(new[] { '\\', '/' });
+        if (firstSlash <= 0)
+        {
+            Logger.Log($"FsPutFile: Destination is root or invalid. Cannot copy directly to root: '{remotePath}'");
+            return Win32Api.FS_FILE_NOTSUPPORTED;
+        }
+
+        string channelName = cleanRemote.Substring(0, firstSlash);
+        string subPath = cleanRemote.Substring(firstSlash + 1).Replace('/', '\\');
+        string fileName = System.IO.Path.GetFileName(subPath);
+
+        var mount = _db.GetMountByName(channelName);
+        if (mount == null)
+        {
+            Logger.Log($"FsPutFile: Channel '{channelName}' not found in database.");
+            return Win32Api.FS_FILE_NOTFOUND;
+        }
+
+        var existingFile = _db.GetFile(mount.Id, fileName, parent: null);
+        if (existingFile != null)
+        {
+            bool overwrite = (copyFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
+            if (!overwrite)
+            {
+                Logger.Log($"FsPutFile: File '{fileName}' already exists in '{channelName}' and OVERWRITE flag is not set.");
+                return Win32Api.FS_FILE_EXISTS;
+            }
+        }
+
+        try
+        {
+            var fileInfo = new System.IO.FileInfo(localPath);
+            long limitBytes = TelegramManager.IsPremium ? 4294967296L : 2147483648L;
+            if (fileInfo.Length > limitBytes)
+            {
+                Logger.Log($"FsPutFile: File size {fileInfo.Length} bytes exceeds limit of {limitBytes} bytes.");
+                return Win32Api.FS_FILE_WRITEERROR;
+            }
+
+            int messageId = 0;
+            bool wasCancelled = false;
+
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    messageId = await TelegramManager.UploadAndSendFileAsync(
+                        mount.ChannelId,
+                        localPath,
+                        fileName,
+                        subPath,
+                        onProgress: (sent, total) =>
+                        {
+                            int pct = total > 0 ? (int)((sent * 100) / total) : 0;
+                            if (pct > 100) pct = 100;
+                            return ReportProgress(localPath, remotePath, pct);
+                        }
+                    );
+                }
+                catch (OperationCanceledException)
+                {
+                    wasCancelled = true;
+                }
+            }).GetAwaiter().GetResult();
+
+            if (wasCancelled)
+            {
+                Logger.Log($"FsPutFile: Upload was cancelled by user.");
+                return Win32Api.FS_FILE_USERABORT;
+            }
+
+            if (messageId <= 0)
+            {
+                Logger.Log($"FsPutFile: Upload failed (no message ID).");
+                return Win32Api.FS_FILE_WRITEERROR;
+            }
+
+            // Обработка перезаписи: переносим старую версию в корзину и инкрементируем версию
+            int ver = 1;
+            if (existingFile != null)
+            {
+                _db.MoveFileToTrash(existingFile.Uid);
+                ver = existingFile.Ver + 1;
+                Logger.Log($"FsPutFile: Existing file '{fileName}' marked in_trash=1. New version: {ver}");
+            }
+
+            _db.AddFile(new VfsDatabase.FileRecord
+            {
+                Uid = Guid.NewGuid().ToString("N"),
+                MountId = mount.Id,
+                IsDir = false,
+                Name = fileName,
+                Parent = null,
+                MTime = fileInfo.LastWriteTimeUtc,
+                Size = fileInfo.Length,
+                TgMessageId = messageId,
+                InTrash = 0,
+                Ver = ver
+            });
+
+            Logger.Log($"FsPutFile: File '{fileName}' successfully added to database.");
+            Win32Api.RefreshActivePanel();
+
+            return Win32Api.FS_FILE_OK;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"FsPutFile error: {ex}");
+            return Win32Api.FS_FILE_WRITEERROR;
+        }
+    }
+
+    // Загрузка файла в Telegram (ANSI)
+    [UnmanagedCallersOnly(EntryPoint = "FsPutFile", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsPutFile(byte* localName, byte* remoteName, int copyFlags)
+    {
+        string localPath = Marshal.PtrToStringAnsi((IntPtr)localName) ?? "";
+        string remotePath = Marshal.PtrToStringAnsi((IntPtr)remoteName) ?? "";
+        return HandlePutFile(localPath, remotePath, copyFlags);
+    }
+
+    // Загрузка файла в Telegram (Unicode)
+    [UnmanagedCallersOnly(EntryPoint = "FsPutFileW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsPutFileW(char* localName, char* remoteName, int copyFlags)
+    {
+        string localPath = Marshal.PtrToStringUni((IntPtr)localName) ?? "";
+        string remotePath = Marshal.PtrToStringUni((IntPtr)remoteName) ?? "";
+        return HandlePutFile(localPath, remotePath, copyFlags);
     }
 }
