@@ -45,8 +45,7 @@ public static class Win32Api
         if (tcWindow != IntPtr.Zero)
         {
             // Run on a background thread with a small delay so FsExecuteFile returns first
-            System.Threading.Tasks.Task.Run(async () => {
-                await System.Threading.Tasks.Task.Delay(100);
+            System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => {
                 PostMessage(tcWindow, WM_USER + 51, new IntPtr(540), IntPtr.Zero);
             });
         }

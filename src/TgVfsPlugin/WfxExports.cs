@@ -171,8 +171,8 @@ public static unsafe class WfxExports
                     }
                     
                     Logger.Log($"Entering Mirror folder '{channelTitle}'. Sending CD '{localPathToSet}' to target panel.");
-                    System.Threading.Tasks.Task.Run(async () => {
-                        await System.Threading.Tasks.Task.Delay(100);
+                    // Cannot use async/await in unsafe context, use ContinueWith or thread pool
+                    System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => {
                         Win32Api.ChangeInactivePanelDir(localPathToSet);
                     });
                 }
