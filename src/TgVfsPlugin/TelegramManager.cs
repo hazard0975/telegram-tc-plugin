@@ -322,7 +322,7 @@ public static class TelegramManager
             }
         };
 
-        var message = await _client.SendMediaAsync(chat, relativeCaption, media);
+        var message = await _client.SendMessageAsync(chat, relativeCaption, media);
         Logger.Log($"File uploaded successfully! Telegram Message ID: {message.id}");
         return message.id;
     }
