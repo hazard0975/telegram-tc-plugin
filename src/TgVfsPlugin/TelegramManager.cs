@@ -20,24 +20,24 @@ public static class TelegramManager
 
     public static bool IsLoggedIn => _user != null;
 
-    private static string Config(string what)
+    private static string? Config(string what)
     {
         Logger.Log($"[WTelegram Config] Requested: {what}");
-        string result = "";
+        string? result = null;
         switch (what)
         {
             case "api_id": result = GetApiId(); break;
             case "api_hash": result = GetApiHash(); break;
-            case "phone_number": result = InputDialog.Show("Enter your phone number (with +):", "Telegram Login") ?? ""; break;
-            case "verification_code": result = InputDialog.Show("Enter the verification code sent to your Telegram app:", "Telegram Login") ?? ""; break;
-            case "password": result = InputDialog.Show("Enter your 2FA password:", "Telegram Login", isPassword: true) ?? ""; break;
+            case "phone_number": result = InputDialog.Show("Enter your phone number (with +):", "Telegram Login"); break;
+            case "verification_code": result = InputDialog.Show("Enter the verification code sent to your Telegram app:", "Telegram Login"); break;
+            case "password": result = InputDialog.Show("Enter your 2FA password:", "Telegram Login", isPassword: true); break;
             case "session_pathname": result = SessionFile; break;
         }
 
         if (what == "api_hash" || what == "password" || what == "phone_number")
-            Logger.Log($"[WTelegram Config] Returning for {what}: {(string.IsNullOrEmpty(result) ? "EMPTY!" : "***")}");
+            Logger.Log($"[WTelegram Config] Returning for {what}: {(string.IsNullOrEmpty(result) ? "EMPTY/NULL" : "***")}");
         else
-            Logger.Log($"[WTelegram Config] Returning for {what}: {result}");
+            Logger.Log($"[WTelegram Config] Returning for {what}: {result ?? "null"}");
 
         return result;
     }
