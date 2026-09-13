@@ -18,7 +18,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
           
       - name: Build 64-bit (win-x64)
         run: dotnet publish src/TgVfsPlugin/TgVfsPlugin.csproj -c Release -r win-x64 /p:NativeLib=Shared /p:SelfContained=true -o out_x64
@@ -36,11 +36,16 @@ jobs:
       - name: Zip Plugin
         run: Compress-Archive -Path ReleasePackage\* -DestinationPath TelegramVFS.zip
         
+      - name: Get commit message
+        id: commit_msg
+        run: echo "msg=$(git log -1 --pretty=%s)" >> $env:GITHUB_OUTPUT
+        
       - name: Update Continuous Release
         uses: softprops/action-gh-release@v2
         with:
           files: TelegramVFS.zip
-          name: Latest Build
+          name: Build: ${{ steps.commit_msg.outputs.msg }}
+          body: "Auto-generated build for commit: ${{ github.sha }}"
           tag_name: latest
           prerelease: true
         env:
