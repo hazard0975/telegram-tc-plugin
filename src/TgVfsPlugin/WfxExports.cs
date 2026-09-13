@@ -79,6 +79,19 @@ public static unsafe class WfxExports
     {
         Logger.Log($"Requested path: '{pathStr}'");
 
+        if (!TelegramManager.IsLoggedIn)
+        {
+            var loginState = new FindState();
+            loginState.Items.Add(new VfsDatabase.VfsItem 
+            { 
+                Name = "[ Login required.txt ]", 
+                IsDirectory = false, 
+                Size = 100, 
+                Date = DateTime.Now 
+            });
+            return loginState;
+        }
+
         if (_db == null)
         {
             Logger.Log("Error: Database is null.");
@@ -247,5 +260,50 @@ public static unsafe class WfxExports
     {
         _searchStates.TryRemove(hdl, out _);
         return 0; // успех
+    }
+
+    // Выполнение файла (пользователь нажал Enter на файле)
+    [UnmanagedCallersOnly(EntryPoint = "FsExecuteFile", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsExecuteFile(IntPtr MainWin, IntPtr RemoteName, IntPtr Verb)
+    {
+        string path = Marshal.PtrToStringAnsi(RemoteName) ?? "";
+        string verbStr = Marshal.PtrToStringAnsi(Verb) ?? "";
+        return HandleExecuteFile(path, verbStr);
+    }
+
+    // Выполнение файла (Unicode)
+    [UnmanagedCallersOnly(EntryPoint = "FsExecuteFileW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsExecuteFileW(IntPtr MainWin, IntPtr RemoteName, IntPtr Verb)
+    {
+        string path = Marshal.PtrToStringUni(RemoteName) ?? "";
+        string verbStr = Marshal.PtrToStringUni(Verb) ?? "";
+        return HandleExecuteFile(path, verbStr);
+    }
+
+    private static int HandleExecuteFile(string path, string verb)
+    {
+        Logger.Log($"FsExecuteFile called for: {path} (Verb: {verb})");
+
+        if (verb != "open" && verb != "") return 2; // FS_EXEC_ERROR
+
+        if (path.EndsWith("[ Login required.txt ]"))
+        {
+            // Запускаем асинхронный логин в синхронном контексте (чтобы не блокировать UI намертво, но дождаться)
+            System.Threading.Tasks.Task.Run(async () => 
+            {
+                bool success = await TelegramManager.LoginAsync();
+                if (success)
+                {
+                    Logger.Log("Login successful! Requesting panel refresh.");
+                    // В реальном плагине нужно дернуть панель, чтобы она обновилась.
+                    // Обычно это делается посылкой сообщения WM_USER+... в MainWin
+                    // Для прототипа пользователь может сам нажать Ctrl+R.
+                }
+            }).GetAwaiter().GetResult();
+            
+            return 0; // FS_EXEC_OK
+        }
+
+        return 2; // FS_EXEC_ERROR
     }
 }
