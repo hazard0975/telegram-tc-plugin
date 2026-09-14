@@ -556,24 +556,143 @@ public static unsafe class WfxExports
                 return Win32Api.FS_FILE_WRITEERROR;
             }
 
+            long currentPercent = 0;
+            bool userAborted = false;
             int messageId = 0;
-            try
+
+            // Начальное отображение прогресса для инициализации окна Total Commander
+            int initialRes = ReportProgress(localPath, remotePath, 0);
+            if (initialRes == 1)
             {
-                messageId = TelegramManager.UploadAndSendFileAsync(
-                    mount.ChannelId,
-                    localPath,
-                    fileName,
-                    subPath,
-                    onProgress: (sent, total) =>
-                    {
-                        int pct = total > 0 ? (int)((sent * 100) / total) : 0;
-                        if (pct > 100) pct = 100;
-                        int res = ReportProgress(localPath, remotePath, pct);
-                        return res == 1;
-                    }
-                ).GetAwaiter().GetResult();
+                userAborted = true;
             }
-            catch (Exception ex) when (ex is OperationCanceledException || ex.InnerException is OperationCanceledException)
+
+            if (!userAborted)
+            {
+                using var cts = new System.Threading.CancellationTokenSource();
+                using var pauseGate = new System.Threading.ManualResetEventSlim(true);
+                long lastReportTime = Environment.TickCount64;
+
+                var uploadTask = System.Threading.Tasks.Task.Run(() =>
+                    TelegramManager.UploadAndSendFileAsync(
+                        mount.ChannelId,
+                        localPath,
+                        fileName,
+                        subPath,
+                        onProgress: (sent, total) =>
+                        {
+                            int pct = total > 0 ? (int)((sent * 100) / total) : 0;
+                            if (pct > 100) pct = 100;
+                            System.Threading.Interlocked.Exchange(ref currentPercent, pct);
+                            return cts.IsCancellationRequested;
+                        },
+                        cancellationToken: cts.Token,
+                        pauseGate: pauseGate
+                    )
+                );
+
+                // Watchdog task to detect if ReportProgress is blocking (TC is paused)
+                using var watchdogCts = new System.Threading.CancellationTokenSource();
+                var watchdogTask = System.Threading.Tasks.Task.Run(() =>
+                {
+                    while (!uploadTask.IsCompleted && !watchdogCts.IsCancellationRequested && !cts.IsCancellationRequested)
+                    {
+                        long elapsed = Environment.TickCount64 - System.Threading.Interlocked.Read(ref lastReportTime);
+                        if (elapsed > 500)
+                        {
+                            Logger.Log($"Upload paused (TC blocking ReportProgress detected). Pausing stream.");
+                            pauseGate.Reset();
+                        }
+                        System.Threading.Thread.Sleep(100);
+                    }
+                });
+
+                int pauseCheckCounter = 0;
+
+                while (!uploadTask.IsCompleted && !userAborted)
+                {
+                    bool finished = uploadTask.Wait(50);
+                    if (finished) break;
+
+                    int pct = (int)System.Threading.Interlocked.Read(ref currentPercent);
+
+                    System.Threading.Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
+                    int progressRes = ReportProgress(localPath, remotePath, pct);
+                    System.Threading.Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
+
+                    if (progressRes == 1)
+                    {
+                        userAborted = true;
+                        try { cts.Cancel(); } catch { }
+                        pauseGate.Set(); // unblock stream if waiting
+                        break;
+                    }
+
+                    bool tcPaused = (progressRes != 0 && progressRes != 1);
+                    pauseCheckCounter++;
+                    if (!tcPaused && pauseCheckCounter % 4 == 0)
+                    {
+                        tcPaused = Win32Api.IsTotalCommanderPaused();
+                    }
+
+                    if (tcPaused)
+                    {
+                        Logger.Log($"Upload paused (TC pause detected, progress={pct}%). Pausing stream.");
+                        pauseGate.Reset();
+
+                        while (!userAborted)
+                        {
+                            int pausedPct = (int)System.Threading.Interlocked.Read(ref currentPercent);
+                            System.Threading.Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
+                            int pauseRes = ReportProgress(localPath, remotePath, pausedPct);
+                            System.Threading.Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
+
+                            if (pauseRes == 1)
+                            {
+                                userAborted = true;
+                                try { cts.Cancel(); } catch { }
+                                pauseGate.Set();
+                                break;
+                            }
+
+                            bool stillPaused = (pauseRes != 0 && pauseRes != 1) || Win32Api.IsTotalCommanderPaused();
+                            if (!stillPaused)
+                            {
+                                Logger.Log("Upload resumed by TC. Resuming stream.");
+                                pauseGate.Set();
+                                break;
+                            }
+                            System.Threading.Thread.Sleep(100);
+                        }
+                    }
+                }
+
+                try { watchdogCts.Cancel(); } catch { }
+                try { watchdogTask.Wait(500); } catch { }
+
+                try
+                {
+                    messageId = uploadTask.GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                    // Загрузка была отменена пользователем
+                }
+                catch (Exception ex) when (ex.InnerException is OperationCanceledException)
+                {
+                    // Аналогично
+                }
+                catch (Exception ex)
+                {
+                    if (!userAborted)
+                    {
+                        Logger.Log($"FsPutFile error: {ex}");
+                        return Win32Api.FS_FILE_WRITEERROR;
+                    }
+                }
+            }
+
+            if (userAborted)
             {
                 Logger.Log($"FsPutFile: Upload was cancelled by user.");
                 return Win32Api.FS_FILE_USERABORT;
@@ -584,6 +703,9 @@ public static unsafe class WfxExports
                 Logger.Log($"FsPutFile: Upload failed (no message ID).");
                 return Win32Api.FS_FILE_WRITEERROR;
             }
+
+            // Финальный рапорт 100%
+            ReportProgress(localPath, remotePath, 100);
 
             // Обработка перезаписи: переносим старую версию в корзину и инкрементируем версию
             int ver = 1;

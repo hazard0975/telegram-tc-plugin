@@ -266,7 +266,8 @@ public static class TelegramManager
         string fileName, 
         string relativeCaption, 
         Func<long, long, bool>? onProgress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ManualResetEventSlim? pauseGate = null)
     {
         if (_client == null || _user == null)
         {
@@ -298,18 +299,34 @@ public static class TelegramManager
         }
 
         Logger.Log($"Uploading file '{localPath}' to Telegram servers...");
-        InputFileBase inputFile = await _client.UploadFileAsync(localPath, (progress, total) =>
+        FileStream fileStream = File.OpenRead(localPath);
+        Stream effectiveStream = (pauseGate != null)
+            ? new PausableStream(fileStream, pauseGate, cancellationToken)
+            : fileStream;
+
+        InputFileBase inputFile;
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (onProgress != null)
+            inputFile = await _client.UploadFileAsync(effectiveStream, fileName, (progress, total) =>
             {
-                bool abort = onProgress(progress, total);
-                if (abort)
+                cancellationToken.ThrowIfCancellationRequested();
+                if (onProgress != null)
                 {
-                    throw new OperationCanceledException("Upload cancelled by user in Total Commander.");
+                    bool abort = onProgress(progress, total);
+                    if (abort)
+                    {
+                        throw new OperationCanceledException("Upload cancelled by user in Total Commander.");
+                    }
                 }
-            }
-        });
+            });
+        }
+        catch
+        {
+            effectiveStream.Dispose();
+            throw;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         Logger.Log($"Sending uploaded file '{fileName}' as document to channel {channelId}...");
         var media = new InputMediaUploadedDocument
