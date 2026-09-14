@@ -129,6 +129,9 @@ public static class Win32Api
     [DllImport("user32.dll")]
     public static extern bool EnumThreadWindows(uint dwThreadId, EnumWindowsProc lpfn, IntPtr lParam);
 
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
     /// <summary>
     /// Проверяет, нажата ли кнопка "Пауза" в диалоговом окне Total Commander.
     /// В Total Commander при нажатии на кнопку "Пауза" ее текст переключается
@@ -141,16 +144,19 @@ public static class Win32Api
             IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
             if (tcWindow == IntPtr.Zero) return false;
 
-            uint tcThreadId = GetWindowThreadProcessId(tcWindow, out uint tcPid);
-            if (tcThreadId == 0) return false;
+            GetWindowThreadProcessId(tcWindow, out uint tcPid);
+            if (tcPid == 0) return false;
 
             bool isPaused = false;
             var sb = new System.Text.StringBuilder(256);
 
-            // Перечисляем все окна потока Total Commander
-            EnumThreadWindows(tcThreadId, (hWnd, lParam) =>
+            // Перечисляем все окна верхнего уровня в системе
+            EnumWindows((hWnd, lParam) =>
             {
-                // Для каждого верхнеуровневого окна ищем дочерние (кнопки)
+                GetWindowThreadProcessId(hWnd, out uint wndPid);
+                if (wndPid != tcPid) return true; // Ищем окна только процесса TC
+
+                // Для каждого окна TC ищем дочерние (кнопки)
                 EnumChildWindows(hWnd, (childHwnd, childLParam) =>
                 {
                     sb.Clear();
@@ -160,6 +166,8 @@ public static class Win32Api
                         string text = sb.ToString().Trim();
                         // Убираем возможные амперсанды (hotkeys), например "&Resume"
                         text = text.Replace("&", "");
+                        
+                        // Logger.Log($"Found button text: '{text}' in process {wndPid}");
                         
                         // Тексты кнопок снятия с паузы в русской, английской, немецкой и других локализациях TC
                         if (text.Equals("Продолжить", StringComparison.OrdinalIgnoreCase) ||
@@ -176,7 +184,7 @@ public static class Win32Api
                     return true;
                 }, IntPtr.Zero);
 
-                return !isPaused; // если нашли, останавливаем и перечисление окон потока
+                return !isPaused; // если нашли, останавливаем и перечисление окон верхнего уровня
             }, IntPtr.Zero);
 
             return isPaused;

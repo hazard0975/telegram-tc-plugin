@@ -738,8 +738,38 @@ public static unsafe class WfxExports
             // Активный цикл ожидания в вызывающем потоке Total Commander:
             // Каждые 50 мс опрашиваем состояние и вызываем ReportProgress,
             // чтобы окно TC не зависало и мгновенно реагировало на "Отмена", "Пауза" и крестик [X]
-            bool isPaused = false;
+            volatile bool isPaused = false;
             int pauseCheckCounter = 0;
+            long lastReportTime = Environment.TickCount64;
+
+            // Watchdog task to detect if ReportProgress is blocking (TC is paused)
+            Task.Run(async () =>
+            {
+                while (!downloadTask.IsCompleted && !userAborted && !cts.IsCancellationRequested)
+                {
+                    long elapsed = Environment.TickCount64 - Interlocked.Read(ref lastReportTime);
+                    if (elapsed > 500)
+                    {
+                        // ReportProgress is blocking for more than 500ms! TC must be paused.
+                        if (!isPaused)
+                        {
+                            isPaused = true;
+                            pauseGate.Reset();
+                            Logger.Log($"Download paused (TC blocking ReportProgress detected).");
+                        }
+                    }
+                    else
+                    {
+                        if (isPaused)
+                        {
+                            isPaused = false;
+                            pauseGate.Set();
+                            Logger.Log($"Download resumed (TC ReportProgress unblocked).");
+                        }
+                    }
+                    await Task.Delay(100);
+                }
+            });
 
             while (!downloadTask.IsCompleted && !userAborted)
             {
@@ -748,7 +778,10 @@ public static unsafe class WfxExports
 
                 int pct = System.Threading.Volatile.Read(ref currentPercent);
 
+                Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
                 int progressRes = ReportProgress(remotePath, localPath, pct);
+                Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
+
                 if (progressRes == 1)
                 {
                     userAborted = true;
@@ -773,13 +806,13 @@ public static unsafe class WfxExports
                     pauseGate.Reset(); // Блокируем поток сетевой загрузки и запись в файл
                     Logger.Log($"Download paused (TC pause detected, progress={pct}%).");
                 }
-                else if (!tcPaused && isPaused)
+                else if (!tcPaused && isPaused && (Environment.TickCount64 - Interlocked.Read(ref lastReportTime)) < 200)
                 {
                     // Пользователь нажал "Продолжить" / "Resume"
                     isPaused = false;
                     pauseGate.Set(); // Возобновляем поток закачки
-                    Logger.Log($"Download resumed (TC resume detected, progress={pct}%).");
                 }
+            }
             }
 
             // Гарантируем открытие шлюза при выходе
