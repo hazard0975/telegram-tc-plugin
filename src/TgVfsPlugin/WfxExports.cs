@@ -15,6 +15,7 @@ public static unsafe class WfxExports
     private static VfsDatabase? _db;
     private static int _pluginNumber;
     private static IntPtr _pProgressProc;
+    private static Win32Api.ProgressProc? _progressProcDelegate;
     private static string? _lastMirrorPath;
 
     // Класс для хранения состояния поиска
@@ -214,6 +215,17 @@ public static unsafe class WfxExports
             Logger.Log($"FsInit called (Plugin Number: {pluginNumber})");
             _pluginNumber = pluginNumber;
             _pProgressProc = pProgressProc;
+            if (_pProgressProc != IntPtr.Zero)
+            {
+                try
+                {
+                    _progressProcDelegate = Marshal.GetDelegateForFunctionPointer<Win32Api.ProgressProc>(_pProgressProc);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to get ProgressProc delegate: {ex.Message}");
+                }
+            }
             
             // Принудительно загружаем DLL в память процесса до того, как к ней обратится SQLite
             try
@@ -433,18 +445,27 @@ public static unsafe class WfxExports
         return 2; // FS_EXEC_ERROR
     }
 
-    private static bool ReportProgress(string localName, string remoteName, int percentDone)
+    private static bool ReportProgress(string sourceName, string targetName, int percentDone)
     {
-        if (_pProgressProc == IntPtr.Zero) return false;
-        try
+        if (_progressProcDelegate == null && _pProgressProc != IntPtr.Zero)
         {
-            var proc = Marshal.GetDelegateForFunctionPointer<Win32Api.ProgressProc>(_pProgressProc);
-            IntPtr pSrc = Marshal.StringToHGlobalAnsi(localName);
-            IntPtr pDst = Marshal.StringToHGlobalAnsi(remoteName);
             try
             {
-                int res = proc(_pluginNumber, pSrc, pDst, percentDone);
-                return res == 1; // 1 = пользователь нажал Отмена
+                _progressProcDelegate = Marshal.GetDelegateForFunctionPointer<Win32Api.ProgressProc>(_pProgressProc);
+            }
+            catch { }
+        }
+
+        if (_progressProcDelegate == null) return false;
+
+        try
+        {
+            IntPtr pSrc = Marshal.StringToHGlobalAnsi(sourceName);
+            IntPtr pDst = Marshal.StringToHGlobalAnsi(targetName);
+            try
+            {
+                int res = _progressProcDelegate(_pluginNumber, pSrc, pDst, percentDone);
+                return res == 1; // 1 = пользователь нажал Отмена или [X]
             }
             finally
             {
@@ -666,42 +687,75 @@ public static unsafe class WfxExports
 
             Logger.Log($"FsGetFile: Starting download of '{fileName}' (TgMessageId: {fileRecord.TgMessageId}, Size: {fileRecord.Size} bytes)...");
 
-            int lastReportedPercent = -1;
-            bool downloadAborted = false;
-
+            int currentPercent = 0;
             using var cts = new System.Threading.CancellationTokenSource();
 
-            TelegramManager.DownloadFileAsync(
-                mount.ChannelId,
-                fileRecord.TgMessageId,
-                localPath,
-                onProgress: (progress, total) =>
-                {
-                    int percent = total > 0 ? (int)((progress * 100) / total) : 0;
-                    if (percent > 100) percent = 100;
-
-                    if (percent != lastReportedPercent)
-                    {
-                        lastReportedPercent = percent;
-                        // В WFX sourceName = remotePath, targetName = localPath
-                        bool abort = ReportProgress(remotePath, localPath, percent);
-                        if (abort)
-                        {
-                            downloadAborted = true;
-                            cts.Cancel();
-                            return true;
-                        }
-                    }
-                    return false;
-                },
-                cancellationToken: cts.Token
-            ).GetAwaiter().GetResult();
-
-            if (downloadAborted)
+            // Запускаем асинхронное скачивание в пуле потоков
+            var downloadTask = System.Threading.Tasks.Task.Run(async () =>
             {
+                await TelegramManager.DownloadFileAsync(
+                    mount.ChannelId,
+                    fileRecord.TgMessageId,
+                    localPath,
+                    onProgress: (progress, total) =>
+                    {
+                        int pct = total > 0 ? (int)((progress * 100) / total) : 0;
+                        if (pct > 100) pct = 100;
+                        System.Threading.Interlocked.Exchange(ref currentPercent, pct);
+                        return cts.IsCancellationRequested;
+                    },
+                    cancellationToken: cts.Token
+                );
+            });
+
+            bool userAborted = false;
+
+            // Начальное отображение прогресса для инициализации окна Total Commander
+            if (ReportProgress(remotePath, localPath, 0))
+            {
+                userAborted = true;
+                cts.Cancel();
+            }
+
+            // Активный цикл ожидания в вызывающем потоке Total Commander:
+            // Каждые 50 мс вызываем ReportProgress прямо из потока Total Commander,
+            // чтобы окно TC не зависало и мгновенно реагировало на клики по "Отмена", "Пауза" и крестику [X]
+            while (!downloadTask.IsCompleted && !userAborted)
+            {
+                bool finished = downloadTask.Wait(50);
+                if (finished) break;
+
+                int pct = System.Threading.Volatile.Read(ref currentPercent);
+                if (ReportProgress(remotePath, localPath, pct))
+                {
+                    userAborted = true;
+                    cts.Cancel();
+                    break;
+                }
+            }
+
+            if (userAborted)
+            {
+                try
+                {
+                    // Даем задаче короткое время на корректное закрытие FileStream
+                    downloadTask.Wait(1500);
+                }
+                catch { }
+
                 Logger.Log($"FsGetFile: Download cancelled by user.");
                 return Win32Api.FS_FILE_USERABORT;
             }
+
+            // Если задача завершилась с ошибкой, распаковываем исключение
+            if (downloadTask.IsFaulted)
+            {
+                var baseEx = downloadTask.Exception?.GetBaseException() ?? downloadTask.Exception!;
+                throw baseEx;
+            }
+
+            // Финальный рапорт 100%
+            ReportProgress(remotePath, localPath, 100);
 
             // Восстанавливаем точную дату изменения файла в соответствии с Telegram
             if (File.Exists(localPath))
