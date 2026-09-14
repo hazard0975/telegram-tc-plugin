@@ -738,12 +738,12 @@ public static unsafe class WfxExports
             // Активный цикл ожидания в вызывающем потоке Total Commander:
             // Каждые 50 мс опрашиваем состояние и вызываем ReportProgress,
             // чтобы окно TC не зависало и мгновенно реагировало на "Отмена", "Пауза" и крестик [X]
-            volatile bool isPaused = false;
+            long isPausedFlag = 0;
             int pauseCheckCounter = 0;
             long lastReportTime = Environment.TickCount64;
 
             // Watchdog task to detect if ReportProgress is blocking (TC is paused)
-            Task.Run(async () =>
+            Task.Run(() =>
             {
                 while (!downloadTask.IsCompleted && !userAborted && !cts.IsCancellationRequested)
                 {
@@ -751,23 +751,23 @@ public static unsafe class WfxExports
                     if (elapsed > 500)
                     {
                         // ReportProgress is blocking for more than 500ms! TC must be paused.
-                        if (!isPaused)
+                        if (Interlocked.Read(ref isPausedFlag) == 0)
                         {
-                            isPaused = true;
+                            Interlocked.Exchange(ref isPausedFlag, 1);
                             pauseGate.Reset();
                             Logger.Log($"Download paused (TC blocking ReportProgress detected).");
                         }
                     }
                     else
                     {
-                        if (isPaused)
+                        if (Interlocked.Read(ref isPausedFlag) == 1)
                         {
-                            isPaused = false;
+                            Interlocked.Exchange(ref isPausedFlag, 0);
                             pauseGate.Set();
                             Logger.Log($"Download resumed (TC ReportProgress unblocked).");
                         }
                     }
-                    await Task.Delay(100);
+                    System.Threading.Thread.Sleep(100);
                 }
             });
 
@@ -799,20 +799,19 @@ public static unsafe class WfxExports
                     tcPaused = Win32Api.IsTotalCommanderPaused();
                 }
 
-                if (tcPaused && !isPaused)
+                if (tcPaused && Interlocked.Read(ref isPausedFlag) == 0)
                 {
                     // Пользователь нажал "Пауза"
-                    isPaused = true;
+                    Interlocked.Exchange(ref isPausedFlag, 1);
                     pauseGate.Reset(); // Блокируем поток сетевой загрузки и запись в файл
                     Logger.Log($"Download paused (TC pause detected, progress={pct}%).");
                 }
-                else if (!tcPaused && isPaused && (Environment.TickCount64 - Interlocked.Read(ref lastReportTime)) < 200)
+                else if (!tcPaused && Interlocked.Read(ref isPausedFlag) == 1 && (Environment.TickCount64 - Interlocked.Read(ref lastReportTime)) < 200)
                 {
                     // Пользователь нажал "Продолжить" / "Resume"
-                    isPaused = false;
+                    Interlocked.Exchange(ref isPausedFlag, 0);
                     pauseGate.Set(); // Возобновляем поток закачки
                 }
-            }
             }
 
             // Гарантируем открытие шлюза при выходе
