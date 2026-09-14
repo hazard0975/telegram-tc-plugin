@@ -15,8 +15,14 @@ public static class Logger
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-            // Очищаем лог при старте плагина
-            File.WriteAllText(LogPath, $"--- Log started at {DateTime.Now} ---\n");
+            string arch = Environment.Is64BitProcess ? "x64 (64-bit)" : "x86 (32-bit)";
+            string dotnetVer = Environment.Version.ToString();
+            string osVer = Environment.OSVersion.ToString();
+            
+            string header = $"--- Telegram VFS Log started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ---\n" +
+                            $"[Environment] Process: {arch}, .NET: {dotnetVer}, OS: {osVer}\n" +
+                            $"------------------------------------------------------------\n";
+            File.WriteAllText(LogPath, header);
         }
         catch { }
     }

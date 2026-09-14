@@ -227,7 +227,8 @@ public static unsafe class WfxExports
     {
         try
         {
-            Logger.Log($"FsInit/FsInitW called (Plugin Number: {pluginNumber})");
+            string initMode = _isUnicode ? "FsInitW (Unicode)" : "FsInit (ANSI)";
+            Logger.Log($"Plugin initialization: {initMode}, PluginNumber={pluginNumber}");
             _pluginNumber = pluginNumber;
             _pProgressProc = pProgressProc;
             if (_pProgressProc != IntPtr.Zero)
