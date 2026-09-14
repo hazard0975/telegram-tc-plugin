@@ -665,10 +665,22 @@ public static unsafe class WfxExports
                             System.Threading.Thread.Sleep(100);
                         }
                     }
+                    else
+                    {
+                        // Если TC не на паузе, но шлюз был сброшен сторожевым таймером во время блокировки ReportProgress — открываем шлюз
+                        if (!pauseGate.IsSet)
+                        {
+                            Logger.Log("Upload unblocked / resumed. Setting pauseGate.");
+                            pauseGate.Set();
+                        }
+                    }
                 }
 
                 try { watchdogCts.Cancel(); } catch { }
                 try { watchdogTask.Wait(500); } catch { }
+
+                // Гарантируем, что шлюз открыт, чтобы фоновый таск не завис перед завершением
+                pauseGate.Set();
 
                 try
                 {

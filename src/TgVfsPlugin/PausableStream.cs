@@ -25,7 +25,12 @@ public class PausableStream : Stream
 
     private void WaitIfNotPaused()
     {
-        _pauseGate.Wait(_cancellationToken);
+        if (!_pauseGate.IsSet)
+        {
+            Logger.Log("PausableStream: Stream operation paused by gate. Waiting for unpause...");
+            _pauseGate.Wait(_cancellationToken);
+            Logger.Log("PausableStream: Stream operation unpaused. Continuing data transfer.");
+        }
     }
 
     public override bool CanRead => _baseStream.CanRead;
