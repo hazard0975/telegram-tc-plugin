@@ -121,6 +121,9 @@ public static class Win32Api
     public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
     [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
 
     /// <summary>
@@ -135,25 +138,18 @@ public static class Win32Api
             IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
             if (tcWindow == IntPtr.Zero) return false;
 
-            uint tcPid = 0;
-            unsafe
-            {
-                GetWindowThreadProcessId(tcWindow, (IntPtr)(&tcPid));
-            }
+            GetWindowThreadProcessId(tcWindow, out uint tcPid);
             if (tcPid == 0) return false;
 
+            uint targetPid = tcPid;
             bool isPaused = false;
             var sb = new System.Text.StringBuilder(256);
 
             // Перечисляем все дочерние окна процессов Total Commander
             EnumChildWindows(IntPtr.Zero, (hWnd, lParam) =>
             {
-                unsafe
-                {
-                    uint wndPid = 0;
-                    GetWindowThreadProcessId(hWnd, (IntPtr)(&wndPid));
-                    if (wndPid != tcPid) return true; // продолжаем поиск
-                }
+                GetWindowThreadProcessId(hWnd, out uint wndPid);
+                if (wndPid != targetPid) return true; // продолжаем поиск
 
                 sb.Clear();
                 int len = GetWindowText(hWnd, sb, 256);
