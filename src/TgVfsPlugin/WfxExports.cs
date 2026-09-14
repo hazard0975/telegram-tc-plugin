@@ -623,7 +623,7 @@ public static unsafe class WfxExports
         }
 
         var mounts = _db.GetMounts();
-        var mount = mounts.FirstOrDefault(m => string.Equals(m.ChannelName, channelFolderName, StringComparison.OrdinalIgnoreCase));
+        var mount = mounts.FirstOrDefault(m => string.Equals(m.Name, channelFolderName, StringComparison.OrdinalIgnoreCase));
         if (mount == null)
         {
             Logger.Log($"FsGetFile: Mount '{channelFolderName}' not found.");
@@ -632,7 +632,7 @@ public static unsafe class WfxExports
 
         // Поиск файла в базе данных
         var files = _db.GetFiles(mount.Id);
-        var fileRecord = files.FirstOrDefault(f => !f.IsDir && string.Equals(f.Name, fileName, StringComparison.OrdinalIgnoreCase));
+        var fileRecord = files.FirstOrDefault(f => !f.IsFolder && string.Equals(f.Name, fileName, StringComparison.OrdinalIgnoreCase));
 
         if (fileRecord == null || fileRecord.TgMessageId <= 0)
         {

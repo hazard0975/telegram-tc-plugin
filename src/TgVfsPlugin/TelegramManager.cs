@@ -363,25 +363,24 @@ public static class TelegramManager
             throw new Exception($"Channel with ID {channelId} not found in Telegram account chats.");
         }
 
-        InputPeer peer = chat switch
+        if (chat is not Channel channel)
         {
-            Channel ch => new InputPeerChannel(ch.id, ch.access_hash),
-            Chat c => new InputPeerChat(c.id),
-            User u => new InputPeerUser(u.id, u.access_hash),
-            _ => throw new Exception($"Unsupported chat type for channel {channelId}")
-        };
+            throw new Exception($"Chat {channelId} is not a broadcast/megagroup channel.");
+        }
+
+        var inputChannel = new InputChannel(channel.id, channel.access_hash);
 
         Logger.Log($"Fetching message {messageId} from channel {channelId}...");
-        var messagesBase = await _client.Channels_GetMessages(chat as InputChannel ?? (chat is Channel c ? new InputChannel(c.id, c.access_hash) : throw new Exception("Expected channel")), new InputMessage[] { new InputMessageID { id = messageId } });
+        var messagesBase = await _client.Channels_GetMessages(inputChannel, new InputMessage[] { new InputMessageID { id = messageId } });
 
-        Message? targetMsg = null;
+        TL.Message? targetMsg = null;
         if (messagesBase is Messages_ChannelMessages channelMessages)
         {
-            targetMsg = channelMessages.messages?.OfType<Message>().FirstOrDefault(m => m.id == messageId);
+            targetMsg = channelMessages.messages?.OfType<TL.Message>().FirstOrDefault(m => m.id == messageId);
         }
         else if (messagesBase is Messages_Messages regularMessages)
         {
-            targetMsg = regularMessages.messages?.OfType<Message>().FirstOrDefault(m => m.id == messageId);
+            targetMsg = regularMessages.messages?.OfType<TL.Message>().FirstOrDefault(m => m.id == messageId);
         }
 
         if (targetMsg == null || targetMsg.media == null)
@@ -389,18 +388,19 @@ public static class TelegramManager
             throw new FileNotFoundException($"Message {messageId} or its media not found in channel {channelId}.");
         }
 
-        IObject mediaToDownload;
+        Document? docToDownload = null;
+        Photo? photoToDownload = null;
         long expectedTotalBytes = 0;
 
         if (targetMsg.media is MessageMediaDocument docMedia && docMedia.document is Document doc)
         {
-            mediaToDownload = doc;
+            docToDownload = doc;
             expectedTotalBytes = doc.size;
         }
         else if (targetMsg.media is MessageMediaPhoto photoMedia && photoMedia.photo is Photo photo)
         {
-            mediaToDownload = photo;
-            expectedTotalBytes = photo.LargestPhotoSize?.Size ?? 0;
+            photoToDownload = photo;
+            expectedTotalBytes = 0; // Для фото точный размер может варьироваться
         }
         else
         {
@@ -455,21 +455,40 @@ public static class TelegramManager
                 fileStream.Seek(existingBytes, SeekOrigin.Begin);
             }
 
-            await _client.DownloadFileAsync(mediaToDownload, fileStream, progress: (progress, total) =>
+            if (docToDownload != null)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (onProgress != null)
+                await _client.DownloadFileAsync(docToDownload, fileStream, progress: (progress, total) =>
                 {
-                    // progress передается как количество байт в текущей сессии скачивания
-                    long currentTotalProgress = existingBytes + progress;
-                    long reportedTotal = expectedTotalBytes > 0 ? expectedTotalBytes : (existingBytes + total);
-                    bool abort = onProgress(currentTotalProgress, reportedTotal);
-                    if (abort)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (onProgress != null)
                     {
-                        throw new OperationCanceledException("Download cancelled by user in Total Commander.");
+                        long currentTotalProgress = existingBytes + progress;
+                        long reportedTotal = expectedTotalBytes > 0 ? expectedTotalBytes : (existingBytes + total);
+                        bool abort = onProgress(currentTotalProgress, reportedTotal);
+                        if (abort)
+                        {
+                            throw new OperationCanceledException("Download cancelled by user in Total Commander.");
+                        }
                     }
-                }
-            });
+                });
+            }
+            else if (photoToDownload != null)
+            {
+                await _client.DownloadFileAsync(photoToDownload, fileStream, progress: (progress, total) =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (onProgress != null)
+                    {
+                        long currentTotalProgress = existingBytes + progress;
+                        long reportedTotal = expectedTotalBytes > 0 ? expectedTotalBytes : (existingBytes + total);
+                        bool abort = onProgress(currentTotalProgress, reportedTotal);
+                        if (abort)
+                        {
+                            throw new OperationCanceledException("Download cancelled by user in Total Commander.");
+                        }
+                    }
+                });
+            }
         }
         finally
         {
