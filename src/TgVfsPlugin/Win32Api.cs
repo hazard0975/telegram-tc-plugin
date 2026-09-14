@@ -36,6 +36,15 @@ public static class Win32Api
     public const int FS_COPYFLAGS_EXISTS_SAMECASE = 8;
     public const int FS_COPYFLAGS_EXISTS_DIFFERENTCASE = 16;
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RemoteInfoStruct
+    {
+        public uint SizeLow;
+        public uint SizeHigh;
+        public FILETIME LastWriteTime;
+        public int Attr;
+    }
+
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     public delegate int ProgressProc(int pluginNr, IntPtr sourceName, IntPtr targetName, int percentDone);
 

@@ -594,4 +594,164 @@ public static unsafe class WfxExports
         string remotePath = Marshal.PtrToStringUni((IntPtr)remoteName) ?? "";
         return HandlePutFile(localPath, remotePath, copyFlags);
     }
+
+    private static int HandleGetFile(string remotePath, string localPath, int copyFlags, Win32Api.RemoteInfoStruct* ri)
+    {
+        Logger.Log($"FsGetFile called: Remote='{remotePath}', Local='{localPath}', Flags={copyFlags}");
+
+        if (_db == null)
+        {
+            Logger.Log("FsGetFile: Database is not initialized.");
+            return Win32Api.FS_FILE_READERROR;
+        }
+
+        string cleanRemote = remotePath.TrimStart('\\', '/');
+        int firstSlash = cleanRemote.IndexOfAny(new[] { '\\', '/' });
+        if (firstSlash <= 0)
+        {
+            Logger.Log($"FsGetFile: Invalid remote path or root directory: '{remotePath}'");
+            return Win32Api.FS_FILE_NOTSUPPORTED;
+        }
+
+        string channelFolderName = cleanRemote.Substring(0, firstSlash);
+        string fileName = cleanRemote.Substring(firstSlash + 1).TrimStart('\\', '/');
+
+        // Игнорируем служебные элементы
+        if (fileName == "[+] Создать папку" || fileName == "[ Login required.txt ]")
+        {
+            return Win32Api.FS_FILE_NOTSUPPORTED;
+        }
+
+        var mounts = _db.GetMounts();
+        var mount = mounts.FirstOrDefault(m => string.Equals(m.ChannelName, channelFolderName, StringComparison.OrdinalIgnoreCase));
+        if (mount == null)
+        {
+            Logger.Log($"FsGetFile: Mount '{channelFolderName}' not found.");
+            return Win32Api.FS_FILE_NOTFOUND;
+        }
+
+        // Поиск файла в базе данных
+        var files = _db.GetFiles(mount.Id);
+        var fileRecord = files.FirstOrDefault(f => !f.IsDir && string.Equals(f.Name, fileName, StringComparison.OrdinalIgnoreCase));
+
+        if (fileRecord == null || fileRecord.TgMessageId <= 0)
+        {
+            Logger.Log($"FsGetFile: File '{fileName}' not found in DB or has no Telegram Message ID.");
+            return Win32Api.FS_FILE_NOTFOUND;
+        }
+
+        try
+        {
+            // Проверка существующего локального файла
+            if (File.Exists(localPath))
+            {
+                var existingInfo = new FileInfo(localPath);
+                bool sameSize = existingInfo.Length == fileRecord.Size;
+                bool sameTime = Math.Abs((existingInfo.LastWriteTimeUtc - fileRecord.MTime).TotalSeconds) < 2;
+
+                if (sameSize && sameTime)
+                {
+                    Logger.Log($"FsGetFile: Local file '{localPath}' already exists with identical size ({fileRecord.Size}) and mtime. Skipping download.");
+                    return Win32Api.FS_FILE_OK;
+                }
+
+                bool canOverwrite = (copyFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
+                bool canResume = (copyFlags & Win32Api.FS_COPYFLAGS_RESUME) != 0;
+
+                if (!canOverwrite && !canResume)
+                {
+                    Logger.Log($"FsGetFile: Target file '{localPath}' exists but is different and OVERWRITE flag not set.");
+                    return Win32Api.FS_FILE_EXISTS;
+                }
+            }
+
+            Logger.Log($"FsGetFile: Starting download of '{fileName}' (TgMessageId: {fileRecord.TgMessageId}, Size: {fileRecord.Size} bytes)...");
+
+            int lastReportedPercent = -1;
+            bool downloadAborted = false;
+
+            using var cts = new System.Threading.CancellationTokenSource();
+
+            TelegramManager.DownloadFileAsync(
+                mount.ChannelId,
+                fileRecord.TgMessageId,
+                localPath,
+                onProgress: (progress, total) =>
+                {
+                    int percent = total > 0 ? (int)((progress * 100) / total) : 0;
+                    if (percent > 100) percent = 100;
+
+                    if (percent != lastReportedPercent)
+                    {
+                        lastReportedPercent = percent;
+                        // В WFX sourceName = remotePath, targetName = localPath
+                        bool abort = ReportProgress(remotePath, localPath, percent);
+                        if (abort)
+                        {
+                            downloadAborted = true;
+                            cts.Cancel();
+                            return true;
+                        }
+                    }
+                    return false;
+                },
+                cancellationToken: cts.Token
+            ).GetAwaiter().GetResult();
+
+            if (downloadAborted)
+            {
+                Logger.Log($"FsGetFile: Download cancelled by user.");
+                return Win32Api.FS_FILE_USERABORT;
+            }
+
+            // Восстанавливаем точную дату изменения файла в соответствии с Telegram
+            if (File.Exists(localPath))
+            {
+                try
+                {
+                    File.SetLastWriteTimeUtc(localPath, fileRecord.MTime);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Warning: Failed to set LastWriteTimeUtc on '{localPath}': {ex.Message}");
+                }
+            }
+
+            Logger.Log($"FsGetFile: Successfully downloaded '{fileName}' -> '{localPath}'.");
+            return Win32Api.FS_FILE_OK;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.Log($"FsGetFile: Download cancelled by user (OperationCanceledException).");
+            return Win32Api.FS_FILE_USERABORT;
+        }
+        catch (FileNotFoundException ex)
+        {
+            Logger.Log($"FsGetFile FileNotFound: {ex.Message}");
+            return Win32Api.FS_FILE_NOTFOUND;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"FsGetFile error: {ex}");
+            return Win32Api.FS_FILE_READERROR;
+        }
+    }
+
+    // Скачивание файла из Telegram (ANSI)
+    [UnmanagedCallersOnly(EntryPoint = "FsGetFile", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsGetFile(byte* remoteName, byte* localName, int copyFlags, Win32Api.RemoteInfoStruct* ri)
+    {
+        string remotePath = Marshal.PtrToStringAnsi((IntPtr)remoteName) ?? "";
+        string localPath = Marshal.PtrToStringAnsi((IntPtr)localName) ?? "";
+        return HandleGetFile(remotePath, localPath, copyFlags, ri);
+    }
+
+    // Скачивание файла из Telegram (Unicode)
+    [UnmanagedCallersOnly(EntryPoint = "FsGetFileW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsGetFileW(char* remoteName, char* localName, int copyFlags, Win32Api.RemoteInfoStruct* ri)
+    {
+        string remotePath = Marshal.PtrToStringUni((IntPtr)remoteName) ?? "";
+        string localPath = Marshal.PtrToStringUni((IntPtr)localName) ?? "";
+        return HandleGetFile(remotePath, localPath, copyFlags, ri);
+    }
 }

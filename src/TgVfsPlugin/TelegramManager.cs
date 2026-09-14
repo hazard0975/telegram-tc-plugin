@@ -326,4 +326,164 @@ public static class TelegramManager
         Logger.Log($"File uploaded successfully! Telegram Message ID: {message.id}");
         return message.id;
     }
+
+    public static async Task DownloadFileAsync(
+        long channelId,
+        int messageId,
+        string targetLocalPath,
+        Func<long, long, bool>? onProgress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_client == null || _user == null)
+        {
+            Logger.Log("DownloadFileAsync: Client not logged in, attempting silent login...");
+            await LoginAsync(silent: true);
+            if (_client == null || _user == null)
+            {
+                throw new InvalidOperationException("Not logged in to Telegram.");
+            }
+        }
+
+        Logger.Log($"Resolving channel {channelId} for download...");
+        if (!_chatsCache.TryGetValue(channelId, out var chat))
+        {
+            var allChats = await _client.Messages_GetAllChats();
+            if (allChats?.chats != null)
+            {
+                foreach (var kvp in allChats.chats)
+                {
+                    _chatsCache[kvp.Key] = kvp.Value;
+                }
+            }
+            _chatsCache.TryGetValue(channelId, out chat);
+        }
+
+        if (chat == null)
+        {
+            throw new Exception($"Channel with ID {channelId} not found in Telegram account chats.");
+        }
+
+        InputPeer peer = chat switch
+        {
+            Channel ch => new InputPeerChannel(ch.id, ch.access_hash),
+            Chat c => new InputPeerChat(c.id),
+            User u => new InputPeerUser(u.id, u.access_hash),
+            _ => throw new Exception($"Unsupported chat type for channel {channelId}")
+        };
+
+        Logger.Log($"Fetching message {messageId} from channel {channelId}...");
+        var messagesBase = await _client.Channels_GetMessages(chat as InputChannel ?? (chat is Channel c ? new InputChannel(c.id, c.access_hash) : throw new Exception("Expected channel")), new InputMessage[] { new InputMessageID { id = messageId } });
+
+        Message? targetMsg = null;
+        if (messagesBase is Messages_ChannelMessages channelMessages)
+        {
+            targetMsg = channelMessages.messages?.OfType<Message>().FirstOrDefault(m => m.id == messageId);
+        }
+        else if (messagesBase is Messages_Messages regularMessages)
+        {
+            targetMsg = regularMessages.messages?.OfType<Message>().FirstOrDefault(m => m.id == messageId);
+        }
+
+        if (targetMsg == null || targetMsg.media == null)
+        {
+            throw new FileNotFoundException($"Message {messageId} or its media not found in channel {channelId}.");
+        }
+
+        IObject mediaToDownload;
+        long expectedTotalBytes = 0;
+
+        if (targetMsg.media is MessageMediaDocument docMedia && docMedia.document is Document doc)
+        {
+            mediaToDownload = doc;
+            expectedTotalBytes = doc.size;
+        }
+        else if (targetMsg.media is MessageMediaPhoto photoMedia && photoMedia.photo is Photo photo)
+        {
+            mediaToDownload = photo;
+            expectedTotalBytes = photo.LargestPhotoSize?.Size ?? 0;
+        }
+        else
+        {
+            throw new NotSupportedException($"Unsupported media type in message {messageId}: {targetMsg.media.GetType().Name}");
+        }
+
+        // Подготовка временного файла .tgpart
+        string targetDir = Path.GetDirectoryName(targetLocalPath) ?? "";
+        if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
+        {
+            Directory.CreateDirectory(targetDir);
+        }
+
+        string partPath = targetLocalPath + ".tgpart";
+        long existingBytes = 0;
+
+        if (File.Exists(partPath))
+        {
+            try
+            {
+                var fi = new FileInfo(partPath);
+                existingBytes = fi.Length;
+                if (expectedTotalBytes > 0 && existingBytes >= expectedTotalBytes)
+                {
+                    // Файл был полностью скачан, но не успел переименоваться
+                    Logger.Log($"Existing .tgpart file is already fully downloaded ({existingBytes} bytes). Overwriting part file.");
+                    existingBytes = 0;
+                }
+                else
+                {
+                    Logger.Log($"Found existing .tgpart file: {existingBytes} / {expectedTotalBytes} bytes. Resuming download...");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Error checking existing .tgpart file: {ex.Message}. Starting fresh.");
+                existingBytes = 0;
+            }
+        }
+
+        FileStream fileStream = new FileStream(
+            partPath, 
+            existingBytes > 0 ? FileMode.OpenOrCreate : FileMode.Create, 
+            FileAccess.ReadWrite, 
+            FileShare.None);
+
+        try
+        {
+            if (existingBytes > 0)
+            {
+                // Смещаем поток к концу существующего фрагмента для докачки
+                fileStream.Seek(existingBytes, SeekOrigin.Begin);
+            }
+
+            await _client.DownloadFileAsync(mediaToDownload, fileStream, progress: (progress, total) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (onProgress != null)
+                {
+                    // progress передается как количество байт в текущей сессии скачивания
+                    long currentTotalProgress = existingBytes + progress;
+                    long reportedTotal = expectedTotalBytes > 0 ? expectedTotalBytes : (existingBytes + total);
+                    bool abort = onProgress(currentTotalProgress, reportedTotal);
+                    if (abort)
+                    {
+                        throw new OperationCanceledException("Download cancelled by user in Total Commander.");
+                    }
+                }
+            });
+        }
+        finally
+        {
+            fileStream.Flush();
+            fileStream.Dispose();
+        }
+
+        Logger.Log($"Download completed into .tgpart ({partPath}). Moving to target '{targetLocalPath}'...");
+
+        if (File.Exists(targetLocalPath))
+        {
+            File.Delete(targetLocalPath);
+        }
+        File.Move(partPath, targetLocalPath);
+        Logger.Log($"File successfully downloaded and moved to: {targetLocalPath}");
+    }
 }
