@@ -41,6 +41,31 @@ public static class Win32Api
     public const int BG_UPLOAD = 2;
     public const int BG_ASK_USER = 4;
 
+    // FsStatusInfo constants
+    public const int FS_STATUS_START = 0;
+    public const int FS_STATUS_END = 1;
+
+    public const int FS_STATUS_OP_LIST = 1;
+    public const int FS_STATUS_OP_GET_SINGLE = 2;
+    public const int FS_STATUS_OP_GET_MULTI = 3;
+    public const int FS_STATUS_OP_PUT_SINGLE = 4;
+    public const int FS_STATUS_OP_PUT_MULTI = 5;
+    public const int FS_STATUS_OP_RENMOV_SINGLE = 6;
+    public const int FS_STATUS_OP_RENMOV_MULTI = 7;
+    public const int FS_STATUS_OP_DELETE = 8;
+    public const int FS_STATUS_OP_ATTRIB = 9;
+    public const int FS_STATUS_OP_MKDIR = 10;
+    public const int FS_STATUS_OP_EXEC = 11;
+    public const int FS_STATUS_OP_CALCSIZE = 12;
+    public const int FS_STATUS_OP_SEARCH = 13;
+    public const int FS_STATUS_OP_SEARCH_TEXT = 14;
+    public const int FS_STATUS_OP_SYNC_SEARCH = 15;
+    public const int FS_STATUS_OP_SYNC_GET = 16;
+    public const int FS_STATUS_OP_SYNC_PUT = 17;
+    public const int FS_STATUS_OP_SYNC_DELETE = 18;
+    public const int FS_STATUS_OP_GET_MULTI_THREAD = 19;
+    public const int FS_STATUS_OP_PUT_MULTI_THREAD = 20;
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RemoteInfoStruct
     {

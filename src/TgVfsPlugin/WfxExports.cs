@@ -206,13 +206,25 @@ public static unsafe class WfxExports
         return state;
     }
 
-    // Обязательная функция: инициализация плагина
+    // Обязательная функция: инициализация плагина (ANSI)
     [UnmanagedCallersOnly(EntryPoint = "FsInit", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsInit(int pluginNumber, IntPtr pProgressProc, IntPtr pLogProc, IntPtr pRequestProc)
     {
+        return HandleInit(pluginNumber, pProgressProc, pLogProc, pRequestProc);
+    }
+
+    // Обязательная функция: инициализация плагина (Unicode)
+    [UnmanagedCallersOnly(EntryPoint = "FsInitW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsInitW(int pluginNumber, IntPtr pProgressProc, IntPtr pLogProc, IntPtr pRequestProc)
+    {
+        return HandleInit(pluginNumber, pProgressProc, pLogProc, pRequestProc);
+    }
+
+    private static int HandleInit(int pluginNumber, IntPtr pProgressProc, IntPtr pLogProc, IntPtr pRequestProc)
+    {
         try
         {
-            Logger.Log($"FsInit called (Plugin Number: {pluginNumber})");
+            Logger.Log($"FsInit/FsInitW called (Plugin Number: {pluginNumber})");
             _pluginNumber = pluginNumber;
             _pProgressProc = pProgressProc;
             if (_pProgressProc != IntPtr.Zero)
@@ -269,7 +281,7 @@ public static unsafe class WfxExports
         }
         catch (Exception ex)
         {
-            Logger.Log($"Critical Exception in FsInit: {ex}");
+            Logger.Log($"Critical Exception in HandleInit: {ex}");
         }
         return 0; // успех
     }
@@ -901,11 +913,41 @@ public static unsafe class WfxExports
         return HandleGetFile(remotePath, localPath, copyFlags, ri);
     }
 
-    // Поддержка фонового копирования и очереди в Total Commander (кнопка "В фоне" / Background и F2)
+    // Оповещение о начале/завершении операций плагина (ANSI)
+    [UnmanagedCallersOnly(EntryPoint = "FsStatusInfo", CallConvs = [typeof(CallConvStdcall)])]
+    public static void FsStatusInfo(byte* remoteDir, int infoStartEnd, int infoOperation)
+    {
+        string dir = Marshal.PtrToStringAnsi((IntPtr)remoteDir) ?? "";
+        HandleStatusInfo(dir, infoStartEnd, infoOperation);
+    }
+
+    // Оповещение о начале/завершении операций плагина (Unicode)
+    [UnmanagedCallersOnly(EntryPoint = "FsStatusInfoW", CallConvs = [typeof(CallConvStdcall)])]
+    public static void FsStatusInfoW(char* remoteDir, int infoStartEnd, int infoOperation)
+    {
+        string dir = Marshal.PtrToStringUni((IntPtr)remoteDir) ?? "";
+        HandleStatusInfo(dir, infoStartEnd, infoOperation);
+    }
+
+    private static void HandleStatusInfo(string remoteDir, int infoStartEnd, int infoOperation)
+    {
+        string startEndStr = infoStartEnd == Win32Api.FS_STATUS_START ? "START" : "END";
+        Logger.Log($"FsStatusInfo: {startEndStr} for Dir='{remoteDir}', Operation={infoOperation}");
+    }
+
+    // Поддержка фонового копирования и очереди в Total Commander (ANSI)
     [UnmanagedCallersOnly(EntryPoint = "FsGetBackgroundFlags", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsGetBackgroundFlags()
     {
-        // Разрешаем скачивание и загрузку в фоне
+        Logger.Log("FsGetBackgroundFlags called -> Returning BG_DOWNLOAD | BG_UPLOAD (3)");
+        return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD;
+    }
+
+    // Поддержка фонового копирования и очереди в Total Commander (Unicode)
+    [UnmanagedCallersOnly(EntryPoint = "FsGetBackgroundFlagsW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsGetBackgroundFlagsW()
+    {
+        Logger.Log("FsGetBackgroundFlagsW called -> Returning BG_DOWNLOAD | BG_UPLOAD (3)");
         return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD;
     }
 }

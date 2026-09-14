@@ -6,3 +6,20 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# .NET / Build outputs
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Telegram VFS Plugin local files
+*.session
+*.session-journal
+*.db
+*.db-wal
+*.db-shm
+*.tgpart
+vfs_cache.db*
