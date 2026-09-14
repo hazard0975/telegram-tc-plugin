@@ -691,9 +691,8 @@ public static unsafe class WfxExports
             using var cts = new System.Threading.CancellationTokenSource();
 
             // Запускаем асинхронное скачивание в пуле потоков
-            var downloadTask = System.Threading.Tasks.Task.Run(async () =>
-            {
-                await TelegramManager.DownloadFileAsync(
+            var downloadTask = System.Threading.Tasks.Task.Run(() =>
+                TelegramManager.DownloadFileAsync(
                     mount.ChannelId,
                     fileRecord.TgMessageId,
                     localPath,
@@ -705,8 +704,8 @@ public static unsafe class WfxExports
                         return cts.IsCancellationRequested;
                     },
                     cancellationToken: cts.Token
-                );
-            });
+                )
+            );
 
             bool userAborted = false;
 
