@@ -689,6 +689,7 @@ public static unsafe class WfxExports
 
             int currentPercent = 0;
             using var cts = new System.Threading.CancellationTokenSource();
+            using var pauseGate = new System.Threading.ManualResetEventSlim(true);
 
             // Запускаем асинхронное скачивание в пуле потоков
             var downloadTask = System.Threading.Tasks.Task.Run(() =>
@@ -701,6 +702,18 @@ public static unsafe class WfxExports
                         int pct = total > 0 ? (int)((progress * 100) / total) : 0;
                         if (pct > 100) pct = 100;
                         System.Threading.Interlocked.Exchange(ref currentPercent, pct);
+
+                        // Если Total Commander находится на паузе внутри ReportProgress,
+                        // pauseGate сброшен (Reset), и поток закачки ждет здесь до снятия с паузы или отмены
+                        try
+                        {
+                            pauseGate.Wait(cts.Token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            return true;
+                        }
+
                         return cts.IsCancellationRequested;
                     },
                     cancellationToken: cts.Token
@@ -710,10 +723,18 @@ public static unsafe class WfxExports
             bool userAborted = false;
 
             // Начальное отображение прогресса для инициализации окна Total Commander
-            if (ReportProgress(remotePath, localPath, 0))
+            pauseGate.Reset();
+            try
             {
-                userAborted = true;
-                cts.Cancel();
+                if (ReportProgress(remotePath, localPath, 0))
+                {
+                    userAborted = true;
+                    cts.Cancel();
+                }
+            }
+            finally
+            {
+                pauseGate.Set();
             }
 
             // Активный цикл ожидания в вызывающем потоке Total Commander:
@@ -725,16 +746,26 @@ public static unsafe class WfxExports
                 if (finished) break;
 
                 int pct = System.Threading.Volatile.Read(ref currentPercent);
-                if (ReportProgress(remotePath, localPath, pct))
+
+                pauseGate.Reset();
+                try
                 {
-                    userAborted = true;
-                    cts.Cancel();
-                    break;
+                    if (ReportProgress(remotePath, localPath, pct))
+                    {
+                        userAborted = true;
+                        cts.Cancel();
+                        break;
+                    }
+                }
+                finally
+                {
+                    pauseGate.Set();
                 }
             }
 
             if (userAborted)
             {
+                pauseGate.Set();
                 try
                 {
                     // Даем задаче короткое время на корректное закрытие FileStream
@@ -750,6 +781,11 @@ public static unsafe class WfxExports
             if (downloadTask.IsFaulted)
             {
                 var baseEx = downloadTask.Exception?.GetBaseException() ?? downloadTask.Exception!;
+                if (baseEx is OperationCanceledException)
+                {
+                    Logger.Log($"FsGetFile: Download cancelled by user (OperationCanceledException).");
+                    return Win32Api.FS_FILE_USERABORT;
+                }
                 throw baseEx;
             }
 
