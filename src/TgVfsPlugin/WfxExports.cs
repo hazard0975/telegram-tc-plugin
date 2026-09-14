@@ -614,7 +614,8 @@ public static unsafe class WfxExports
         }
 
         string channelFolderName = cleanRemote.Substring(0, firstSlash);
-        string fileName = cleanRemote.Substring(firstSlash + 1).TrimStart('\\', '/');
+        string subPath = cleanRemote.Substring(firstSlash + 1).Replace('/', '\\').TrimStart('\\');
+        string fileName = Path.GetFileName(subPath);
 
         // Игнорируем служебные элементы
         if (fileName == "[+] Создать папку" || fileName == "[ Login required.txt ]")
@@ -622,8 +623,7 @@ public static unsafe class WfxExports
             return Win32Api.FS_FILE_NOTSUPPORTED;
         }
 
-        var mounts = _db.GetMounts();
-        var mount = mounts.FirstOrDefault(m => string.Equals(m.Name, channelFolderName, StringComparison.OrdinalIgnoreCase));
+        var mount = _db.GetMountByName(channelFolderName);
         if (mount == null)
         {
             Logger.Log($"FsGetFile: Mount '{channelFolderName}' not found.");
@@ -631,10 +631,9 @@ public static unsafe class WfxExports
         }
 
         // Поиск файла в базе данных
-        var files = _db.GetFiles(mount.Id);
-        var fileRecord = files.FirstOrDefault(f => !f.IsFolder && string.Equals(f.Name, fileName, StringComparison.OrdinalIgnoreCase));
+        var fileRecord = _db.GetFile(mount.Id, fileName, parent: null);
 
-        if (fileRecord == null || fileRecord.TgMessageId <= 0)
+        if (fileRecord == null || fileRecord.IsDir || fileRecord.TgMessageId <= 0)
         {
             Logger.Log($"FsGetFile: File '{fileName}' not found in DB or has no Telegram Message ID.");
             return Win32Api.FS_FILE_NOTFOUND;
