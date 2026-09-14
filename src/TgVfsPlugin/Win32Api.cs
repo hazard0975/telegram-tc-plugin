@@ -36,6 +36,11 @@ public static class Win32Api
     public const int FS_COPYFLAGS_EXISTS_SAMECASE = 8;
     public const int FS_COPYFLAGS_EXISTS_DIFFERENTCASE = 16;
 
+    // Background transfer flags for FsGetBackgroundFlags
+    public const int BG_DOWNLOAD = 1;
+    public const int BG_UPLOAD = 2;
+    public const int BG_ASK_USER = 4;
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RemoteInfoStruct
     {

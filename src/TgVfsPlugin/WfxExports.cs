@@ -900,4 +900,12 @@ public static unsafe class WfxExports
         string localPath = Marshal.PtrToStringUni((IntPtr)localName) ?? "";
         return HandleGetFile(remotePath, localPath, copyFlags, ri);
     }
+
+    // Поддержка фонового копирования и очереди в Total Commander (кнопка "В фоне" / Background и F2)
+    [UnmanagedCallersOnly(EntryPoint = "FsGetBackgroundFlags", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsGetBackgroundFlags()
+    {
+        // Разрешаем скачивание и загрузку в фоне
+        return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD;
+    }
 }
