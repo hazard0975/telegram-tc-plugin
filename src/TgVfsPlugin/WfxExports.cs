@@ -30,7 +30,11 @@ public static unsafe class WfxExports
     // Вспомогательный метод для конвертации DateTime в FILETIME
     private static Win32Api.FILETIME DateTimeToFileTime(DateTime time)
     {
-        long fileTime = time.ToFileTime();
+        // Total Commander в WIN32_FIND_DATA ожидает FILETIME в UTC,
+        // после чего сам нативно переводит его в локальное системное время пользователя.
+        // Даты из SQLite и Telegram являются UTC (или Unspecified), поэтому используем ToFileTimeUtc(),
+        // чтобы .NET не производил ошибочное вычитание локального часового пояса.
+        long fileTime = (time.Kind == DateTimeKind.Local) ? time.ToFileTime() : time.ToFileTimeUtc();
         return new Win32Api.FILETIME
         {
             dwLowDateTime = (uint)(fileTime & 0xFFFFFFFF),
