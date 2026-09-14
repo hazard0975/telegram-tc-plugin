@@ -126,6 +126,9 @@ public static class Win32Api
     [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
 
+    [DllImport("user32.dll")]
+    public static extern bool EnumThreadWindows(uint dwThreadId, EnumWindowsProc lpfn, IntPtr lParam);
+
     /// <summary>
     /// Проверяет, нажата ли кнопка "Пауза" в диалоговом окне Total Commander.
     /// В Total Commander при нажатии на кнопку "Пауза" ее текст переключается
@@ -138,37 +141,42 @@ public static class Win32Api
             IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
             if (tcWindow == IntPtr.Zero) return false;
 
-            GetWindowThreadProcessId(tcWindow, out uint tcPid);
-            if (tcPid == 0) return false;
+            uint tcThreadId = GetWindowThreadProcessId(tcWindow, out uint tcPid);
+            if (tcThreadId == 0) return false;
 
-            uint targetPid = tcPid;
             bool isPaused = false;
             var sb = new System.Text.StringBuilder(256);
 
-            // Перечисляем все дочерние окна процессов Total Commander
-            EnumChildWindows(IntPtr.Zero, (hWnd, lParam) =>
+            // Перечисляем все окна потока Total Commander
+            EnumThreadWindows(tcThreadId, (hWnd, lParam) =>
             {
-                GetWindowThreadProcessId(hWnd, out uint wndPid);
-                if (wndPid != targetPid) return true; // продолжаем поиск
-
-                sb.Clear();
-                int len = GetWindowText(hWnd, sb, 256);
-                if (len > 0)
+                // Для каждого верхнеуровневого окна ищем дочерние (кнопки)
+                EnumChildWindows(hWnd, (childHwnd, childLParam) =>
                 {
-                    string text = sb.ToString().Trim();
-                    // Тексты кнопок снятия с паузы в русской, английской, немецкой и других локализациях TC
-                    if (text.Equals("Продолжить", StringComparison.OrdinalIgnoreCase) ||
-                        text.Equals("Возобновить", StringComparison.OrdinalIgnoreCase) ||
-                        text.Equals("Resume", StringComparison.OrdinalIgnoreCase) ||
-                        text.Equals("Weiter", StringComparison.OrdinalIgnoreCase) ||
-                        text.StartsWith("Продолж", StringComparison.OrdinalIgnoreCase) ||
-                        text.StartsWith("Возобн", StringComparison.OrdinalIgnoreCase))
+                    sb.Clear();
+                    int len = GetWindowText(childHwnd, sb, 256);
+                    if (len > 0)
                     {
-                        isPaused = true;
-                        return false; // нашли, останавливаем перечисление
+                        string text = sb.ToString().Trim();
+                        // Убираем возможные амперсанды (hotkeys), например "&Resume"
+                        text = text.Replace("&", "");
+                        
+                        // Тексты кнопок снятия с паузы в русской, английской, немецкой и других локализациях TC
+                        if (text.Equals("Продолжить", StringComparison.OrdinalIgnoreCase) ||
+                            text.Equals("Возобновить", StringComparison.OrdinalIgnoreCase) ||
+                            text.Equals("Resume", StringComparison.OrdinalIgnoreCase) ||
+                            text.Equals("Weiter", StringComparison.OrdinalIgnoreCase) ||
+                            text.StartsWith("Продолж", StringComparison.OrdinalIgnoreCase) ||
+                            text.StartsWith("Возобн", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isPaused = true;
+                            return false; // нашли, останавливаем перечисление дочерних
+                        }
                     }
-                }
-                return true;
+                    return true;
+                }, IntPtr.Zero);
+
+                return !isPaused; // если нашли, останавливаем и перечисление окон потока
             }, IntPtr.Zero);
 
             return isPaused;

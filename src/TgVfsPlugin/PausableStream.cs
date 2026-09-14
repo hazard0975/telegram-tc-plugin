@@ -45,10 +45,34 @@ public class PausableStream : Stream
         _baseStream.Flush();
     }
 
+    public override System.Threading.Tasks.Task FlushAsync(CancellationToken cancellationToken)
+    {
+        WaitIfNotPaused();
+        return _baseStream.FlushAsync(cancellationToken);
+    }
+
     public override int Read(byte[] buffer, int offset, int count)
     {
         WaitIfNotPaused();
         return _baseStream.Read(buffer, offset, count);
+    }
+
+    public override System.Threading.Tasks.Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        WaitIfNotPaused();
+        return _baseStream.ReadAsync(buffer, offset, count, cancellationToken);
+    }
+
+    public override System.Threading.Tasks.ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        WaitIfNotPaused();
+        return _baseStream.ReadAsync(buffer, cancellationToken);
+    }
+
+    public override int Read(Span<byte> buffer)
+    {
+        WaitIfNotPaused();
+        return _baseStream.Read(buffer);
     }
 
     public override long Seek(long offset, SeekOrigin origin)
@@ -66,6 +90,24 @@ public class PausableStream : Stream
     {
         WaitIfNotPaused();
         _baseStream.Write(buffer, offset, count);
+    }
+
+    public override System.Threading.Tasks.Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        WaitIfNotPaused();
+        return _baseStream.WriteAsync(buffer, offset, count, cancellationToken);
+    }
+
+    public override System.Threading.Tasks.ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        WaitIfNotPaused();
+        return _baseStream.WriteAsync(buffer, cancellationToken);
+    }
+
+    public override void Write(ReadOnlySpan<byte> buffer)
+    {
+        WaitIfNotPaused();
+        _baseStream.Write(buffer);
     }
 
     public override void WriteByte(byte value)

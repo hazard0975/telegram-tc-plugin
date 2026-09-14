@@ -1,0 +1,12 @@
+/app/applet/src/TgVfsPlugin/bin/Debug/net9.0-windows/TgVfsPlugin.deps.json
+/app/applet/src/TgVfsPlugin/bin/Debug/net9.0-windows/TgVfsPlugin.dll
+/app/applet/src/TgVfsPlugin/bin/Debug/net9.0-windows/TgVfsPlugin.pdb
+/app/applet/src/TgVfsPlugin/obj/Debug/net9.0-windows/TgVfsPlugin.csproj.AssemblyReference.cache
+/app/applet/src/TgVfsPlugin/obj/Debug/net9.0-windows/TgVfsPlugin.GeneratedMSBuildEditorConfig.editorconfig
+/app/applet/src/TgVfsPlugin/obj/Debug/net9.0-windows/TgVfsPlugin.AssemblyInfoInputs.cache
+/app/applet/src/TgVfsPlugin/obj/Debug/net9.0-windows/TgVfsPlugin.AssemblyInfo.cs
+/app/applet/src/TgVfsPlugin/obj/Debug/net9.0-windows/TgVfsPlugin.csproj.CoreCompileInputs.cache
+/app/applet/src/TgVfsPlugin/obj/Debug/net9.0-windows/TgVfsPlugin.dll
+/app/applet/src/TgVfsPlugin/obj/Debug/net9.0-windows/refint/TgVfsPlugin.dll
+/app/applet/src/TgVfsPlugin/obj/Debug/net9.0-windows/TgVfsPlugin.pdb
+/app/applet/src/TgVfsPlugin/obj/Debug/net9.0-windows/ref/TgVfsPlugin.dll
