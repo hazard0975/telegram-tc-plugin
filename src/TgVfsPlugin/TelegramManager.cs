@@ -454,45 +454,24 @@ public static class TelegramManager
 
         try
         {
-            if (existingBytes > 0)
-            {
-                // Смещаем поток к концу существующего фрагмента для докачки
-                effectiveStream.Seek(existingBytes, SeekOrigin.Begin);
-            }
+            InputFileLocationBase? fileLocation = null;
+            int dc_id = 0;
 
             if (docToDownload != null)
             {
-                await _client.DownloadFileAsync(docToDownload, effectiveStream, progress: (progress, total) =>
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (onProgress != null)
-                    {
-                        long currentTotalProgress = existingBytes + progress;
-                        long reportedTotal = expectedTotalBytes > 0 ? expectedTotalBytes : (existingBytes + total);
-                        bool abort = onProgress(currentTotalProgress, reportedTotal);
-                        if (abort)
-                        {
-                            throw new OperationCanceledException("Download cancelled by user in Total Commander.");
-                        }
-                    }
-                });
+                fileLocation = docToDownload.ToFileLocation((PhotoSizeBase?)null);
+                dc_id = docToDownload.dc_id;
             }
             else if (photoToDownload != null)
             {
-                await _client.DownloadFileAsync(photoToDownload, effectiveStream, progress: (progress, total) =>
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (onProgress != null)
-                    {
-                        long currentTotalProgress = existingBytes + progress;
-                        long reportedTotal = expectedTotalBytes > 0 ? expectedTotalBytes : (existingBytes + total);
-                        bool abort = onProgress(currentTotalProgress, reportedTotal);
-                        if (abort)
-                        {
-                            throw new OperationCanceledException("Download cancelled by user in Total Commander.");
-                        }
-                    }
-                });
+                var photoSize = photoToDownload.LargestPhotoSize;
+                fileLocation = photoToDownload.ToFileLocation(photoSize);
+                dc_id = photoToDownload.dc_id;
+            }
+
+            if (fileLocation != null)
+            {
+                await DownloadFileResumableInternalAsync(fileLocation, effectiveStream, dc_id, expectedTotalBytes, existingBytes, onProgress, cancellationToken);
             }
         }
         finally
@@ -509,5 +488,76 @@ public static class TelegramManager
         }
         File.Move(partPath, targetLocalPath);
         Logger.Log($"File successfully downloaded and moved to: {targetLocalPath}");
+    }
+    private static async Task DownloadFileResumableInternalAsync(
+        InputFileLocationBase fileLocation, Stream outputStream,
+        int dc_id, long expectedTotalBytes, long existingBytes, 
+        Func<long, long, bool>? onProgress, CancellationToken cancellationToken)
+    {
+        if (_client == null) throw new InvalidOperationException("Not logged in to Telegram.");
+
+        int filePartSize = _client.FilePartSize;
+        long fileOffset = existingBytes;
+
+        long remainder = fileOffset % filePartSize;
+        if (remainder != 0)
+        {
+            fileOffset -= remainder; // Откатываемся на начало чанка для безопасной докачки
+            outputStream.Seek(fileOffset, SeekOrigin.Begin);
+        }
+        else if (existingBytes > 0)
+        {
+            outputStream.Seek(existingBytes, SeekOrigin.Begin);
+        }
+
+        var currentClient = dc_id == 0 ? _client : await _client.GetClientForDC(-dc_id, true);
+
+        long transmitted = fileOffset;
+        if (onProgress != null)
+        {
+            if (onProgress(transmitted, expectedTotalBytes > 0 ? expectedTotalBytes : transmitted))
+                throw new OperationCanceledException("Download cancelled by user in Total Commander.");
+        }
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            Upload_FileBase? fileBase = null;
+            try
+            {
+                fileBase = await currentClient.Upload_GetFile(fileLocation, fileOffset, filePartSize);
+            }
+            catch (TL.RpcException ex) when (ex.Code == 303 && ex.Message.StartsWith("FILE_MIGRATE_"))
+            {
+                currentClient = await _client.GetClientForDC(-ex.X, true);
+                fileBase = await currentClient.Upload_GetFile(fileLocation, fileOffset, filePartSize);
+            }
+            catch (TL.RpcException ex) when (ex.Code == 400 && ex.Message == "OFFSET_INVALID")
+            {
+                break; // End of file
+            }
+
+            if (fileBase is not Upload_File fileData)
+                throw new Exception("Upload_GetFile returned unsupported " + fileBase?.GetType().Name);
+
+            if (fileData.bytes.Length == 0)
+                break; // End of file
+
+            await outputStream.WriteAsync(fileData.bytes, 0, fileData.bytes.Length, cancellationToken);
+            fileOffset += fileData.bytes.Length;
+            transmitted = fileOffset;
+
+            if (onProgress != null)
+            {
+                long reportedTotal = expectedTotalBytes > 0 ? expectedTotalBytes : transmitted;
+                bool userAborted = onProgress(transmitted, reportedTotal);
+                if (userAborted)
+                {
+                    throw new OperationCanceledException("Download cancelled by user in Total Commander.");
+                }
+            }
+
+            if (fileData.bytes.Length < filePartSize)
+                break; // Last part downloaded
+        }
     }
 }
