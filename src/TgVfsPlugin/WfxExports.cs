@@ -692,155 +692,159 @@ public static unsafe class WfxExports
 
             Logger.Log($"FsGetFile: Starting download of '{fileName}' (TgMessageId: {fileRecord.TgMessageId}, Size: {fileRecord.Size} bytes)...");
 
-            int currentPercent = 0;
-            using var cts = new System.Threading.CancellationTokenSource();
-            using var pauseGate = new System.Threading.ManualResetEventSlim(true);
-
-            // Запускаем асинхронное скачивание в пуле потоков
-            var downloadTask = System.Threading.Tasks.Task.Run(() =>
-                TelegramManager.DownloadFileAsync(
-                    mount.ChannelId,
-                    fileRecord.TgMessageId,
-                    localPath,
-                    onProgress: (progress, total) =>
-                    {
-                        int pct = total > 0 ? (int)((progress * 100) / total) : 0;
-                        if (pct > 100) pct = 100;
-                        System.Threading.Interlocked.Exchange(ref currentPercent, pct);
-
-                        // Если Total Commander находится на паузе, поток закачки ждет здесь до снятия с паузы
-                        try
-                        {
-                            pauseGate.Wait(cts.Token);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            return true;
-                        }
-
-                        return cts.IsCancellationRequested;
-                    },
-                    cancellationToken: cts.Token,
-                    pauseGate: pauseGate
-                )
-            );
-
+            long currentPercent = 0;
             bool userAborted = false;
+            bool isFinished = false;
 
             // Начальное отображение прогресса для инициализации окна Total Commander
             int initialRes = ReportProgress(remotePath, localPath, 0);
             if (initialRes == 1)
             {
                 userAborted = true;
-                cts.Cancel();
             }
 
-            // Активный цикл ожидания в вызывающем потоке Total Commander:
-            // Каждые 50 мс опрашиваем состояние и вызываем ReportProgress,
-            // чтобы окно TC не зависало и мгновенно реагировало на "Отмена", "Пауза" и крестик [X]
-            long isPausedFlag = 0;
-            int pauseCheckCounter = 0;
-            long lastReportTime = Environment.TickCount64;
-
-            // Watchdog task to detect if ReportProgress is blocking (TC is paused)
-            Task.Run(() =>
+            while (!isFinished && !userAborted)
             {
-                while (!downloadTask.IsCompleted && !userAborted && !cts.IsCancellationRequested)
-                {
-                    long elapsed = Environment.TickCount64 - Interlocked.Read(ref lastReportTime);
-                    if (elapsed > 500)
-                    {
-                        // ReportProgress is blocking for more than 500ms! TC must be paused.
-                        if (Interlocked.Read(ref isPausedFlag) == 0)
+                using var cts = new System.Threading.CancellationTokenSource();
+                long lastReportTime = Environment.TickCount64;
+
+                // Запускаем асинхронное скачивание в пуле потоков
+                var downloadTask = System.Threading.Tasks.Task.Run(() =>
+                    TelegramManager.DownloadFileAsync(
+                        mount.ChannelId,
+                        fileRecord.TgMessageId,
+                        localPath,
+                        onProgress: (progress, total) =>
                         {
-                            Interlocked.Exchange(ref isPausedFlag, 1);
-                            pauseGate.Reset();
-                            Logger.Log($"Download paused (TC blocking ReportProgress detected).");
-                        }
-                    }
-                    else
+                            int pct = total > 0 ? (int)((progress * 100) / total) : 0;
+                            if (pct > 100) pct = 100;
+                            System.Threading.Interlocked.Exchange(ref currentPercent, pct);
+                            return cts.IsCancellationRequested;
+                        },
+                        cancellationToken: cts.Token
+                        // pauseGate больше не передаем
+                    )
+                );
+
+                // Watchdog task to detect if ReportProgress is blocking (TC is paused)
+                using var watchdogCts = new System.Threading.CancellationTokenSource();
+                var watchdogTask = System.Threading.Tasks.Task.Run(() =>
+                {
+                    while (!downloadTask.IsCompleted && !watchdogCts.IsCancellationRequested && !cts.IsCancellationRequested)
                     {
-                        if (Interlocked.Read(ref isPausedFlag) == 1)
+                        long elapsed = Environment.TickCount64 - System.Threading.Interlocked.Read(ref lastReportTime);
+                        if (elapsed > 500)
                         {
-                            Interlocked.Exchange(ref isPausedFlag, 0);
-                            pauseGate.Set();
-                            Logger.Log($"Download resumed (TC ReportProgress unblocked).");
+                            // ReportProgress is blocking for more than 500ms! TC must be paused.
+                            Logger.Log($"Download paused (TC blocking ReportProgress detected). Cancelling network task.");
+                            try { cts.Cancel(); } catch { }
+                            break;
                         }
+                        System.Threading.Thread.Sleep(100);
                     }
-                    System.Threading.Thread.Sleep(100);
-                }
-            });
+                });
 
-            while (!downloadTask.IsCompleted && !userAborted)
-            {
-                bool finished = downloadTask.Wait(50);
-                if (finished) break;
+                int pauseCheckCounter = 0;
 
-                int pct = System.Threading.Volatile.Read(ref currentPercent);
-
-                Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
-                int progressRes = ReportProgress(remotePath, localPath, pct);
-                Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
-
-                if (progressRes == 1)
+                // Активный цикл ожидания в вызывающем потоке Total Commander:
+                while (!downloadTask.IsCompleted && !userAborted)
                 {
-                    userAborted = true;
-                    cts.Cancel();
-                    break;
+                    bool finished = downloadTask.Wait(50);
+                    if (finished) break;
+
+                    int pct = (int)System.Threading.Interlocked.Read(ref currentPercent);
+
+                    System.Threading.Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
+                    int progressRes = ReportProgress(remotePath, localPath, pct);
+                    System.Threading.Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
+
+                    if (progressRes == 1)
+                    {
+                        userAborted = true;
+                        try { cts.Cancel(); } catch { }
+                        break;
+                    }
+
+                    // Проверяем состояние паузы
+                    bool tcPaused = (progressRes != 0 && progressRes != 1);
+                    pauseCheckCounter++;
+                    if (!tcPaused && pauseCheckCounter % 4 == 0)
+                    {
+                        tcPaused = Win32Api.IsTotalCommanderPaused();
+                    }
+
+                    if (tcPaused)
+                    {
+                        // Пользователь нажал "Пауза"
+                        Logger.Log($"Download paused (TC pause detected, progress={pct}%). Cancelling network task.");
+                        try { cts.Cancel(); } catch { }
+                        break;
+                    }
                 }
 
-                // Проверяем состояние паузы:
-                // 1) По коду возврата (progressRes != 0)
-                // 2) Либо каждые 200 мс через проверку текста кнопки в окне диалога Total Commander
-                bool tcPaused = (progressRes != 0 && progressRes != 1);
-                pauseCheckCounter++;
-                if (!tcPaused && pauseCheckCounter % 4 == 0)
+                try { watchdogCts.Cancel(); } catch { }
+                try { watchdogTask.Wait(500); } catch { }
+
+                try
                 {
-                    tcPaused = Win32Api.IsTotalCommanderPaused();
+                    downloadTask.GetAwaiter().GetResult();
+                    if (!cts.IsCancellationRequested && !userAborted)
+                    {
+                        isFinished = true; // Загрузка успешно завершена
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Загрузка была отменена (из-за паузы или прерывания пользователем)
+                }
+                catch (Exception ex) when (ex.InnerException is OperationCanceledException)
+                {
+                    // Аналогично
+                }
+                catch (Exception ex)
+                {
+                    if (!userAborted)
+                    {
+                        Logger.Log($"FsGetFile error: {ex}");
+                        return Win32Api.FS_FILE_READERROR;
+                    }
                 }
 
-                if (tcPaused && Interlocked.Read(ref isPausedFlag) == 0)
+                if (userAborted) break;
+
+                if (!isFinished)
                 {
-                    // Пользователь нажал "Пауза"
-                    Interlocked.Exchange(ref isPausedFlag, 1);
-                    pauseGate.Reset(); // Блокируем поток сетевой загрузки и запись в файл
-                    Logger.Log($"Download paused (TC pause detected, progress={pct}%).");
-                }
-                else if (!tcPaused && Interlocked.Read(ref isPausedFlag) == 1 && (Environment.TickCount64 - Interlocked.Read(ref lastReportTime)) < 200)
-                {
-                    // Пользователь нажал "Продолжить" / "Resume"
-                    Interlocked.Exchange(ref isPausedFlag, 0);
-                    pauseGate.Set(); // Возобновляем поток закачки
+                    // Мы на паузе. Ждем, пока пользователь не отожмет паузу
+                    Logger.Log("Download is paused. Waiting for resume signal from TC...");
+                    while (!userAborted)
+                    {
+                        int pct = (int)System.Threading.Interlocked.Read(ref currentPercent);
+                        
+                        System.Threading.Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
+                        int progressRes = ReportProgress(remotePath, localPath, pct);
+                        System.Threading.Interlocked.Exchange(ref lastReportTime, Environment.TickCount64);
+
+                        if (progressRes == 1)
+                        {
+                            userAborted = true;
+                            break;
+                        }
+
+                        bool tcPaused = (progressRes != 0 && progressRes != 1) || Win32Api.IsTotalCommanderPaused();
+                        if (!tcPaused)
+                        {
+                            Logger.Log("Download resumed by TC. Restarting network task.");
+                            break; // Выходим из цикла ожидания паузы, внешний цикл перезапустит скачивание (докачку)
+                        }
+                        System.Threading.Thread.Sleep(100);
+                    }
                 }
             }
-
-            // Гарантируем открытие шлюза при выходе
-            pauseGate.Set();
 
             if (userAborted)
             {
-                pauseGate.Set();
-                try
-                {
-                    // Даем задаче короткое время на корректное закрытие FileStream
-                    downloadTask.Wait(1500);
-                }
-                catch { }
-
                 Logger.Log($"FsGetFile: Download cancelled by user.");
                 return Win32Api.FS_FILE_USERABORT;
-            }
-
-            // Если задача завершилась с ошибкой, распаковываем исключение
-            if (downloadTask.IsFaulted)
-            {
-                var baseEx = downloadTask.Exception?.GetBaseException() ?? downloadTask.Exception!;
-                if (baseEx is OperationCanceledException)
-                {
-                    Logger.Log($"FsGetFile: Download cancelled by user (OperationCanceledException).");
-                    return Win32Api.FS_FILE_USERABORT;
-                }
-                throw baseEx;
             }
 
             // Финальный рапорт 100%
