@@ -151,11 +151,18 @@ public static unsafe class WfxExports
             if (dirPath == "\\" || dirPath == "/")
             {
                 _lastMirrorPath = null;
-                // Корень: возвращаем каналы
+                // Корень: возвращаем каналы и служебные триггеры
                 Logger.Log("Fetching channels for root.");
                 state.Items.Add(new VfsDatabase.VfsItem 
                 { 
                     Name = "[+] Создать папку", 
+                    IsDirectory = false, 
+                    Size = 0,
+                    Date = DateTime.Now 
+                });
+                state.Items.Add(new VfsDatabase.VfsItem 
+                { 
+                    Name = "[*] Настройки плагина", 
                     IsDirectory = false, 
                     Size = 0,
                     Date = DateTime.Now 
@@ -429,6 +436,80 @@ public static unsafe class WfxExports
                 catch (Exception ex)
                 {
                     Logger.Log($"Create folder error: {ex}");
+                }
+            }).GetAwaiter().GetResult();
+            
+            return 0; // FS_EXEC_OK
+        }
+
+        if (path.EndsWith("[*] Настройки плагина"))
+        {
+            System.Threading.Tasks.Task.Run(() => 
+            {
+                try
+                {
+                    string oldDir = SettingsManager.DataDirectory;
+                    var result = SettingsDialog.Show();
+                    if (result != null)
+                    {
+                        if (result.StorageLocationChanged)
+                        {
+                            Logger.Log($"Storage location change requested. New mode: {result.SelectedStorageMode}, CustomPath: '{result.CustomPath}'");
+
+                            // 1. Закрываем и сбрасываем текущие ресурсы базы данных и TelegramClient
+                            try
+                            {
+                                _db?.Dispose();
+                            }
+                            catch (Exception dbEx)
+                            {
+                                Logger.Log($"Error disposing DB: {dbEx.Message}");
+                            }
+                            finally
+                            {
+                                _db = null;
+                                // Очищаем пулы подключений SQLite, чтобы освободить дескрипторы файлов
+                                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                            }
+
+                            TelegramManager.ResetClient();
+
+                            string newDir = result.SelectedStorageMode switch
+                            {
+                                StorageMode.Portable => SettingsManager.PortableDirectory,
+                                StorageMode.Custom => result.CustomPath,
+                                _ => SettingsManager.DefaultAppDataDirectory
+                            };
+
+                            // 2. Если выбран перенос файлов - перемещаем файлы
+                            if (result.MigrateExistingFiles)
+                            {
+                                SettingsManager.MigrateDataFiles(oldDir, newDir);
+                            }
+
+                            // 3. Сохраняем новые настройки
+                            SettingsManager.SetStorageLocation(result.SelectedStorageMode, result.CustomPath);
+
+                            // 4. Переинициализируем базу данных по новому пути
+                            try
+                            {
+                                _db = new VfsDatabase();
+                                Logger.Log("VfsDatabase re-initialized at new location.");
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Log($"Failed to re-initialize DB: {ex.Message}");
+                            }
+
+                            // 5. Оповещаем и обновляем список папок в Total Commander
+                            Logger.Log("Settings applied. Requesting panel refresh.");
+                            Win32Api.RefreshActivePanel();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Settings dialog execution error: {ex}");
                 }
             }).GetAwaiter().GetResult();
             
@@ -794,7 +875,7 @@ public static unsafe class WfxExports
         string fileName = Path.GetFileName(subPath);
 
         // Игнорируем служебные элементы
-        if (fileName == "[+] Создать папку" || fileName == "[ Login required.txt ]")
+        if (fileName == "[+] Создать папку" || fileName == "[*] Настройки плагина" || fileName == "[ Login required.txt ]")
         {
             return Win32Api.FS_FILE_NOTSUPPORTED;
         }

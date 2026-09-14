@@ -22,62 +22,35 @@ public static class TelegramManager
         };
     }
 
-    public static readonly string ConfigPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-        "TelegramVFS");
-
-    private static readonly string SettingsFile = Path.Combine(ConfigPath, "settings.ini");
-    private static readonly string SessionFile = Path.Combine(ConfigPath, "WTelegram.session");
+    public static string ConfigPath => SettingsManager.DataDirectory;
+    private static string SettingsFile => SettingsManager.ActiveSettingsFile;
+    private static string SessionFile => SettingsManager.SessionPath;
 
     public static bool IsLoggedIn => _user != null;
     public static bool IsPremium => _user != null && (((uint)_user.flags & (1u << 28)) != 0);
 
-    private static string? GetSetting(string key)
-    {
-        if (!File.Exists(SettingsFile)) return null;
-        try
-        {
-            foreach (var line in File.ReadAllLines(SettingsFile))
-            {
-                var parts = line.Split('=', 2);
-                if (parts.Length == 2 && parts[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
-                {
-                    return parts[1].Trim();
-                }
-            }
-        }
-        catch { }
-        return null;
-    }
-
-    private static void SaveSetting(string key, string value)
+    public static void ResetClient()
     {
         try
         {
-            Directory.CreateDirectory(ConfigPath);
-            var lines = File.Exists(SettingsFile) ? File.ReadAllLines(SettingsFile).ToList() : new List<string>();
-            bool found = false;
-            
-            for (int i = 0; i < lines.Count; i++)
-            {
-                var parts = lines[i].Split('=', 2);
-                if (parts.Length >= 1 && parts[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
-                {
-                    lines[i] = $"{key}={value}";
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found) lines.Add($"{key}={value}");
-            
-            File.WriteAllLines(SettingsFile, lines);
+            Logger.Log("Resetting TelegramManager client...");
+            _client?.Dispose();
         }
         catch (Exception ex)
         {
-            Logger.Log($"Error saving setting {key}: {ex}");
+            Logger.Log($"Error disposing client: {ex.Message}");
+        }
+        finally
+        {
+            _client = null;
+            _user = null;
+            _chatsCache.Clear();
         }
     }
+
+    private static string? GetSetting(string key) => SettingsManager.GetSetting(key);
+
+    private static void SaveSetting(string key, string value) => SettingsManager.SaveSetting(key, value);
 
     public static async Task<bool> LoginAsync(bool silent = false)
     {

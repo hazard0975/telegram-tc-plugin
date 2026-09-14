@@ -14,10 +14,7 @@ namespace TgVfsPlugin;
 public class VfsDatabase : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private static readonly string DbPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-        "TelegramVFS", 
-        "vfs_cache.db");
+    private static string DbPath => SettingsManager.DbPath;
 
     public VfsDatabase()
     {

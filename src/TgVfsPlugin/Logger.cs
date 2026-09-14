@@ -6,10 +6,7 @@ namespace TgVfsPlugin;
 
 public static class Logger
 {
-    private static readonly string LogPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-        "TelegramVFS", 
-        "plugin_log.txt");
+    private static string LogPath => SettingsManager.LogPath;
 
     static Logger()
     {
