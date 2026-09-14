@@ -445,7 +445,7 @@ public static unsafe class WfxExports
         return 2; // FS_EXEC_ERROR
     }
 
-    private static bool ReportProgress(string sourceName, string targetName, int percentDone)
+    private static int ReportProgress(string sourceName, string targetName, int percentDone)
     {
         if (_progressProcDelegate == null && _pProgressProc != IntPtr.Zero)
         {
@@ -456,7 +456,7 @@ public static unsafe class WfxExports
             catch { }
         }
 
-        if (_progressProcDelegate == null) return false;
+        if (_progressProcDelegate == null) return 0;
 
         try
         {
@@ -465,7 +465,11 @@ public static unsafe class WfxExports
             try
             {
                 int res = _progressProcDelegate(_pluginNumber, pSrc, pDst, percentDone);
-                return res == 1; // 1 = пользователь нажал Отмена или [X]
+                if (res != 0 && res != 1)
+                {
+                    Logger.Log($"ProgressProc returned non-standard code: {res} (percentDone={percentDone})");
+                }
+                return res;
             }
             finally
             {
@@ -476,7 +480,7 @@ public static unsafe class WfxExports
         catch (Exception ex)
         {
             Logger.Log($"Progress callback error: {ex.Message}");
-            return false;
+            return 0;
         }
     }
 
@@ -548,7 +552,8 @@ public static unsafe class WfxExports
                     {
                         int pct = total > 0 ? (int)((sent * 100) / total) : 0;
                         if (pct > 100) pct = 100;
-                        return ReportProgress(localPath, remotePath, pct);
+                        int res = ReportProgress(localPath, remotePath, pct);
+                        return res == 1;
                     }
                 ).GetAwaiter().GetResult();
             }
@@ -703,8 +708,7 @@ public static unsafe class WfxExports
                         if (pct > 100) pct = 100;
                         System.Threading.Interlocked.Exchange(ref currentPercent, pct);
 
-                        // Если Total Commander находится на паузе внутри ReportProgress,
-                        // pauseGate сброшен (Reset), и поток закачки ждет здесь до снятия с паузы или отмены
+                        // Если Total Commander находится на паузе, поток закачки ждет здесь до снятия с паузы
                         try
                         {
                             pauseGate.Wait(cts.Token);
@@ -716,30 +720,27 @@ public static unsafe class WfxExports
 
                         return cts.IsCancellationRequested;
                     },
-                    cancellationToken: cts.Token
+                    cancellationToken: cts.Token,
+                    pauseGate: pauseGate
                 )
             );
 
             bool userAborted = false;
 
             // Начальное отображение прогресса для инициализации окна Total Commander
-            pauseGate.Reset();
-            try
+            int initialRes = ReportProgress(remotePath, localPath, 0);
+            if (initialRes == 1)
             {
-                if (ReportProgress(remotePath, localPath, 0))
-                {
-                    userAborted = true;
-                    cts.Cancel();
-                }
-            }
-            finally
-            {
-                pauseGate.Set();
+                userAborted = true;
+                cts.Cancel();
             }
 
             // Активный цикл ожидания в вызывающем потоке Total Commander:
-            // Каждые 50 мс вызываем ReportProgress прямо из потока Total Commander,
-            // чтобы окно TC не зависало и мгновенно реагировало на клики по "Отмена", "Пауза" и крестику [X]
+            // Каждые 50 мс опрашиваем состояние и вызываем ReportProgress,
+            // чтобы окно TC не зависало и мгновенно реагировало на "Отмена", "Пауза" и крестик [X]
+            bool isPaused = false;
+            int pauseCheckCounter = 0;
+
             while (!downloadTask.IsCompleted && !userAborted)
             {
                 bool finished = downloadTask.Wait(50);
@@ -747,21 +748,42 @@ public static unsafe class WfxExports
 
                 int pct = System.Threading.Volatile.Read(ref currentPercent);
 
-                pauseGate.Reset();
-                try
+                int progressRes = ReportProgress(remotePath, localPath, pct);
+                if (progressRes == 1)
                 {
-                    if (ReportProgress(remotePath, localPath, pct))
-                    {
-                        userAborted = true;
-                        cts.Cancel();
-                        break;
-                    }
+                    userAborted = true;
+                    cts.Cancel();
+                    break;
                 }
-                finally
+
+                // Проверяем состояние паузы:
+                // 1) По коду возврата (progressRes != 0)
+                // 2) Либо каждые 200 мс через проверку текста кнопки в окне диалога Total Commander
+                bool tcPaused = (progressRes != 0 && progressRes != 1);
+                pauseCheckCounter++;
+                if (!tcPaused && pauseCheckCounter % 4 == 0)
                 {
-                    pauseGate.Set();
+                    tcPaused = Win32Api.IsTotalCommanderPaused();
+                }
+
+                if (tcPaused && !isPaused)
+                {
+                    // Пользователь нажал "Пауза"
+                    isPaused = true;
+                    pauseGate.Reset(); // Блокируем поток сетевой загрузки и запись в файл
+                    Logger.Log($"Download paused (TC pause detected, progress={pct}%).");
+                }
+                else if (!tcPaused && isPaused)
+                {
+                    // Пользователь нажал "Продолжить" / "Resume"
+                    isPaused = false;
+                    pauseGate.Set(); // Возобновляем поток закачки
+                    Logger.Log($"Download resumed (TC resume detected, progress={pct}%).");
                 }
             }
+
+            // Гарантируем открытие шлюза при выходе
+            pauseGate.Set();
 
             if (userAborted)
             {

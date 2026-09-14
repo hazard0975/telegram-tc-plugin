@@ -332,7 +332,8 @@ public static class TelegramManager
         int messageId,
         string targetLocalPath,
         Func<long, long, bool>? onProgress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ManualResetEventSlim? pauseGate = null)
     {
         if (_client == null || _user == null)
         {
@@ -447,17 +448,21 @@ public static class TelegramManager
             FileAccess.ReadWrite, 
             FileShare.None);
 
+        Stream effectiveStream = (pauseGate != null)
+            ? new PausableStream(fileStream, pauseGate, cancellationToken)
+            : fileStream;
+
         try
         {
             if (existingBytes > 0)
             {
                 // Смещаем поток к концу существующего фрагмента для докачки
-                fileStream.Seek(existingBytes, SeekOrigin.Begin);
+                effectiveStream.Seek(existingBytes, SeekOrigin.Begin);
             }
 
             if (docToDownload != null)
             {
-                await _client.DownloadFileAsync(docToDownload, fileStream, progress: (progress, total) =>
+                await _client.DownloadFileAsync(docToDownload, effectiveStream, progress: (progress, total) =>
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (onProgress != null)
@@ -474,7 +479,7 @@ public static class TelegramManager
             }
             else if (photoToDownload != null)
             {
-                await _client.DownloadFileAsync(photoToDownload, fileStream, progress: (progress, total) =>
+                await _client.DownloadFileAsync(photoToDownload, effectiveStream, progress: (progress, total) =>
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (onProgress != null)
@@ -492,8 +497,8 @@ public static class TelegramManager
         }
         finally
         {
-            fileStream.Flush();
-            fileStream.Dispose();
+            effectiveStream.Flush();
+            effectiveStream.Dispose();
         }
 
         Logger.Log($"Download completed into .tgpart ({partPath}). Moving to target '{targetLocalPath}'...");

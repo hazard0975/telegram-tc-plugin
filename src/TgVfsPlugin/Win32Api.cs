@@ -63,6 +63,17 @@ public static class Win32Api
     public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string? lpszClass, string? lpszWindow);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    public static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern IntPtr PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
     public const uint WM_COPYDATA = 0x004A;
@@ -111,6 +122,66 @@ public static class Win32Api
 
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
+
+    /// <summary>
+    /// Проверяет, нажата ли кнопка "Пауза" в диалоговом окне Total Commander.
+    /// В Total Commander при нажатии на кнопку "Пауза" ее текст переключается
+    /// на "Продолжить" / "Resume" / "Возобновить" (или появляется такая кнопка).
+    /// </summary>
+    public static bool IsTotalCommanderPaused()
+    {
+        try
+        {
+            IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
+            if (tcWindow == IntPtr.Zero) return false;
+
+            uint tcPid = 0;
+            unsafe
+            {
+                GetWindowThreadProcessId(tcWindow, (IntPtr)(&tcPid));
+            }
+            if (tcPid == 0) return false;
+
+            bool isPaused = false;
+            var sb = new System.Text.StringBuilder(256);
+
+            // Перечисляем все дочерние окна процессов Total Commander
+            EnumChildWindows(IntPtr.Zero, (hWnd, lParam) =>
+            {
+                unsafe
+                {
+                    uint wndPid = 0;
+                    GetWindowThreadProcessId(hWnd, (IntPtr)(&wndPid));
+                    if (wndPid != tcPid) return true; // продолжаем поиск
+                }
+
+                sb.Clear();
+                int len = GetWindowText(hWnd, sb, 256);
+                if (len > 0)
+                {
+                    string text = sb.ToString().Trim();
+                    // Тексты кнопок снятия с паузы в русской, английской, немецкой и других локализациях TC
+                    if (text.Equals("Продолжить", StringComparison.OrdinalIgnoreCase) ||
+                        text.Equals("Возобновить", StringComparison.OrdinalIgnoreCase) ||
+                        text.Equals("Resume", StringComparison.OrdinalIgnoreCase) ||
+                        text.Equals("Weiter", StringComparison.OrdinalIgnoreCase) ||
+                        text.StartsWith("Продолж", StringComparison.OrdinalIgnoreCase) ||
+                        text.StartsWith("Возобн", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isPaused = true;
+                        return false; // нашли, останавливаем перечисление
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+
+            return isPaused;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     public static void ChangeInactivePanelDir(string inactivePath)
     {
