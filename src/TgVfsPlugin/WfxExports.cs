@@ -16,6 +16,7 @@ public static unsafe class WfxExports
     private static int _pluginNumber;
     private static IntPtr _pProgressProc;
     private static Win32Api.ProgressProc? _progressProcDelegate;
+    private static bool _isUnicode = true;
     private static string? _lastMirrorPath;
 
     // Класс для хранения состояния поиска
@@ -210,6 +211,7 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsInit", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsInit(int pluginNumber, IntPtr pProgressProc, IntPtr pLogProc, IntPtr pRequestProc)
     {
+        _isUnicode = false;
         return HandleInit(pluginNumber, pProgressProc, pLogProc, pRequestProc);
     }
 
@@ -217,6 +219,7 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsInitW", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsInitW(int pluginNumber, IntPtr pProgressProc, IntPtr pLogProc, IntPtr pRequestProc)
     {
+        _isUnicode = true;
         return HandleInit(pluginNumber, pProgressProc, pLogProc, pRequestProc);
     }
 
@@ -472,8 +475,8 @@ public static unsafe class WfxExports
 
         try
         {
-            IntPtr pSrc = Marshal.StringToHGlobalAnsi(sourceName);
-            IntPtr pDst = Marshal.StringToHGlobalAnsi(targetName);
+            IntPtr pSrc = _isUnicode ? Marshal.StringToHGlobalUni(sourceName) : Marshal.StringToHGlobalAnsi(sourceName);
+            IntPtr pDst = _isUnicode ? Marshal.StringToHGlobalUni(targetName) : Marshal.StringToHGlobalAnsi(targetName);
             try
             {
                 int res = _progressProcDelegate(_pluginNumber, pSrc, pDst, percentDone);
@@ -939,15 +942,15 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsGetBackgroundFlags", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsGetBackgroundFlags()
     {
-        Logger.Log("FsGetBackgroundFlags called -> Returning BG_DOWNLOAD | BG_UPLOAD (3)");
-        return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD;
+        Logger.Log("FsGetBackgroundFlags called -> Returning BG_DOWNLOAD | BG_UPLOAD | BG_ASK_USER (7)");
+        return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD | Win32Api.BG_ASK_USER;
     }
 
     // Поддержка фонового копирования и очереди в Total Commander (Unicode)
     [UnmanagedCallersOnly(EntryPoint = "FsGetBackgroundFlagsW", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsGetBackgroundFlagsW()
     {
-        Logger.Log("FsGetBackgroundFlagsW called -> Returning BG_DOWNLOAD | BG_UPLOAD (3)");
-        return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD;
+        Logger.Log("FsGetBackgroundFlagsW called -> Returning BG_DOWNLOAD | BG_UPLOAD | BG_ASK_USER (7)");
+        return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD | Win32Api.BG_ASK_USER;
     }
 }
