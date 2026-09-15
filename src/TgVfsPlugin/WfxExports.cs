@@ -463,14 +463,32 @@ public static unsafe class WfxExports
                         var mount = _db?.GetMountByName(selectedFolder);
                         if (mount != null)
                         {
-                            _db?.DeleteMount(mount.Id);
-                            Logger.Log($"Folder '{selectedFolder}' successfully deleted from mounts.");
-                            Win32Api.RefreshActivePanel();
-                            System.Windows.Forms.MessageBox.Show(
-                                $"Папка '{selectedFolder}' отмонтирована и удалена из списка плагина.",
-                                "Удаление папки",
-                                System.Windows.Forms.MessageBoxButtons.OK,
-                                System.Windows.Forms.MessageBoxIcon.Information);
+                            var confirm = System.Windows.Forms.MessageBox.Show(
+                                $"Вы действительно хотите удалить виртуальную папку '{selectedFolder}'?\n\n" +
+                                $"⚠️ ВНИМАНИЕ: Это приведёт к удалению связанного канала и всех хранящихся в нём файлов в Telegram!",
+                                "Подтверждение удаления папки",
+                                System.Windows.Forms.MessageBoxButtons.YesNo,
+                                System.Windows.Forms.MessageBoxIcon.Warning,
+                                System.Windows.Forms.MessageBoxDefaultButton.Button2);
+
+                            if (confirm == System.Windows.Forms.DialogResult.Yes)
+                            {
+                                if (mount.ChannelId != 0)
+                                {
+                                    TelegramManager.DeleteChannelAsync(mount.ChannelId).GetAwaiter().GetResult();
+                                }
+
+                                _db?.DeleteMount(mount.Id);
+                                Logger.Log($"Folder '{selectedFolder}' and Telegram channel {mount.ChannelId} deleted.");
+
+                                Win32Api.RefreshActivePanel();
+
+                                System.Windows.Forms.MessageBox.Show(
+                                    $"Папка '{selectedFolder}' и её канал в Telegram успешно удалены.",
+                                    "Удаление завершено",
+                                    System.Windows.Forms.MessageBoxButtons.OK,
+                                    System.Windows.Forms.MessageBoxIcon.Information);
+                            }
                         }
                     }
                 }
@@ -1257,16 +1275,26 @@ public static unsafe class WfxExports
             if (mount != null)
             {
                 var dialogRes = System.Windows.Forms.MessageBox.Show(
-                    $"Удалить виртуальную папку '{channelName}' из базы плагина?",
-                    "Удаление папки",
+                    $"Вы действительно хотите удалить виртуальную папку '{channelName}'?\n\n" +
+                    $"⚠️ ВНИМАНИЕ: Это приведёт к удалению связанного канала и всех хранящихся в нём файлов в Telegram!",
+                    "Подтверждение удаления папки",
                     System.Windows.Forms.MessageBoxButtons.YesNo,
-                    System.Windows.Forms.MessageBoxIcon.Question);
+                    System.Windows.Forms.MessageBoxIcon.Warning,
+                    System.Windows.Forms.MessageBoxDefaultButton.Button2);
 
                 if (dialogRes == System.Windows.Forms.DialogResult.Yes)
                 {
-                    _db.DeleteMount(mount.Id);
-                    Logger.Log($"Mount '{channelName}' deleted via FsRemoveDir.");
-                    Win32Api.RefreshActivePanel();
+                    System.Threading.Tasks.Task.Run(() =>
+                    {
+                        if (mount.ChannelId != 0)
+                        {
+                            TelegramManager.DeleteChannelAsync(mount.ChannelId).GetAwaiter().GetResult();
+                        }
+                        _db.DeleteMount(mount.Id);
+                        Logger.Log($"Mount '{channelName}' deleted via FsRemoveDir.");
+                        Win32Api.RefreshActivePanel();
+                    }).GetAwaiter().GetResult();
+
                     return 1; // true (успех)
                 }
                 return 0; // пользователь отменил

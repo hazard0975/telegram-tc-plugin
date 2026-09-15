@@ -233,6 +233,49 @@ public static class TelegramManager
         return chat.ID;
     }
 
+    public static async Task DeleteChannelAsync(long channelId)
+    {
+        try
+        {
+            if (_client == null || _user == null)
+            {
+                await LoginAsync(silent: true);
+                if (_client == null || _user == null) return;
+            }
+
+            if (!_chatsCache.TryGetValue(channelId, out var chat))
+            {
+                var allChats = await _client.Messages_GetAllChats();
+                if (allChats?.chats != null)
+                {
+                    foreach (var kvp in allChats.chats)
+                    {
+                        _chatsCache[kvp.Key] = kvp.Value;
+                    }
+                }
+                _chatsCache.TryGetValue(channelId, out chat);
+            }
+
+            if (chat is Channel channel)
+            {
+                Logger.Log($"Deleting Telegram channel {channelId} ({channel.title})...");
+                await _client.Channels_DeleteChannel(new InputChannel(channel.id, channel.access_hash));
+                _chatsCache.TryRemove(channelId, out _);
+                Logger.Log($"Telegram channel {channelId} successfully deleted.");
+            }
+            else if (chat is Chat smallGroup)
+            {
+                Logger.Log($"Deleting Telegram small group chat {channelId}...");
+                await _client.Messages_DeleteChatUser(smallGroup.id, _user);
+                _chatsCache.TryRemove(channelId, out _);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Failed to delete Telegram channel {channelId}: {ex.Message}");
+        }
+    }
+
     public static async Task<int> UploadAndSendFileAsync(
         long channelId, 
         string localPath, 
