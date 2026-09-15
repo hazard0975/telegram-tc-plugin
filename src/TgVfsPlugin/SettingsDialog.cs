@@ -30,7 +30,7 @@ public static class SettingsDialog
                 using Form form = new Form()
                 {
                     Width = 540,
-                    Height = 350,
+                    Height = 365,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Настройки Telegram VFS",
                     StartPosition = FormStartPosition.CenterScreen,
@@ -46,7 +46,7 @@ public static class SettingsDialog
                     Left = 15,
                     Top = 12,
                     Width = 495,
-                    Height = 232,
+                    Height = 250,
                     Font = new Font("Segoe UI", 9, FontStyle.Regular)
                 };
 
@@ -55,9 +55,9 @@ public static class SettingsDialog
                 {
                     Text = "По умолчанию (%APPDATA%)",
                     Left = 16,
-                    Top = 24,
+                    Top = 22,
                     Width = 460,
-                    Height = 20,
+                    Height = 22,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.DefaultAppData
                 };
 
@@ -67,7 +67,7 @@ public static class SettingsDialog
                     Left = 38,
                     Top = 45,
                     Width = 440,
-                    Height = 16,
+                    Height = 20,
                     ForeColor = Color.DimGray,
                     Cursor = Cursors.Hand
                 };
@@ -78,9 +78,9 @@ public static class SettingsDialog
                 {
                     Text = "Портативный режим (рядом с плагином)",
                     Left = 16,
-                    Top = 68,
+                    Top = 72,
                     Width = 460,
-                    Height = 20,
+                    Height = 22,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Portable
                 };
 
@@ -88,9 +88,9 @@ public static class SettingsDialog
                 {
                     Text = SettingsManager.PortableDirectory,
                     Left = 38,
-                    Top = 89,
+                    Top = 95,
                     Width = 440,
-                    Height = 16,
+                    Height = 20,
                     ForeColor = Color.DimGray,
                     Cursor = Cursors.Hand
                 };
@@ -101,16 +101,16 @@ public static class SettingsDialog
                 {
                     Text = "Пользовательская папка на диске:",
                     Left = 16,
-                    Top = 112,
+                    Top = 122,
                     Width = 460,
-                    Height = 20,
+                    Height = 22,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Custom
                 };
 
                 TextBox customPathBox = new TextBox()
                 {
                     Left = 38,
-                    Top = 135,
+                    Top = 148,
                     Width = 345,
                     Text = SettingsManager.CurrentStorageMode == StorageMode.Custom 
                         ? SettingsManager.DataDirectory 
@@ -122,7 +122,7 @@ public static class SettingsDialog
                 {
                     Text = "Обзор...",
                     Left = 390,
-                    Top = 134,
+                    Top = 147,
                     Width = 85,
                     Height = 25,
                     Enabled = rbCustom.Checked
@@ -132,9 +132,9 @@ public static class SettingsDialog
                 {
                     Text = "Перенести существующую сессию и базу данных в новую папку",
                     Left = 16,
-                    Top = 175,
+                    Top = 188,
                     Width = 465,
-                    Height = 35,
+                    Height = 42,
                     Checked = true,
                     ForeColor = Color.DarkSlateBlue
                 };
@@ -172,8 +172,8 @@ public static class SettingsDialog
                 storageGroup.Controls.Add(browseBtn);
                 storageGroup.Controls.Add(migrateCheck);
 
-                Button okBtn = new Button() { Text = "Сохранить", Left = 265, Width = 115, Height = 30, Top = 258, DialogResult = DialogResult.OK };
-                Button cancelBtn = new Button() { Text = "Отмена", Left = 390, Width = 115, Height = 30, Top = 258, DialogResult = DialogResult.Cancel };
+                Button okBtn = new Button() { Text = "Сохранить", Left = 265, Width = 115, Height = 30, Top = 275, DialogResult = DialogResult.OK };
+                Button cancelBtn = new Button() { Text = "Отмена", Left = 390, Width = 115, Height = 30, Top = 275, DialogResult = DialogResult.Cancel };
 
                 form.Controls.Add(storageGroup);
                 form.Controls.Add(okBtn);
