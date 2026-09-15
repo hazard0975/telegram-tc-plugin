@@ -29,8 +29,8 @@ public static class SettingsDialog
 
                 using Form form = new Form()
                 {
-                    Width = 540,
-                    Height = 380,
+                    Width = 560,
+                    Height = 410,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Настройки Telegram VFS",
                     StartPosition = FormStartPosition.CenterScreen,
@@ -42,48 +42,76 @@ public static class SettingsDialog
 
                 GroupBox storageGroup = new GroupBox()
                 {
-                    Text = "Расположение базы данных и сессии",
+                    Text = "  Расположение базы данных и сессии  ",
                     Left = 15,
                     Top = 15,
-                    Width = 495,
-                    Height = 250
+                    Width = 515,
+                    Height = 295,
+                    Padding = new Padding(10, 15, 10, 10)
                 };
 
+                // 1. По умолчанию (%APPDATA%)
                 RadioButton rbDefault = new RadioButton()
                 {
-                    Text = $"По умолчанию (%APPDATA%)\n{SettingsManager.DefaultAppDataDirectory}",
+                    Text = "По умолчанию (%APPDATA%)",
                     Left = 20,
-                    Top = 25,
-                    Width = 455,
-                    Height = 45,
+                    Top = 30,
+                    Width = 470,
+                    Height = 22,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.DefaultAppData
                 };
 
+                Label lblDefaultPath = new Label()
+                {
+                    Text = SettingsManager.DefaultAppDataDirectory,
+                    Left = 42,
+                    Top = 53,
+                    Width = 450,
+                    Height = 20,
+                    ForeColor = Color.DimGray,
+                    Cursor = Cursors.Hand
+                };
+                lblDefaultPath.Click += (s, e) => rbDefault.Checked = true;
+
+                // 2. Портативный режим (рядом с плагином)
                 RadioButton rbPortable = new RadioButton()
                 {
-                    Text = $"Портативный режим (рядом с плагином)\n{SettingsManager.PortableDirectory}",
+                    Text = "Портативный режим (рядом с плагином)",
                     Left = 20,
-                    Top = 75,
-                    Width = 455,
-                    Height = 45,
+                    Top = 82,
+                    Width = 470,
+                    Height = 22,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Portable
                 };
 
+                Label lblPortablePath = new Label()
+                {
+                    Text = SettingsManager.PortableDirectory,
+                    Left = 42,
+                    Top = 105,
+                    Width = 450,
+                    Height = 20,
+                    ForeColor = Color.DimGray,
+                    Cursor = Cursors.Hand
+                };
+                lblPortablePath.Click += (s, e) => rbPortable.Checked = true;
+
+                // 3. Пользовательская папка
                 RadioButton rbCustom = new RadioButton()
                 {
                     Text = "Пользовательская папка на диске:",
                     Left = 20,
-                    Top = 125,
-                    Width = 455,
-                    Height = 25,
+                    Top = 135,
+                    Width = 470,
+                    Height = 22,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Custom
                 };
 
                 TextBox customPathBox = new TextBox()
                 {
-                    Left = 40,
-                    Top = 155,
-                    Width = 340,
+                    Left = 42,
+                    Top = 162,
+                    Width = 360,
                     Text = SettingsManager.CurrentStorageMode == StorageMode.Custom 
                         ? SettingsManager.DataDirectory 
                         : (SettingsManager.GetSetting("data_path") ?? "D:\\TelegramVFS_Data"),
@@ -93,10 +121,10 @@ public static class SettingsDialog
                 Button browseBtn = new Button()
                 {
                     Text = "Обзор...",
-                    Left = 390,
-                    Top = 154,
+                    Left = 410,
+                    Top = 160,
                     Width = 85,
-                    Height = 25,
+                    Height = 26,
                     Enabled = rbCustom.Checked
                 };
 
@@ -104,9 +132,9 @@ public static class SettingsDialog
                 {
                     Text = "Перенести существующую сессию и базу данных в новую папку",
                     Left = 20,
-                    Top = 195,
-                    Width = 455,
-                    Height = 35,
+                    Top = 210,
+                    Width = 480,
+                    Height = 40,
                     Checked = true,
                     ForeColor = Color.DarkSlateBlue
                 };
@@ -136,14 +164,16 @@ public static class SettingsDialog
                 };
 
                 storageGroup.Controls.Add(rbDefault);
+                storageGroup.Controls.Add(lblDefaultPath);
                 storageGroup.Controls.Add(rbPortable);
+                storageGroup.Controls.Add(lblPortablePath);
                 storageGroup.Controls.Add(rbCustom);
                 storageGroup.Controls.Add(customPathBox);
                 storageGroup.Controls.Add(browseBtn);
                 storageGroup.Controls.Add(migrateCheck);
 
-                Button okBtn = new Button() { Text = "Сохранить", Left = 390, Width = 120, Height = 30, Top = 285, DialogResult = DialogResult.OK };
-                Button cancelBtn = new Button() { Text = "Отмена", Left = 260, Width = 120, Height = 30, Top = 285, DialogResult = DialogResult.Cancel };
+                Button okBtn = new Button() { Text = "Сохранить", Left = 410, Width = 120, Height = 30, Top = 325, DialogResult = DialogResult.OK };
+                Button cancelBtn = new Button() { Text = "Отмена", Left = 280, Width = 120, Height = 30, Top = 325, DialogResult = DialogResult.Cancel };
 
                 form.Controls.Add(storageGroup);
                 form.Controls.Add(okBtn);
