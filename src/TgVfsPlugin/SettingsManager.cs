@@ -11,11 +11,28 @@ public enum StorageMode
     Custom = 2          // Custom user folder
 }
 
+public enum FolderSortMode
+{
+    NameAsc = 0,    // По алфавиту (А — Я)
+    NameDesc = 1,   // По алфавиту обратный (Я — А)
+    DateDesc = 2,   // По дате создания (сначала новые)
+    DateAsc = 3     // По дате создания (сначала старые)
+}
+
 public static class SettingsManager
 {
     private static string? _cachedPluginDir;
     private static string? _customDataPath;
     private static StorageMode _storageMode = StorageMode.DefaultAppData;
+    private static FolderSortMode _folderSortMode = FolderSortMode.NameAsc;
+
+    public static FolderSortMode FolderSortMode => _folderSortMode;
+
+    public static void SetFolderSortMode(FolderSortMode mode)
+    {
+        _folderSortMode = mode;
+        SaveSetting("folder_sort_mode", mode.ToString());
+    }
 
     public static string PluginDirectory
     {
@@ -102,6 +119,7 @@ public static class SettingsManager
                 var lines = File.ReadAllLines(iniFile);
                 string? storageModeStr = null;
                 string? customPathStr = null;
+                string? folderSortStr = null;
 
                 foreach (var line in lines)
                 {
@@ -112,6 +130,7 @@ public static class SettingsManager
                         var v = parts[1].Trim();
                         if (k.Equals("storage_mode", StringComparison.OrdinalIgnoreCase)) storageModeStr = v;
                         if (k.Equals("data_path", StringComparison.OrdinalIgnoreCase)) customPathStr = v;
+                        if (k.Equals("folder_sort_mode", StringComparison.OrdinalIgnoreCase)) folderSortStr = v;
                     }
                 }
 
@@ -126,6 +145,15 @@ public static class SettingsManager
                 else
                 {
                     _storageMode = StorageMode.DefaultAppData;
+                }
+
+                if (!string.IsNullOrEmpty(folderSortStr) && Enum.TryParse<FolderSortMode>(folderSortStr, true, out var sortMode))
+                {
+                    _folderSortMode = sortMode;
+                }
+                else
+                {
+                    _folderSortMode = FolderSortMode.NameAsc;
                 }
 
                 _customDataPath = customPathStr;

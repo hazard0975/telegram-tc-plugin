@@ -147,11 +147,21 @@ public class VfsDatabase : IDisposable
         return null;
     }
 
-    public System.Collections.Generic.List<VfsItem> GetMounts()
+    public System.Collections.Generic.List<VfsItem> GetMounts(FolderSortMode sortMode = FolderSortMode.NameAsc)
     {
         var items = new System.Collections.Generic.List<VfsItem>();
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT channel_name, created_at FROM mounts";
+
+        string orderBy = sortMode switch
+        {
+            FolderSortMode.NameDesc => "ORDER BY channel_name DESC",
+            FolderSortMode.DateDesc => "ORDER BY created_at DESC",
+            FolderSortMode.DateAsc => "ORDER BY created_at ASC",
+            FolderSortMode.NameAsc => "ORDER BY channel_name ASC",
+            _ => "ORDER BY channel_name ASC"
+        };
+
+        cmd.CommandText = $"SELECT channel_name, created_at FROM mounts {orderBy}";
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
