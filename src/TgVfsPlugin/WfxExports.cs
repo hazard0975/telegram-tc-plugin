@@ -1579,29 +1579,31 @@ public static unsafe class WfxExports
         return 0;
     }
 
-    // Переименование / перемещение файлов и папок (ANSI) - F6 в Total Commander
+    // Переименование / перемещение / копирование файлов и папок (ANSI) - F5 / F6 в Total Commander
     [UnmanagedCallersOnly(EntryPoint = "FsRenMovFile", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsRenMovFile(byte* oldName, byte* newName, int moveFlags, int overwriteFlags, Win32Api.RemoteInfoStruct* ri)
     {
         string oldPath = Marshal.PtrToStringAnsi((IntPtr)oldName) ?? "";
         string newPath = Marshal.PtrToStringAnsi((IntPtr)newName) ?? "";
+        bool isMove = moveFlags != 0;
         bool overwrite = overwriteFlags != 0 || (moveFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
-        return HandleRenMovFile(oldPath, newPath, overwrite);
+        return HandleRenMovFile(oldPath, newPath, isMove, overwrite);
     }
 
-    // Переименование / перемещение файлов и папок (Unicode) - F6 в Total Commander
+    // Переименование / перемещение / копирование файлов и папок (Unicode) - F5 / F6 в Total Commander
     [UnmanagedCallersOnly(EntryPoint = "FsRenMovFileW", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsRenMovFileW(char* oldName, char* newName, int moveFlags, int overwriteFlags, Win32Api.RemoteInfoStruct* ri)
     {
         string oldPath = Marshal.PtrToStringUni((IntPtr)oldName) ?? "";
         string newPath = Marshal.PtrToStringUni((IntPtr)newName) ?? "";
+        bool isMove = moveFlags != 0;
         bool overwrite = overwriteFlags != 0 || (moveFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
-        return HandleRenMovFile(oldPath, newPath, overwrite);
+        return HandleRenMovFile(oldPath, newPath, isMove, overwrite);
     }
 
-    private static int HandleRenMovFile(string oldPath, string newPath, bool overwrite)
+    private static int HandleRenMovFile(string oldPath, string newPath, bool isMove, bool overwrite)
     {
-        Logger.Log($"FsRenMovFile called from '{oldPath}' to '{newPath}', overwrite={overwrite}");
+        Logger.Log($"FsRenMovFile called from '{oldPath}' to '{newPath}', isMove={isMove}, overwrite={overwrite}");
         if (_db == null) return Win32Api.FS_FILE_NOTFOUND;
 
         string cleanOld = NormalizeVfsPath(oldPath);
@@ -1614,7 +1616,7 @@ public static unsafe class WfxExports
 
         if (oldFirstSlash <= 0 || newFirstSlash <= 0)
         {
-            // Переименование корневого канала не поддерживается через FsRenMovFile
+            // Переименование/копирование корневого канала не поддерживается через FsRenMovFile
             return Win32Api.FS_FILE_NOTFOUND;
         }
 
@@ -1650,7 +1652,7 @@ public static unsafe class WfxExports
             if (newSub.Equals(oldSub, StringComparison.OrdinalIgnoreCase) ||
                 newSub.StartsWith(oldSub + "\\", StringComparison.OrdinalIgnoreCase))
             {
-                Logger.Log($"Cannot move directory '{oldSub}' into itself or its subfolder '{newSub}'.");
+                Logger.Log($"Cannot move/copy directory '{oldSub}' into itself or its subfolder '{newSub}'.");
                 return Win32Api.FS_FILE_EXISTS;
             }
         }
@@ -1669,44 +1671,237 @@ public static unsafe class WfxExports
 
         _db.EnsureParentDirectoriesExist(newMount.Id, newParent);
 
-        if (oldMount.Id == newMount.Id)
+        if (isMove)
         {
-            // Перемещение / переименование ВНУТРИ одного канала (быстро в SQLite)
-            if (sourceRecord.IsDir)
+            // === РЕЖИМ ПЕРЕМЕЩЕНИЯ (F6 / Shift + Drag) ===
+            if (oldMount.Id == newMount.Id)
             {
-                _db.RenameMoveDirectory(oldMount.Id, oldSub, newItemName, newParent, newMount.Id);
-                Logger.Log($"Directory '{oldSub}' moved/renamed in channel '{oldChannel}' to '{newSub}'.");
+                // Перемещение / переименование ВНУТРИ одного канала (быстро в SQLite)
+                if (sourceRecord.IsDir)
+                {
+                    _db.RenameMoveDirectory(oldMount.Id, oldSub, newItemName, newParent, newMount.Id);
+                    Logger.Log($"Directory '{oldSub}' moved/renamed in channel '{oldChannel}' to '{newSub}'.");
+                }
+                else
+                {
+                    _db.RenameMoveFile(sourceRecord.Uid, newItemName, newParent, newMount.Id);
+                    Logger.Log($"File '{oldSub}' moved/renamed in channel '{oldChannel}' to '{newSub}'.");
+                }
             }
             else
             {
-                _db.RenameMoveFile(sourceRecord.Uid, newItemName, newParent, newMount.Id);
-                Logger.Log($"File '{oldSub}' moved/renamed in channel '{oldChannel}' to '{newSub}'.");
+                // Физическое перемещение МЕЖДУ разными каналами (скачивание -> загрузка -> удаление старого сообщения в Telegram)
+                try
+                {
+                    if (sourceRecord.IsDir)
+                    {
+                        PerformPhysicalMoveDirectoryAcrossChannels(oldMount, newMount, oldSub, newItemName, newParent);
+                    }
+                    else
+                    {
+                        PerformPhysicalMoveFileAcrossChannels(sourceRecord, oldMount, newMount, newItemName, newParent);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Error physically moving '{oldPath}' to '{newPath}': {ex.Message}");
+                    return Win32Api.FS_FILE_WRITEERROR;
+                }
             }
         }
         else
         {
-            // Физическое перемещение МЕЖДУ разными каналами (скачивание -> загрузка -> удаление старого сообщения в Telegram)
-            try
+            // === РЕЖИМ КОПИРОВАНИЯ (F5 / Drag без Shift) ===
+            if (oldMount.Id == newMount.Id)
             {
+                // Виртуальное мгновенное копирование ВНУТРИ одного канала (дублирование записи в SQLite)
                 if (sourceRecord.IsDir)
                 {
-                    PerformPhysicalMoveDirectoryAcrossChannels(oldMount, newMount, oldSub, newItemName, newParent);
+                    PerformCopyDirectoryWithinChannel(oldMount.Id, oldSub, newItemName, newParent);
+                    Logger.Log($"Directory '{oldSub}' virtually copied in channel '{oldChannel}' to '{newSub}'.");
                 }
                 else
                 {
-                    PerformPhysicalMoveFileAcrossChannels(sourceRecord, oldMount, newMount, newItemName, newParent);
+                    var copyRecord = new VfsDatabase.FileRecord
+                    {
+                        Uid = Guid.NewGuid().ToString("N"),
+                        MountId = oldMount.Id,
+                        IsDir = false,
+                        Name = newItemName,
+                        Parent = newParent,
+                        MTime = DateTime.UtcNow,
+                        Size = sourceRecord.Size,
+                        TgMessageId = sourceRecord.TgMessageId,
+                        InTrash = 0,
+                        Ver = 1
+                    };
+                    _db.AddFile(copyRecord);
+                    Logger.Log($"File '{oldSub}' virtually copied in channel '{oldChannel}' to '{newSub}'.");
                 }
             }
-            catch (Exception ex)
+            else
             {
-                Logger.Log($"Error physically moving '{oldPath}' to '{newPath}': {ex.Message}");
-                return Win32Api.FS_FILE_WRITEERROR;
+                // Физическое копирование МЕЖДУ разными каналами (скачивание -> загрузка в целевой канал БЕЗ удаления исходного сообщения)
+                try
+                {
+                    if (sourceRecord.IsDir)
+                    {
+                        PerformPhysicalCopyDirectoryAcrossChannels(oldMount, newMount, oldSub, newItemName, newParent);
+                    }
+                    else
+                    {
+                        PerformPhysicalCopyFileAcrossChannels(sourceRecord, oldMount, newMount, newItemName, newParent);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Error physically copying '{oldPath}' to '{newPath}': {ex.Message}");
+                    return Win32Api.FS_FILE_WRITEERROR;
+                }
             }
         }
 
         Win32Api.RefreshActivePanel();
         TriggerCheckpoint(immediate: true);
         return Win32Api.FS_FILE_OK;
+    }
+
+    private static void PerformCopyDirectoryWithinChannel(
+        string mountId,
+        string oldSubPath,
+        string newItemName,
+        string? newParent)
+    {
+        string cleanOldSub = oldSubPath.Trim('\\', '/').Replace('/', '\\');
+        string cleanNewParent = string.IsNullOrEmpty(newParent) ? "" : newParent.Trim('\\', '/').Replace('/', '\\');
+        string newSubPath = string.IsNullOrEmpty(cleanNewParent) ? newItemName : cleanNewParent + "\\" + newItemName;
+
+        _db!.AddDirectoryRecord(mountId, newItemName, newParent);
+
+        var subItems = _db.GetSubTreeItems(mountId, cleanOldSub);
+        foreach (var item in subItems)
+        {
+            string itemRelativeParent = item.Parent ?? "";
+            string recalculatedParent;
+            if (itemRelativeParent.Equals(cleanOldSub, StringComparison.OrdinalIgnoreCase))
+            {
+                recalculatedParent = newSubPath;
+            }
+            else if (itemRelativeParent.StartsWith(cleanOldSub + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                recalculatedParent = newSubPath + itemRelativeParent.Substring(cleanOldSub.Length);
+            }
+            else
+            {
+                recalculatedParent = newSubPath;
+            }
+
+            if (item.IsDir)
+            {
+                _db.AddDirectoryRecord(mountId, item.Name, recalculatedParent);
+            }
+            else
+            {
+                var copySub = new VfsDatabase.FileRecord
+                {
+                    Uid = Guid.NewGuid().ToString("N"),
+                    MountId = mountId,
+                    IsDir = false,
+                    Name = item.Name,
+                    Parent = recalculatedParent,
+                    MTime = item.MTime,
+                    Size = item.Size,
+                    TgMessageId = item.TgMessageId,
+                    InTrash = 0,
+                    Ver = 1
+                };
+                _db.AddFile(copySub);
+            }
+        }
+    }
+
+    private static void PerformPhysicalCopyFileAcrossChannels(
+        VfsDatabase.FileRecord fileRecord,
+        VfsDatabase.MountInfo oldMount,
+        VfsDatabase.MountInfo newMount,
+        string newItemName,
+        string? newParent)
+    {
+        string tempPath = Path.Combine(Path.GetTempPath(), $"tgvfs_cp_{Guid.NewGuid():N}_{fileRecord.Name}");
+        try
+        {
+            Logger.Log($"[Physical Copy] Downloading file '{fileRecord.Name}' from channel {oldMount.ChannelName} ({oldMount.ChannelId}), msg={fileRecord.TgMessageId}...");
+            Task.Run(() => TelegramManager.DownloadFileAsync(oldMount.ChannelId, fileRecord.TgMessageId, tempPath)).GetAwaiter().GetResult();
+
+            string relativeCaption = string.IsNullOrEmpty(newParent) ? newItemName : newParent + "\\" + newItemName;
+            Logger.Log($"[Physical Copy] Uploading file '{newItemName}' to channel {newMount.ChannelName} ({newMount.ChannelId})...");
+            int newMsgId = Task.Run(() => TelegramManager.UploadAndSendFileAsync(newMount.ChannelId, tempPath, newItemName, relativeCaption)).GetAwaiter().GetResult();
+
+            Logger.Log($"[Physical Copy] Creating SQLite record for new file in mount={newMount.Id}, msg={newMsgId}...");
+            var newRecord = new VfsDatabase.FileRecord
+            {
+                Uid = Guid.NewGuid().ToString("N"),
+                MountId = newMount.Id,
+                IsDir = false,
+                Name = newItemName,
+                Parent = newParent,
+                MTime = DateTime.UtcNow,
+                Size = fileRecord.Size,
+                TgMessageId = newMsgId,
+                InTrash = 0,
+                Ver = 1
+            };
+            _db!.AddFile(newRecord);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { }
+            }
+        }
+    }
+
+    private static void PerformPhysicalCopyDirectoryAcrossChannels(
+        VfsDatabase.MountInfo oldMount,
+        VfsDatabase.MountInfo newMount,
+        string oldSubPath,
+        string newItemName,
+        string? newParent)
+    {
+        string cleanOldSub = oldSubPath.Trim('\\', '/').Replace('/', '\\');
+        string cleanNewParent = string.IsNullOrEmpty(newParent) ? "" : newParent.Trim('\\', '/').Replace('/', '\\');
+        string newSubPath = string.IsNullOrEmpty(cleanNewParent) ? newItemName : cleanNewParent + "\\" + newItemName;
+
+        _db!.AddDirectoryRecord(newMount.Id, newItemName, newParent);
+
+        var subItems = _db.GetSubTreeItems(oldMount.Id, cleanOldSub);
+        foreach (var item in subItems)
+        {
+            string itemRelativeParent = item.Parent ?? "";
+            string recalculatedParent;
+            if (itemRelativeParent.Equals(cleanOldSub, StringComparison.OrdinalIgnoreCase))
+            {
+                recalculatedParent = newSubPath;
+            }
+            else if (itemRelativeParent.StartsWith(cleanOldSub + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                recalculatedParent = newSubPath + itemRelativeParent.Substring(cleanOldSub.Length);
+            }
+            else
+            {
+                recalculatedParent = newSubPath;
+            }
+
+            if (item.IsDir)
+            {
+                _db.AddDirectoryRecord(newMount.Id, item.Name, recalculatedParent);
+            }
+            else
+            {
+                PerformPhysicalCopyFileAcrossChannels(item, oldMount, newMount, item.Name, recalculatedParent);
+            }
+        }
     }
 
     private static void PerformPhysicalMoveFileAcrossChannels(
