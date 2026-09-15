@@ -29,6 +29,64 @@ public static unsafe class WfxExports
     private static readonly ConcurrentDictionary<IntPtr, FindState> _searchStates = new();
     private static int _nextHandle = 1;
 
+    private static bool _isBatchOperation = false;
+    private static System.Threading.Timer? _debouncedCheckpointTimer;
+    private static bool _processExitHooked = false;
+
+    private static void OnProcessExit(object? sender, EventArgs e)
+    {
+        try
+        {
+            Logger.Log("ProcessExit event triggered. Performing final WAL checkpoint (TRUNCATE) and clearing connection pools.");
+            if (_db != null)
+            {
+                _db.Checkpoint(truncate: true);
+                _db.Dispose();
+                _db = null;
+            }
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error during ProcessExit shutdown: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Инициирует фоновый или отложенный сброс WAL-журнала в основную базу данных.
+    /// Во время пакетной операции (загрузка списка файлов) одиночные сбросы пропускаются,
+    /// а единственный сброс произойдет по сигналу FS_STATUS_END от Total Commander.
+    /// </summary>
+    public static void TriggerCheckpoint(bool immediate = false)
+    {
+        if (_db == null) return;
+
+        if (_isBatchOperation && !immediate)
+        {
+            // Идет пакетная передача файлов — сбросим 1 раз по завершении списка (FS_STATUS_END)
+            return;
+        }
+
+        if (immediate)
+        {
+            _debouncedCheckpointTimer?.Dispose();
+            _debouncedCheckpointTimer = null;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                _db?.Checkpoint(truncate: false);
+            });
+        }
+        else
+        {
+            // Отложенный сброс (1.5 сек debounce для одиночных операций)
+            _debouncedCheckpointTimer?.Dispose();
+            _debouncedCheckpointTimer = new System.Threading.Timer(_ =>
+            {
+                _db?.Checkpoint(truncate: false);
+            }, null, 1500, System.Threading.Timeout.Infinite);
+        }
+    }
+
     // Вспомогательный метод для конвертации DateTime в FILETIME
     private static Win32Api.FILETIME DateTimeToFileTime(DateTime time)
     {
@@ -292,6 +350,12 @@ public static unsafe class WfxExports
                 Logger.Log($"Manual DLL load failed: {ex}");
             }
 
+            if (!_processExitHooked)
+            {
+                _processExitHooked = true;
+                AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+            }
+
             // Инициализируем базу данных при запуске плагина
             if (_db == null)
             {
@@ -440,6 +504,7 @@ public static unsafe class WfxExports
                         
                         Logger.Log($"Folder created successfully: {result.Name}");
                         Win32Api.RefreshActivePanel();
+                        TriggerCheckpoint(immediate: true);
                     }
                 }
                 catch (Exception ex)
@@ -895,6 +960,7 @@ public static unsafe class WfxExports
             });
 
             Logger.Log($"FsPutFile: File '{fileName}' successfully added to database.");
+            TriggerCheckpoint(immediate: false);
 
             return Win32Api.FS_FILE_OK;
         }
@@ -1225,6 +1291,17 @@ public static unsafe class WfxExports
     {
         string startEndStr = infoStartEnd == Win32Api.FS_STATUS_START ? "START" : "END";
         Logger.Log($"FsStatusInfo: {startEndStr} for Dir='{remoteDir}', Operation={infoOperation}");
+
+        if (infoStartEnd == Win32Api.FS_STATUS_START)
+        {
+            _isBatchOperation = true;
+        }
+        else if (infoStartEnd == Win32Api.FS_STATUS_END)
+        {
+            _isBatchOperation = false;
+            Logger.Log("FsStatusInfo: Batch operation completed. Executing WAL checkpoint.");
+            TriggerCheckpoint(immediate: true);
+        }
     }
 
     // Поддержка фонового копирования и очереди в Total Commander (ANSI)
@@ -1298,6 +1375,7 @@ public static unsafe class WfxExports
                     _db.MoveFileToTrash(fileRecord.Uid);
                     Logger.Log($"File '{fileName}' in channel '{channelName}' moved to trash via FsDeleteFile.");
                     Win32Api.RefreshActivePanel();
+                    TriggerCheckpoint(immediate: true);
                     return 1; // true
                 }
             }
@@ -1366,6 +1444,7 @@ public static unsafe class WfxExports
                         _db.DeleteMount(mount.Id);
                         Logger.Log($"Mount '{channelName}' deleted via FsRemoveDir.");
                         Win32Api.RefreshActivePanel();
+                        TriggerCheckpoint(immediate: true);
                     }).GetAwaiter().GetResult();
 
                     return 1; // true (успех)
@@ -1381,12 +1460,7 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsContentPluginUnload", CallConvs = [typeof(CallConvStdcall)])]
     public static void FsContentPluginUnload()
     {
-        Logger.Log("FsContentPluginUnload called. Performing WAL checkpoint and closing database connection.");
-        if (_db != null)
-        {
-            _db.Checkpoint();
-            _db.Dispose();
-            _db = null;
-        }
+        Logger.Log("FsContentPluginUnload called. Delegating to OnProcessExit.");
+        OnProcessExit(null, EventArgs.Empty);
     }
 }

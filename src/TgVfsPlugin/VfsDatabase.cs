@@ -304,30 +304,31 @@ public class VfsDatabase : IDisposable
     }
 
     /// <summary>
-    /// Выполняет чекпоинт WAL-журнала (PRAGMA wal_checkpoint(TRUNCATE)),
-    /// сбрасывая все изменения из файла .db-wal в основной файл базы данных .db
-    /// и очищая журнал.
+    /// Выполняет чекпоинт WAL-журнала, сбрасывая изменения из файла .db-wal в основной файл базы данных .db.
+    /// truncate = false (PASSIVE mode, без блокировки читающих потоков TC).
+    /// truncate = true (TRUNCATE mode, полный сброс и ужимка журнала до 0 байт).
     /// </summary>
-    public void Checkpoint()
+    public void Checkpoint(bool truncate = false)
     {
         try
         {
             if (_connection != null && _connection.State == System.Data.ConnectionState.Open)
             {
                 using var cmd = _connection.CreateCommand();
-                cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                cmd.CommandText = truncate ? "PRAGMA wal_checkpoint(TRUNCATE);" : "PRAGMA wal_checkpoint(PASSIVE);";
                 cmd.ExecuteNonQuery();
             }
         }
         catch (Exception ex)
         {
-            Logger.Log($"Error executing WAL checkpoint: {ex.Message}");
+            Logger.Log($"Error executing WAL checkpoint (truncate={truncate}): {ex.Message}");
         }
     }
 
     public void Dispose()
     {
-        Checkpoint();
+        Checkpoint(truncate: true);
         _connection?.Dispose();
+        _connection = null;
     }
 }
