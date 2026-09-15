@@ -303,8 +303,31 @@ public class VfsDatabase : IDisposable
         return items;
     }
 
+    /// <summary>
+    /// Выполняет чекпоинт WAL-журнала (PRAGMA wal_checkpoint(TRUNCATE)),
+    /// сбрасывая все изменения из файла .db-wal в основной файл базы данных .db
+    /// и очищая журнал.
+    /// </summary>
+    public void Checkpoint()
+    {
+        try
+        {
+            if (_connection != null && _connection.State == System.Data.ConnectionState.Open)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                cmd.ExecuteNonQuery();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error executing WAL checkpoint: {ex.Message}");
+        }
+    }
+
     public void Dispose()
     {
+        Checkpoint();
         _connection?.Dispose();
     }
 }

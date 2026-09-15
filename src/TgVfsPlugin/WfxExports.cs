@@ -1376,4 +1376,17 @@ public static unsafe class WfxExports
 
         return 0;
     }
+
+    // Вызывается Total Commander при выгрузке плагина или закрытии программы
+    [UnmanagedCallersOnly(EntryPoint = "FsContentPluginUnload", CallConvs = [typeof(CallConvStdcall)])]
+    public static void FsContentPluginUnload()
+    {
+        Logger.Log("FsContentPluginUnload called. Performing WAL checkpoint and closing database connection.");
+        if (_db != null)
+        {
+            _db.Checkpoint();
+            _db.Dispose();
+            _db = null;
+        }
+    }
 }
