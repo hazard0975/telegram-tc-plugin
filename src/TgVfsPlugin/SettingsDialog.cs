@@ -8,7 +8,6 @@ namespace TgVfsPlugin;
 public class SettingsDialogResult
 {
     public StorageMode SelectedStorageMode { get; set; }
-    public FolderSortMode SelectedSortMode { get; set; }
     public string CustomPath { get; set; } = "";
     public bool MigrateExistingFiles { get; set; }
     public bool StorageLocationChanged { get; set; }
@@ -31,7 +30,7 @@ public static class SettingsDialog
                 using Form form = new Form()
                 {
                     Width = 540,
-                    Height = 425,
+                    Height = 365,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Настройки Telegram VFS",
                     StartPosition = FormStartPosition.CenterScreen,
@@ -47,7 +46,7 @@ public static class SettingsDialog
                     Left = 15,
                     Top = 12,
                     Width = 495,
-                    Height = 242,
+                    Height = 250,
                     Font = new Font("Segoe UI", 9, FontStyle.Regular)
                 };
 
@@ -175,46 +174,10 @@ public static class SettingsDialog
                 storageGroup.Controls.Add(browseBtn);
                 storageGroup.Controls.Add(migrateCheck);
 
-                GroupBox sortGroup = new GroupBox()
-                {
-                    Text = "Сортировка виртуальных папок",
-                    Left = 15,
-                    Top = 260,
-                    Width = 495,
-                    Height = 62,
-                    Font = new Font("Segoe UI", 9, FontStyle.Regular)
-                };
-
-                Label lblSort = new Label()
-                {
-                    Text = "Порядок папок:",
-                    Left = 16,
-                    Top = 24,
-                    Width = 110,
-                    Height = 22
-                };
-
-                ComboBox sortCombo = new ComboBox()
-                {
-                    Left = 130,
-                    Top = 21,
-                    Width = 348,
-                    DropDownStyle = ComboBoxStyle.DropDownList
-                };
-                sortCombo.Items.Add("По алфавиту (А — Я)");
-                sortCombo.Items.Add("По алфавиту обратный (Я — А)");
-                sortCombo.Items.Add("По дате создания (сначала новые)");
-                sortCombo.Items.Add("По дате создания (сначала старые)");
-                sortCombo.SelectedIndex = Math.Clamp((int)SettingsManager.FolderSortMode, 0, 3);
-
-                sortGroup.Controls.Add(lblSort);
-                sortGroup.Controls.Add(sortCombo);
-
-                Button okBtn = new Button() { Text = "Сохранить", Left = 265, Width = 115, Height = 30, Top = 338, DialogResult = DialogResult.OK };
-                Button cancelBtn = new Button() { Text = "Отмена", Left = 390, Width = 115, Height = 30, Top = 338, DialogResult = DialogResult.Cancel };
+                Button okBtn = new Button() { Text = "Сохранить", Left = 265, Width = 115, Height = 30, Top = 275, DialogResult = DialogResult.OK };
+                Button cancelBtn = new Button() { Text = "Отмена", Left = 390, Width = 115, Height = 30, Top = 275, DialogResult = DialogResult.Cancel };
 
                 form.Controls.Add(storageGroup);
-                form.Controls.Add(sortGroup);
                 form.Controls.Add(okBtn);
                 form.Controls.Add(cancelBtn);
 
@@ -254,7 +217,6 @@ public static class SettingsDialog
                     result = new SettingsDialogResult
                     {
                         SelectedStorageMode = newMode,
-                        SelectedSortMode = (FolderSortMode)sortCombo.SelectedIndex,
                         CustomPath = newPath,
                         MigrateExistingFiles = migrateCheck.Checked,
                         StorageLocationChanged = pathChanged

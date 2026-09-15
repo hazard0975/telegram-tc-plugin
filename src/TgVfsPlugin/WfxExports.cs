@@ -178,7 +178,7 @@ public static unsafe class WfxExports
                     Size = 0,
                     Date = DateTime.Now 
                 });
-                state.Items.AddRange(_db.GetMounts(SettingsManager.FolderSortMode));
+                state.Items.AddRange(_db.GetMounts());
             }
             else
             {
@@ -515,8 +515,6 @@ public static unsafe class WfxExports
                     var result = SettingsDialog.Show();
                     if (result != null)
                     {
-                        SettingsManager.SetFolderSortMode(result.SelectedSortMode);
-
                         if (result.StorageLocationChanged)
                         {
                             Logger.Log($"Storage location change requested. New mode: {result.SelectedStorageMode}, CustomPath: '{result.CustomPath}'");
@@ -579,11 +577,6 @@ public static unsafe class WfxExports
                                     System.Windows.Forms.MessageBoxIcon.Information);
                             }
                             catch { }
-                        }
-                        else
-                        {
-                            Logger.Log("Settings updated (sort mode). Requesting panel refresh.");
-                            Win32Api.RefreshActivePanel();
                         }
                     }
                 }
