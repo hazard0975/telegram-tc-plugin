@@ -504,6 +504,16 @@ public static unsafe class WfxExports
                             // 5. Оповещаем и обновляем список папок в Total Commander
                             Logger.Log("Settings applied. Requesting panel refresh.");
                             Win32Api.RefreshActivePanel();
+
+                            try
+                            {
+                                System.Windows.Forms.MessageBox.Show(
+                                    $"Настройки успешно применены!\n\nПапка данных:\n{newDir}",
+                                    "Telegram VFS",
+                                    System.Windows.Forms.MessageBoxButtons.OK,
+                                    System.Windows.Forms.MessageBoxIcon.Information);
+                            }
+                            catch { }
                         }
                     }
                 }

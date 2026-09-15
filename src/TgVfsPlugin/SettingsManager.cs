@@ -52,27 +52,12 @@ public static class SettingsManager
     public static string PortableDirectory => Path.Combine(PluginDirectory, "Data");
 
     public static string GlobalSettingsFile => Path.Combine(DefaultAppDataDirectory, "settings.ini");
-    public static string PortableSettingsFile => Path.Combine(PluginDirectory, "settings.ini");
+    public static string PortableSettingsFile => Path.Combine(PortableDirectory, "settings.ini");
 
     public static StorageMode CurrentStorageMode => _storageMode;
 
     /// <summary>
-    /// Файл настроек, откуда реально загружена конфигурация
-    /// </summary>
-    public static string ActiveSettingsFile
-    {
-        get
-        {
-            if (_storageMode == StorageMode.Portable || File.Exists(PortableSettingsFile))
-            {
-                return PortableSettingsFile;
-            }
-            return GlobalSettingsFile;
-        }
-    }
-
-    /// <summary>
-    /// Текущая активная директория для данных (база SQLite, сессия, логи)
+    /// Текущая активная директория для данных (база SQLite, сессия, логи, настройки)
     /// </summary>
     public static string DataDirectory
     {
@@ -91,6 +76,11 @@ public static class SettingsManager
         }
     }
 
+    /// <summary>
+    /// Файл настроек, расположенный строго внутри активной папки данных
+    /// </summary>
+    public static string ActiveSettingsFile => Path.Combine(DataDirectory, "settings.ini");
+
     public static string DbPath => Path.Combine(DataDirectory, "vfs_cache.db");
     public static string SessionPath => Path.Combine(DataDirectory, "WTelegram.session");
     public static string LogPath => Path.Combine(DataDirectory, "plugin_log.txt");
@@ -104,7 +94,7 @@ public static class SettingsManager
     {
         try
         {
-            // 1. Проверяем settings.ini рядом с DLL (Portable)
+            // 1. Сначала проверяем settings.ini в Portable подпапке Data\ рядом с DLL
             string iniFile = File.Exists(PortableSettingsFile) ? PortableSettingsFile : GlobalSettingsFile;
 
             if (File.Exists(iniFile))
@@ -159,8 +149,9 @@ public static class SettingsManager
             string iniFile = ActiveSettingsFile;
             if (!File.Exists(iniFile))
             {
-                // Fallback: если нет в активном, проверим глобальный
-                if (File.Exists(GlobalSettingsFile)) iniFile = GlobalSettingsFile;
+                // Fallback: если нет в активном, проверим Portable или AppData
+                if (File.Exists(PortableSettingsFile)) iniFile = PortableSettingsFile;
+                else if (File.Exists(GlobalSettingsFile)) iniFile = GlobalSettingsFile;
                 else return null;
             }
 
@@ -217,19 +208,6 @@ public static class SettingsManager
         if (!string.IsNullOrEmpty(customPath))
         {
             SaveSetting("data_path", customPath);
-        }
-
-        // Если включен Portable режим, создаем settings.ini рядом с DLL
-        if (mode == StorageMode.Portable)
-        {
-            try
-            {
-                if (!File.Exists(PortableSettingsFile))
-                {
-                    File.WriteAllText(PortableSettingsFile, $"storage_mode=Portable\n");
-                }
-            }
-            catch { }
         }
     }
 
