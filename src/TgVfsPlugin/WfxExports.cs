@@ -240,8 +240,13 @@ public static unsafe class WfxExports
             {
                 // Внутри канала (наш путь начинается с \ или /, например \Work Chat)
                 string fullPath = dirPath.TrimStart('\\', '/');
-                string[] parts = fullPath.Split(new[] { '\\', '/' });
+                string[] parts = fullPath.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
                 string channelTitle = parts[0];
+                string? parentSubPath = null;
+                if (parts.Length > 1)
+                {
+                    parentSubPath = string.Join("\\", parts, 1, parts.Length - 1);
+                }
                 
                 var mount = _db.GetMountByName(channelTitle);
                 if (mount != null && mount.Mode == 0 && !string.IsNullOrEmpty(mount.LocalPath))
@@ -265,8 +270,8 @@ public static unsafe class WfxExports
                     }
                 }
                 
-                Logger.Log($"Fetching files for channel: '{channelTitle}'");
-                state.Items = _db.GetFiles(channelTitle);
+                Logger.Log($"Fetching files for channel: '{channelTitle}', parent: '{parentSubPath}'");
+                state.Items = _db.GetFiles(channelTitle, parentSubPath);
             }
 
             Logger.Log($"Found {state.Items.Count} items.");
@@ -744,6 +749,8 @@ public static unsafe class WfxExports
         string channelName = cleanRemote.Substring(0, firstSlash);
         string subPath = cleanRemote.Substring(firstSlash + 1).Replace('/', '\\');
         string fileName = System.IO.Path.GetFileName(subPath);
+        string? parentSubPath = System.IO.Path.GetDirectoryName(subPath);
+        if (string.IsNullOrEmpty(parentSubPath)) parentSubPath = null;
 
         var mount = _db.GetMountByName(channelName);
         if (mount == null)
@@ -752,7 +759,9 @@ public static unsafe class WfxExports
             return Win32Api.FS_FILE_NOTFOUND;
         }
 
-        var existingFile = _db.GetFile(mount.Id, fileName, parent: null);
+        _db.EnsureParentDirectoriesExist(mount.Id, parentSubPath);
+
+        var existingFile = _db.GetFile(mount.Id, fileName, parent: parentSubPath);
         if (existingFile != null)
         {
             bool overwrite = (copyFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
@@ -951,7 +960,7 @@ public static unsafe class WfxExports
                 MountId = mount.Id,
                 IsDir = false,
                 Name = fileName,
-                Parent = null,
+                Parent = parentSubPath,
                 MTime = fileInfo.LastWriteTimeUtc,
                 Size = fileInfo.Length,
                 TgMessageId = messageId,
@@ -1026,8 +1035,11 @@ public static unsafe class WfxExports
             return Win32Api.FS_FILE_NOTFOUND;
         }
 
+        string? parentSubPath = Path.GetDirectoryName(subPath);
+        if (string.IsNullOrEmpty(parentSubPath)) parentSubPath = null;
+
         // Поиск файла в базе данных
-        var fileRecord = _db.GetFile(mount.Id, fileName, parent: null);
+        var fileRecord = _db.GetFile(mount.Id, fileName, parent: parentSubPath);
 
         if (fileRecord == null || fileRecord.IsDir || fileRecord.TgMessageId <= 0)
         {
@@ -1320,6 +1332,57 @@ public static unsafe class WfxExports
         return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD | Win32Api.BG_ASK_USER;
     }
 
+    // Создание каталога (ANSI) - Вызывается при нажатии F7 в Total Commander
+    [UnmanagedCallersOnly(EntryPoint = "FsMkDir", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsMkDir(byte* path)
+    {
+        string dirPath = Marshal.PtrToStringAnsi((IntPtr)path) ?? "";
+        return HandleMkDir(dirPath);
+    }
+
+    // Создание каталога (Unicode) - Вызывается при нажатии F7 в Total Commander
+    [UnmanagedCallersOnly(EntryPoint = "FsMkDirW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsMkDirW(char* path)
+    {
+        string dirPath = Marshal.PtrToStringUni((IntPtr)path) ?? "";
+        return HandleMkDir(dirPath);
+    }
+
+    private static int HandleMkDir(string dirPath)
+    {
+        Logger.Log($"FsMkDir called for: '{dirPath}'");
+        if (_db == null) return 0; // false
+
+        string cleanPath = dirPath.TrimStart('\\', '/').TrimEnd('\\', '/');
+        if (string.IsNullOrEmpty(cleanPath)) return 0;
+
+        int firstSlash = cleanPath.IndexOfAny(new[] { '\\', '/' });
+        if (firstSlash <= 0)
+        {
+            // Нельзя создать канал через FsMkDir без диалога
+            return 0;
+        }
+
+        string channelName = cleanPath.Substring(0, firstSlash);
+        string subPath = cleanPath.Substring(firstSlash + 1).Replace('/', '\\');
+
+        var mount = _db.GetMountByName(channelName);
+        if (mount == null) return 0;
+
+        int lastSlash = subPath.LastIndexOf('\\');
+        string dirName = lastSlash >= 0 ? subPath.Substring(lastSlash + 1) : subPath;
+        string? parent = lastSlash >= 0 ? subPath.Substring(0, lastSlash) : null;
+
+        _db.EnsureParentDirectoriesExist(mount.Id, parent);
+        _db.AddDirectoryRecord(mount.Id, dirName, parent);
+        
+        Logger.Log($"FsMkDir: Directory '{dirName}' created in parent '{parent}' for channel '{channelName}'.");
+        Win32Api.RefreshActivePanel();
+        TriggerCheckpoint(immediate: true);
+
+        return 1; // true (success)
+    }
+
     // Удаление файла / объекта (ANSI) - Обязательный экспорт для F8 / Del в Total Commander
     [UnmanagedCallersOnly(EntryPoint = "FsDeleteFile", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsDeleteFile(byte* remoteName)
@@ -1362,18 +1425,28 @@ public static unsafe class WfxExports
         }
         else
         {
-            // Это файл внутри канала (например "Work Chat\doc.pdf")
+            // Это элемент внутри канала (например "Work Chat\ai-tour-optimization\doc.pdf" или "Work Chat\subfolder")
             string channelName = cleanPath.Substring(0, firstSlash);
-            string fileName = Path.GetFileName(cleanPath.Substring(firstSlash + 1));
+            string subPath = cleanPath.Substring(firstSlash + 1).Replace('/', '\\');
+            string fileName = Path.GetFileName(subPath);
+            string? parentSubPath = Path.GetDirectoryName(subPath);
+            if (string.IsNullOrEmpty(parentSubPath)) parentSubPath = null;
 
             var mount = _db.GetMountByName(channelName);
             if (mount != null)
             {
-                var fileRecord = _db.GetFile(mount.Id, fileName, parent: null);
+                var fileRecord = _db.GetFile(mount.Id, fileName, parent: parentSubPath);
                 if (fileRecord != null)
                 {
-                    _db.MoveFileToTrash(fileRecord.Uid);
-                    Logger.Log($"File '{fileName}' in channel '{channelName}' moved to trash via FsDeleteFile.");
+                    if (fileRecord.IsDir)
+                    {
+                        _db.MoveDirectoryToTrash(mount.Id, subPath);
+                    }
+                    else
+                    {
+                        _db.MoveFileToTrash(fileRecord.Uid);
+                    }
+                    Logger.Log($"Item '{subPath}' in channel '{channelName}' moved to trash via FsDeleteFile.");
                     Win32Api.RefreshActivePanel();
                     TriggerCheckpoint(immediate: true);
                     return 1; // true
@@ -1450,6 +1523,22 @@ public static unsafe class WfxExports
                     return 1; // true (успех)
                 }
                 return 0; // пользователь отменил
+            }
+        }
+        else
+        {
+            // Это виртуальная подпапка внутри канала (например "Work Chat\ai-tour-optimization")
+            string channelName = cleanPath.Substring(0, firstSlash);
+            string subPath = cleanPath.Substring(firstSlash + 1).Replace('/', '\\');
+
+            var mount = _db.GetMountByName(channelName);
+            if (mount != null)
+            {
+                _db.MoveDirectoryToTrash(mount.Id, subPath);
+                Logger.Log($"Virtual directory '{subPath}' in channel '{channelName}' moved to trash via FsRemoveDir.");
+                Win32Api.RefreshActivePanel();
+                TriggerCheckpoint(immediate: true);
+                return 1; // true
             }
         }
 

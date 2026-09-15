@@ -61,6 +61,8 @@ public class VfsDatabase : IDisposable
                 ver INTEGER,
                 FOREIGN KEY(mount_id) REFERENCES mounts(id)
             );
+
+            CREATE INDEX IF NOT EXISTS idx_files_mount_parent ON files(mount_id, parent, in_trash);
         ";
         command.ExecuteNonQuery();
 
@@ -206,12 +208,14 @@ public class VfsDatabase : IDisposable
     public FileRecord? GetFile(string mountId, string fileName, string? parent = null)
     {
         var cmd = _connection.CreateCommand();
-        if (string.IsNullOrEmpty(parent))
+        string cleanParent = string.IsNullOrEmpty(parent) ? "" : parent.Trim('\\', '/').Replace('/', '\\');
+
+        if (string.IsNullOrEmpty(cleanParent))
         {
             cmd.CommandText = @"
                 SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
                 FROM files
-                WHERE mount_id = @mid AND name = @name AND (parent IS NULL OR parent = 'false') AND (in_trash IS NULL OR in_trash = 0)
+                WHERE mount_id = @mid AND name = @name AND (parent IS NULL OR parent = '' OR parent = 'false') AND (in_trash IS NULL OR in_trash = 0)
                 LIMIT 1
             ";
         }
@@ -223,7 +227,7 @@ public class VfsDatabase : IDisposable
                 WHERE mount_id = @mid AND name = @name AND parent = @parent AND (in_trash IS NULL OR in_trash = 0)
                 LIMIT 1
             ";
-            cmd.Parameters.AddWithValue("@parent", parent);
+            cmd.Parameters.AddWithValue("@parent", cleanParent);
         }
 
         cmd.Parameters.AddWithValue("@mid", mountId);
@@ -257,6 +261,34 @@ public class VfsDatabase : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    public void MoveDirectoryToTrash(string mountId, string dirRelativePath)
+    {
+        string cleanPath = dirRelativePath.Trim('\\', '/').Replace('/', '\\');
+        if (string.IsNullOrEmpty(cleanPath)) return;
+
+        int lastSlash = cleanPath.LastIndexOf('\\');
+        string dirName = lastSlash >= 0 ? cleanPath.Substring(lastSlash + 1) : cleanPath;
+        string? parent = lastSlash >= 0 ? cleanPath.Substring(0, lastSlash) : null;
+
+        var dirRecord = GetFile(mountId, dirName, parent);
+        if (dirRecord != null)
+        {
+            MoveFileToTrash(dirRecord.Uid);
+        }
+
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE files 
+            SET in_trash = 1 
+            WHERE mount_id = @mid 
+              AND (parent = @exactPath OR parent LIKE @prefixPath)
+        ";
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        cmd.Parameters.AddWithValue("@exactPath", cleanPath);
+        cmd.Parameters.AddWithValue("@prefixPath", cleanPath + "\\%");
+        cmd.ExecuteNonQuery();
+    }
+
     public void AddFile(FileRecord file)
     {
         var cmd = _connection.CreateCommand();
@@ -277,18 +309,85 @@ public class VfsDatabase : IDisposable
         cmd.ExecuteNonQuery();
     }
 
-    public System.Collections.Generic.List<VfsItem> GetFiles(string channelName)
+    public void AddDirectoryRecord(string mountId, string dirName, string? parent)
+    {
+        string cleanParent = string.IsNullOrEmpty(parent) ? "" : parent.Trim('\\', '/').Replace('/', '\\');
+        string? parentValue = string.IsNullOrEmpty(cleanParent) ? null : cleanParent;
+
+        var existing = GetFile(mountId, dirName, parentValue);
+        if (existing != null)
+        {
+            if (existing.InTrash == 1)
+            {
+                var cmdRestore = _connection.CreateCommand();
+                cmdRestore.CommandText = "UPDATE files SET in_trash = 0 WHERE uid = @uid";
+                cmdRestore.Parameters.AddWithValue("@uid", existing.Uid);
+                cmdRestore.ExecuteNonQuery();
+            }
+            return;
+        }
+
+        AddFile(new FileRecord
+        {
+            Uid = Guid.NewGuid().ToString("N"),
+            MountId = mountId,
+            IsDir = true,
+            Name = dirName,
+            Parent = parentValue,
+            MTime = DateTime.UtcNow,
+            Size = 0,
+            TgMessageId = 0,
+            InTrash = 0,
+            Ver = 1
+        });
+    }
+
+    public void EnsureParentDirectoriesExist(string mountId, string? parentPath)
+    {
+        if (string.IsNullOrEmpty(parentPath)) return;
+        string cleanPath = parentPath.Trim('\\', '/').Replace('/', '\\');
+        if (string.IsNullOrEmpty(cleanPath)) return;
+
+        string[] parts = cleanPath.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+        string currentParent = "";
+        for (int i = 0; i < parts.Length; i++)
+        {
+            string dirName = parts[i];
+            string? parentOfCurrent = string.IsNullOrEmpty(currentParent) ? null : currentParent;
+            AddDirectoryRecord(mountId, dirName, parentOfCurrent);
+            currentParent = string.IsNullOrEmpty(currentParent) ? dirName : currentParent + "\\" + dirName;
+        }
+    }
+
+    public System.Collections.Generic.List<VfsItem> GetFiles(string channelName, string? parent = null)
     {
         var items = new System.Collections.Generic.List<VfsItem>();
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
-            SELECT f.name, f.size, f.mtime, f.isdir 
-            FROM files f
-            JOIN mounts m ON f.mount_id = m.id
-            WHERE m.channel_name = @cname 
-              AND (f.parent IS NULL OR f.parent = 'false')
-              AND (f.in_trash IS NULL OR f.in_trash = 0)
-        ";
+        string cleanParent = string.IsNullOrEmpty(parent) ? "" : parent.Trim('\\', '/').Replace('/', '\\');
+
+        if (string.IsNullOrEmpty(cleanParent))
+        {
+            cmd.CommandText = @"
+                SELECT f.name, f.size, f.mtime, f.isdir 
+                FROM files f
+                JOIN mounts m ON f.mount_id = m.id
+                WHERE m.channel_name = @cname 
+                  AND (f.parent IS NULL OR f.parent = '' OR f.parent = 'false')
+                  AND (f.in_trash IS NULL OR f.in_trash = 0)
+            ";
+        }
+        else
+        {
+            cmd.CommandText = @"
+                SELECT f.name, f.size, f.mtime, f.isdir 
+                FROM files f
+                JOIN mounts m ON f.mount_id = m.id
+                WHERE m.channel_name = @cname 
+                  AND f.parent = @parent
+                  AND (f.in_trash IS NULL OR f.in_trash = 0)
+            ";
+            cmd.Parameters.AddWithValue("@parent", cleanParent);
+        }
         cmd.Parameters.AddWithValue("@cname", channelName);
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
