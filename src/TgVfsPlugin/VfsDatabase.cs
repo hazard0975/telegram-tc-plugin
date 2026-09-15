@@ -155,7 +155,7 @@ public class VfsDatabase : IDisposable
     public MountInfo? GetMountByName(string name)
     {
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT id, local_path, channel_id, mode FROM mounts WHERE channel_name = @cname";
+        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name FROM mounts WHERE channel_name = @cname COLLATE NOCASE";
         cmd.Parameters.AddWithValue("@cname", name);
         using var reader = cmd.ExecuteReader();
         if (reader.Read())
@@ -165,7 +165,7 @@ public class VfsDatabase : IDisposable
                 Id = reader.GetString(0),
                 LocalPath = reader.GetString(1),
                 ChannelId = reader.GetInt64(2),
-                ChannelName = name,
+                ChannelName = reader.GetString(4),
                 Mode = reader.GetInt32(3)
             };
         }
@@ -215,7 +215,7 @@ public class VfsDatabase : IDisposable
             cmd.CommandText = @"
                 SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
                 FROM files
-                WHERE mount_id = @mid AND name = @name AND (parent IS NULL OR parent = '' OR parent = 'false') AND (in_trash IS NULL OR in_trash = 0)
+                WHERE mount_id = @mid AND name = @name COLLATE NOCASE AND (parent IS NULL OR parent = '' OR parent = 'false') AND (in_trash IS NULL OR in_trash = 0)
                 LIMIT 1
             ";
         }
@@ -224,7 +224,7 @@ public class VfsDatabase : IDisposable
             cmd.CommandText = @"
                 SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
                 FROM files
-                WHERE mount_id = @mid AND name = @name AND parent = @parent AND (in_trash IS NULL OR in_trash = 0)
+                WHERE mount_id = @mid AND name = @name COLLATE NOCASE AND parent = @parent COLLATE NOCASE AND (in_trash IS NULL OR in_trash = 0)
                 LIMIT 1
             ";
             cmd.Parameters.AddWithValue("@parent", cleanParent);

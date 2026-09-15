@@ -144,6 +144,43 @@ public static unsafe class WfxExports
         }
     }
 
+    public static string NormalizeVfsPath(string rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath)) return "";
+        string clean = rawPath.TrimStart('\\', '/').TrimEnd('\\', '/');
+        if (string.IsNullOrEmpty(clean)) return "";
+
+        string[] parts = clean.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "";
+
+        if (_db != null)
+        {
+            if (parts.Length > 1)
+            {
+                var firstMount = _db.GetMountByName(parts[0]);
+                if (firstMount == null)
+                {
+                    var secondMount = _db.GetMountByName(parts[1]);
+                    if (secondMount != null)
+                    {
+                        // Первый элемент был именем виртуального тома плагина (например \\\tgvfsplugin\)
+                        return string.Join("\\", parts.Skip(1));
+                    }
+                }
+            }
+            else if (parts.Length == 1)
+            {
+                if (parts[0].Equals("tgvfsplugin", StringComparison.OrdinalIgnoreCase) ||
+                    parts[0].Equals("wfx_tgvfsplugin", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "";
+                }
+            }
+        }
+
+        return string.Join("\\", parts);
+    }
+
     private static FindState? CreateStateForPath(string pathStr)
     {
         Logger.Log($"Requested path: '{pathStr}'");
@@ -200,15 +237,13 @@ public static unsafe class WfxExports
             }
         }
 
-        dirPath = dirPath.TrimEnd('\\', '/');
-        if (string.IsNullOrEmpty(dirPath)) dirPath = "\\";
-
-        Logger.Log($"Parsed directory path for search: '{dirPath}'");
+        string cleanPath = NormalizeVfsPath(dirPath);
+        Logger.Log($"Parsed directory path for search: '{cleanPath}'");
         
         var state = new FindState();
         try
         {
-            if (dirPath == "\\" || dirPath == "/")
+            if (string.IsNullOrEmpty(cleanPath))
             {
                 _lastMirrorPath = null;
                 // Корень: возвращаем каналы и служебные триггеры
@@ -238,9 +273,8 @@ public static unsafe class WfxExports
             }
             else
             {
-                // Внутри канала (наш путь начинается с \ или /, например \Work Chat)
-                string fullPath = dirPath.TrimStart('\\', '/');
-                string[] parts = fullPath.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+                // Внутри канала (наш путь начинается с названия канала, например "Work Chat")
+                string[] parts = cleanPath.Split('\\');
                 string channelTitle = parts[0];
                 string? parentSubPath = null;
                 if (parts.Length > 1)
@@ -738,11 +772,11 @@ public static unsafe class WfxExports
             return Win32Api.FS_FILE_WRITEERROR;
         }
 
-        string cleanRemote = remotePath.TrimStart('\\', '/');
+        string cleanRemote = NormalizeVfsPath(remotePath);
         int firstSlash = cleanRemote.IndexOfAny(new[] { '\\', '/' });
         if (firstSlash <= 0)
         {
-            Logger.Log($"FsPutFile: Destination is root or invalid. Cannot copy directly to root: '{remotePath}'");
+            Logger.Log($"FsPutFile: Destination is root or invalid. Cannot copy directly to root: '{remotePath}' (cleanRemote='{cleanRemote}')");
             return Win32Api.FS_FILE_NOTSUPPORTED;
         }
 
@@ -1008,11 +1042,11 @@ public static unsafe class WfxExports
             return Win32Api.FS_FILE_READERROR;
         }
 
-        string cleanRemote = remotePath.TrimStart('\\', '/');
+        string cleanRemote = NormalizeVfsPath(remotePath);
         int firstSlash = cleanRemote.IndexOfAny(new[] { '\\', '/' });
         if (firstSlash <= 0)
         {
-            Logger.Log($"FsGetFile: Invalid remote path or root directory: '{remotePath}'");
+            Logger.Log($"FsGetFile: Invalid remote path or root directory: '{remotePath}' (cleanRemote='{cleanRemote}')");
             return Win32Api.FS_FILE_NOTSUPPORTED;
         }
 
@@ -1353,7 +1387,7 @@ public static unsafe class WfxExports
         Logger.Log($"FsMkDir called for: '{dirPath}'");
         if (_db == null) return 0; // false
 
-        string cleanPath = dirPath.TrimStart('\\', '/').TrimEnd('\\', '/');
+        string cleanPath = NormalizeVfsPath(dirPath);
         if (string.IsNullOrEmpty(cleanPath)) return 0;
 
         int firstSlash = cleanPath.IndexOfAny(new[] { '\\', '/' });
@@ -1405,7 +1439,7 @@ public static unsafe class WfxExports
 
         if (_db == null) return 0; // false
 
-        string cleanPath = remotePath.TrimStart('\\', '/').TrimEnd('\\', '/');
+        string cleanPath = NormalizeVfsPath(remotePath);
         if (string.IsNullOrEmpty(cleanPath)) return 0;
 
         // Игнорируем и защищаем от удаления служебные триггеры
@@ -1479,7 +1513,7 @@ public static unsafe class WfxExports
 
         if (_db == null) return 0; // false
 
-        string cleanPath = dirPath.TrimStart('\\', '/').TrimEnd('\\', '/');
+        string cleanPath = NormalizeVfsPath(dirPath);
         if (string.IsNullOrEmpty(cleanPath)) return 0; // нельзя удалить корень
 
         // Защищаем служебные триггеры
@@ -1570,8 +1604,8 @@ public static unsafe class WfxExports
         Logger.Log($"FsRenMovFile called from '{oldPath}' to '{newPath}', overwrite={overwrite}");
         if (_db == null) return Win32Api.FS_FILE_NOTFOUND;
 
-        string cleanOld = oldPath.TrimStart('\\', '/').TrimEnd('\\', '/');
-        string cleanNew = newPath.TrimStart('\\', '/').TrimEnd('\\', '/');
+        string cleanOld = NormalizeVfsPath(oldPath);
+        string cleanNew = NormalizeVfsPath(newPath);
         if (string.IsNullOrEmpty(cleanOld) || string.IsNullOrEmpty(cleanNew))
             return Win32Api.FS_FILE_NOTFOUND;
 
