@@ -122,9 +122,9 @@ public static class SettingsDialog
                 {
                     Text = "Обзор...",
                     Left = 390,
-                    Top = 147,
-                    Width = 85,
-                    Height = 25,
+                    Top = 146,
+                    Width = 88,
+                    Height = 27,
                     Enabled = rbCustom.Checked
                 };
 
@@ -132,9 +132,11 @@ public static class SettingsDialog
                 {
                     Text = "Перенести существующую сессию и базу данных в новую папку",
                     Left = 16,
-                    Top = 188,
+                    Top = 190,
                     Width = 465,
-                    Height = 42,
+                    Height = 44,
+                    CheckAlign = ContentAlignment.TopLeft,
+                    TextAlign = ContentAlignment.TopLeft,
                     Checked = true,
                     ForeColor = Color.DarkSlateBlue
                 };
