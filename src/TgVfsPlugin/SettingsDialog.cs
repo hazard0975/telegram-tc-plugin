@@ -40,35 +40,34 @@ public static class SettingsDialog
                     Font = new Font("Segoe UI", 9)
                 };
 
-                Label lblHeader = new Label()
+                GroupBox storageGroup = new GroupBox()
                 {
-                    Text = "Расположение базы данных и сессии:",
-                    Left = 18,
-                    Top = 15,
-                    Width = 490,
-                    Height = 20,
-                    Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-                    ForeColor = Color.FromArgb(30, 30, 30)
+                    Text = "Расположение базы данных и сессии",
+                    Left = 15,
+                    Top = 12,
+                    Width = 495,
+                    Height = 232,
+                    Font = new Font("Segoe UI", 9, FontStyle.Regular)
                 };
 
                 // 1. По умолчанию (%APPDATA%)
                 RadioButton rbDefault = new RadioButton()
                 {
                     Text = "По умолчанию (%APPDATA%)",
-                    Left = 20,
-                    Top = 45,
-                    Width = 480,
-                    Height = 22,
+                    Left = 16,
+                    Top = 24,
+                    Width = 460,
+                    Height = 20,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.DefaultAppData
                 };
 
                 Label lblDefaultPath = new Label()
                 {
                     Text = SettingsManager.DefaultAppDataDirectory,
-                    Left = 42,
-                    Top = 68,
-                    Width = 460,
-                    Height = 18,
+                    Left = 38,
+                    Top = 45,
+                    Width = 440,
+                    Height = 16,
                     ForeColor = Color.DimGray,
                     Cursor = Cursors.Hand
                 };
@@ -78,20 +77,20 @@ public static class SettingsDialog
                 RadioButton rbPortable = new RadioButton()
                 {
                     Text = "Портативный режим (рядом с плагином)",
-                    Left = 20,
-                    Top = 93,
-                    Width = 480,
-                    Height = 22,
+                    Left = 16,
+                    Top = 68,
+                    Width = 460,
+                    Height = 20,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Portable
                 };
 
                 Label lblPortablePath = new Label()
                 {
                     Text = SettingsManager.PortableDirectory,
-                    Left = 42,
-                    Top = 116,
-                    Width = 460,
-                    Height = 18,
+                    Left = 38,
+                    Top = 89,
+                    Width = 440,
+                    Height = 16,
                     ForeColor = Color.DimGray,
                     Cursor = Cursors.Hand
                 };
@@ -101,18 +100,18 @@ public static class SettingsDialog
                 RadioButton rbCustom = new RadioButton()
                 {
                     Text = "Пользовательская папка на диске:",
-                    Left = 20,
-                    Top = 141,
-                    Width = 480,
-                    Height = 22,
+                    Left = 16,
+                    Top = 112,
+                    Width = 460,
+                    Height = 20,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Custom
                 };
 
                 TextBox customPathBox = new TextBox()
                 {
-                    Left = 42,
-                    Top = 168,
-                    Width = 360,
+                    Left = 38,
+                    Top = 135,
+                    Width = 345,
                     Text = SettingsManager.CurrentStorageMode == StorageMode.Custom 
                         ? SettingsManager.DataDirectory 
                         : (SettingsManager.GetSetting("data_path") ?? "D:\\TelegramVFS_Data"),
@@ -122,8 +121,8 @@ public static class SettingsDialog
                 Button browseBtn = new Button()
                 {
                     Text = "Обзор...",
-                    Left = 410,
-                    Top = 167,
+                    Left = 390,
+                    Top = 134,
                     Width = 85,
                     Height = 25,
                     Enabled = rbCustom.Checked
@@ -132,10 +131,10 @@ public static class SettingsDialog
                 CheckBox migrateCheck = new CheckBox()
                 {
                     Text = "Перенести существующую сессию и базу данных в новую папку",
-                    Left = 20,
-                    Top = 205,
-                    Width = 480,
-                    Height = 24,
+                    Left = 16,
+                    Top = 175,
+                    Width = 465,
+                    Height = 35,
                     Checked = true,
                     ForeColor = Color.DarkSlateBlue
                 };
@@ -164,18 +163,19 @@ public static class SettingsDialog
                     }
                 };
 
-                Button okBtn = new Button() { Text = "Сохранить", Left = 265, Width = 115, Height = 30, Top = 255, DialogResult = DialogResult.OK };
-                Button cancelBtn = new Button() { Text = "Отмена", Left = 390, Width = 115, Height = 30, Top = 255, DialogResult = DialogResult.Cancel };
+                storageGroup.Controls.Add(rbDefault);
+                storageGroup.Controls.Add(lblDefaultPath);
+                storageGroup.Controls.Add(rbPortable);
+                storageGroup.Controls.Add(lblPortablePath);
+                storageGroup.Controls.Add(rbCustom);
+                storageGroup.Controls.Add(customPathBox);
+                storageGroup.Controls.Add(browseBtn);
+                storageGroup.Controls.Add(migrateCheck);
 
-                form.Controls.Add(lblHeader);
-                form.Controls.Add(rbDefault);
-                form.Controls.Add(lblDefaultPath);
-                form.Controls.Add(rbPortable);
-                form.Controls.Add(lblPortablePath);
-                form.Controls.Add(rbCustom);
-                form.Controls.Add(customPathBox);
-                form.Controls.Add(browseBtn);
-                form.Controls.Add(migrateCheck);
+                Button okBtn = new Button() { Text = "Сохранить", Left = 265, Width = 115, Height = 30, Top = 258, DialogResult = DialogResult.OK };
+                Button cancelBtn = new Button() { Text = "Отмена", Left = 390, Width = 115, Height = 30, Top = 258, DialogResult = DialogResult.Cancel };
+
+                form.Controls.Add(storageGroup);
                 form.Controls.Add(okBtn);
                 form.Controls.Add(cancelBtn);
 
