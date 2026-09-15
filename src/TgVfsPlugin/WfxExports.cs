@@ -1581,21 +1581,21 @@ public static unsafe class WfxExports
 
     // Переименование / перемещение файлов и папок (ANSI) - F6 в Total Commander
     [UnmanagedCallersOnly(EntryPoint = "FsRenMovFile", CallConvs = [typeof(CallConvStdcall)])]
-    public static int FsRenMovFile(byte* oldName, byte* newName, int moveFlags)
+    public static int FsRenMovFile(byte* oldName, byte* newName, int moveFlags, int overwriteFlags, Win32Api.RemoteInfoStruct* ri)
     {
         string oldPath = Marshal.PtrToStringAnsi((IntPtr)oldName) ?? "";
         string newPath = Marshal.PtrToStringAnsi((IntPtr)newName) ?? "";
-        bool overwrite = (moveFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
+        bool overwrite = overwriteFlags != 0 || (moveFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
         return HandleRenMovFile(oldPath, newPath, overwrite);
     }
 
     // Переименование / перемещение файлов и папок (Unicode) - F6 в Total Commander
     [UnmanagedCallersOnly(EntryPoint = "FsRenMovFileW", CallConvs = [typeof(CallConvStdcall)])]
-    public static int FsRenMovFileW(char* oldName, char* newName, int moveFlags)
+    public static int FsRenMovFileW(char* oldName, char* newName, int moveFlags, int overwriteFlags, Win32Api.RemoteInfoStruct* ri)
     {
         string oldPath = Marshal.PtrToStringUni((IntPtr)oldName) ?? "";
         string newPath = Marshal.PtrToStringUni((IntPtr)newName) ?? "";
-        bool overwrite = (moveFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
+        bool overwrite = overwriteFlags != 0 || (moveFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
         return HandleRenMovFile(oldPath, newPath, overwrite);
     }
 
