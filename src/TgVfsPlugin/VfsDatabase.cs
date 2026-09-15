@@ -44,7 +44,7 @@ public class VfsDatabase : IDisposable
                 channel_id INTEGER,
                 channel_name TEXT,
                 mode INTEGER,
-                created_at DATETIME
+                created_at INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS files (
@@ -53,7 +53,7 @@ public class VfsDatabase : IDisposable
                 isdir INTEGER,
                 name TEXT NOT NULL,
                 parent TEXT,
-                mtime DATETIME,
+                mtime INTEGER,
                 size INTEGER,
                 tg_message_id INTEGER,
                 in_trash INTEGER DEFAULT 0,
@@ -94,6 +94,28 @@ public class VfsDatabase : IDisposable
         public int Mode { get; set; }
     }
 
+    private static DateTime ReadDateTime(SqliteDataReader reader, int index)
+    {
+        if (reader.IsDBNull(index)) return DateTime.UtcNow;
+        object val = reader.GetValue(index);
+        if (val is long longVal)
+        {
+            return DateTimeOffset.FromUnixTimeMilliseconds(longVal).UtcDateTime;
+        }
+        if (val is string strVal && DateTime.TryParse(strVal, out DateTime dt))
+        {
+            return dt.ToUniversalTime();
+        }
+        try
+        {
+            return DateTimeOffset.FromUnixTimeMilliseconds(Convert.ToInt64(val)).UtcDateTime;
+        }
+        catch
+        {
+            return DateTime.UtcNow;
+        }
+    }
+
     public void AddMount(MountInfo mount)
     {
         var cmd = _connection.CreateCommand();
@@ -106,7 +128,7 @@ public class VfsDatabase : IDisposable
         cmd.Parameters.AddWithValue("@cid", mount.ChannelId);
         cmd.Parameters.AddWithValue("@cname", mount.ChannelName);
         cmd.Parameters.AddWithValue("@mode", mount.Mode);
-        cmd.Parameters.AddWithValue("@dt", DateTime.Now);
+        cmd.Parameters.AddWithValue("@dt", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         cmd.ExecuteNonQuery();
     }
 
@@ -160,7 +182,7 @@ public class VfsDatabase : IDisposable
                 Name = reader.GetString(0), 
                 IsDirectory = true, 
                 Size = 0,
-                Date = reader.GetDateTime(1)
+                Date = ReadDateTime(reader, 1)
             });
         }
         return items;
@@ -216,7 +238,7 @@ public class VfsDatabase : IDisposable
                 IsDir = reader.GetInt32(2) == 1,
                 Name = reader.GetString(3),
                 Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
-                MTime = reader.GetDateTime(5),
+                MTime = ReadDateTime(reader, 5),
                 Size = reader.GetInt64(6),
                 TgMessageId = reader.GetInt32(7),
                 InTrash = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
@@ -246,7 +268,7 @@ public class VfsDatabase : IDisposable
         cmd.Parameters.AddWithValue("@isdir", file.IsDir ? 1 : 0);
         cmd.Parameters.AddWithValue("@name", file.Name);
         cmd.Parameters.AddWithValue("@parent", (object?)file.Parent ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@mtime", file.MTime);
+        cmd.Parameters.AddWithValue("@mtime", new DateTimeOffset(file.MTime.ToUniversalTime()).ToUnixTimeMilliseconds());
         cmd.Parameters.AddWithValue("@size", file.Size);
         cmd.Parameters.AddWithValue("@msgid", file.TgMessageId);
         cmd.Parameters.AddWithValue("@trash", file.InTrash);
@@ -275,7 +297,7 @@ public class VfsDatabase : IDisposable
                 Name = reader.GetString(0), 
                 IsDirectory = reader.GetInt32(3) == 1, 
                 Size = reader.GetInt64(1),
-                Date = reader.GetDateTime(2)
+                Date = ReadDateTime(reader, 2)
             });
         }
         return items;

@@ -34,13 +34,11 @@ public static unsafe class WfxExports
     {
         // Total Commander в WIN32_FIND_DATA ожидает FILETIME (в формате UTC),
         // после чего сам нативно переводит его в локальное системное время пользователя.
-        // Даты из SQLite являются Unspecified, поэтому принудительно задаем Kind = Local,
-        // а метод ToFileTime() корректно переведет локальное время в UTC FILETIME.
-        DateTime localTime = (time.Kind == DateTimeKind.Utc) 
-            ? time.ToLocalTime() 
-            : DateTime.SpecifyKind(time, DateTimeKind.Local);
+        DateTime utcTime = (time.Kind == DateTimeKind.Utc) 
+            ? time 
+            : time.ToUniversalTime();
 
-        long fileTime = localTime.ToFileTime();
+        long fileTime = utcTime.ToFileTimeUtc();
         return new Win32Api.FILETIME
         {
             dwLowDateTime = (uint)(fileTime & 0xFFFFFFFF),

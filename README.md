@@ -17,7 +17,7 @@
   * `channel_id` (ID приватного канала в Telegram)
   * `channel_name` (название папки/канала)
   * `mode` (Режим работы: `0` - Зеркало, `1` - Контейнер)
-  * `created_at` (дата создания)
+  * `created_at` (дата создания, Unix Timestamp в миллисекундах, INTEGER)
 
 * **Таблица `files` (Структура файлов и папок - Adjacency List):**
   * `uid` (уникальный идентификатор файла/папки)
@@ -25,7 +25,7 @@
   * `isdir` (папка или файл)
   * `name` (имя файла/папки)
   * `parent` (uid родительской папки, либо null/false для корня канала)
-  * `mtime` (дата модификации)
+  * `mtime` (дата модификации, Unix Timestamp в миллисекундах, INTEGER)
   * `size` (размер файла)
   * `tg_message_id` (ID сообщения в Telegram)
   * `in_trash` (флаг удаления, boolean)
