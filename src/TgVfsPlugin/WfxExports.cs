@@ -1545,6 +1545,212 @@ public static unsafe class WfxExports
         return 0;
     }
 
+    // Переименование / перемещение файлов и папок (ANSI) - F6 в Total Commander
+    [UnmanagedCallersOnly(EntryPoint = "FsRenMovFile", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsRenMovFile(byte* oldName, byte* newName, int moveFlags)
+    {
+        string oldPath = Marshal.PtrToStringAnsi((IntPtr)oldName) ?? "";
+        string newPath = Marshal.PtrToStringAnsi((IntPtr)newName) ?? "";
+        bool overwrite = (moveFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
+        return HandleRenMovFile(oldPath, newPath, overwrite);
+    }
+
+    // Переименование / перемещение файлов и папок (Unicode) - F6 в Total Commander
+    [UnmanagedCallersOnly(EntryPoint = "FsRenMovFileW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsRenMovFileW(char* oldName, char* newName, int moveFlags)
+    {
+        string oldPath = Marshal.PtrToStringUni((IntPtr)oldName) ?? "";
+        string newPath = Marshal.PtrToStringUni((IntPtr)newName) ?? "";
+        bool overwrite = (moveFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
+        return HandleRenMovFile(oldPath, newPath, overwrite);
+    }
+
+    private static int HandleRenMovFile(string oldPath, string newPath, bool overwrite)
+    {
+        Logger.Log($"FsRenMovFile called from '{oldPath}' to '{newPath}', overwrite={overwrite}");
+        if (_db == null) return Win32Api.FS_FILE_NOTFOUND;
+
+        string cleanOld = oldPath.TrimStart('\\', '/').TrimEnd('\\', '/');
+        string cleanNew = newPath.TrimStart('\\', '/').TrimEnd('\\', '/');
+        if (string.IsNullOrEmpty(cleanOld) || string.IsNullOrEmpty(cleanNew))
+            return Win32Api.FS_FILE_NOTFOUND;
+
+        int oldFirstSlash = cleanOld.IndexOfAny(new[] { '\\', '/' });
+        int newFirstSlash = cleanNew.IndexOfAny(new[] { '\\', '/' });
+
+        if (oldFirstSlash <= 0 || newFirstSlash <= 0)
+        {
+            // Переименование корневого канала не поддерживается через FsRenMovFile
+            return Win32Api.FS_FILE_NOTFOUND;
+        }
+
+        string oldChannel = cleanOld.Substring(0, oldFirstSlash);
+        string oldSub = cleanOld.Substring(oldFirstSlash + 1).Replace('/', '\\');
+
+        string newChannel = cleanNew.Substring(0, newFirstSlash);
+        string newSub = cleanNew.Substring(newFirstSlash + 1).Replace('/', '\\');
+
+        var oldMount = _db.GetMountByName(oldChannel);
+        var newMount = _db.GetMountByName(newChannel);
+        if (oldMount == null || newMount == null)
+            return Win32Api.FS_FILE_NOTFOUND;
+
+        int oldLastSlash = oldSub.LastIndexOf('\\');
+        string oldItemName = oldLastSlash >= 0 ? oldSub.Substring(oldLastSlash + 1) : oldSub;
+        string? oldParent = oldLastSlash >= 0 ? oldSub.Substring(0, oldLastSlash) : null;
+
+        int newLastSlash = newSub.LastIndexOf('\\');
+        string newItemName = newLastSlash >= 0 ? newSub.Substring(newLastSlash + 1) : newSub;
+        string? newParent = newLastSlash >= 0 ? newSub.Substring(0, newLastSlash) : null;
+
+        // Проверяем запись источника
+        var sourceRecord = _db.GetFile(oldMount.Id, oldItemName, oldParent);
+        if (sourceRecord == null)
+        {
+            return Win32Api.FS_FILE_NOTFOUND;
+        }
+
+        // Проверяем на циклический путь, если это директория
+        if (sourceRecord.IsDir && oldMount.Id == newMount.Id)
+        {
+            if (newSub.Equals(oldSub, StringComparison.OrdinalIgnoreCase) ||
+                newSub.StartsWith(oldSub + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.Log($"Cannot move directory '{oldSub}' into itself or its subfolder '{newSub}'.");
+                return Win32Api.FS_FILE_EXISTS;
+            }
+        }
+
+        // Проверяем наличие целевого элемента
+        var targetRecord = _db.GetFile(newMount.Id, newItemName, newParent);
+        if (targetRecord != null)
+        {
+            if (!overwrite)
+            {
+                return Win32Api.FS_FILE_EXISTS;
+            }
+            // Перезапись - перемещаем старый целевой файл в корзину
+            _db.MoveFileToTrash(targetRecord.Uid);
+        }
+
+        _db.EnsureParentDirectoriesExist(newMount.Id, newParent);
+
+        if (oldMount.Id == newMount.Id)
+        {
+            // Перемещение / переименование ВНУТРИ одного канала (быстро в SQLite)
+            if (sourceRecord.IsDir)
+            {
+                _db.RenameMoveDirectory(oldMount.Id, oldSub, newItemName, newParent, newMount.Id);
+                Logger.Log($"Directory '{oldSub}' moved/renamed in channel '{oldChannel}' to '{newSub}'.");
+            }
+            else
+            {
+                _db.RenameMoveFile(sourceRecord.Uid, newItemName, newParent, newMount.Id);
+                Logger.Log($"File '{oldSub}' moved/renamed in channel '{oldChannel}' to '{newSub}'.");
+            }
+        }
+        else
+        {
+            // Физическое перемещение МЕЖДУ разными каналами (скачивание -> загрузка -> удаление старого сообщения в Telegram)
+            try
+            {
+                if (sourceRecord.IsDir)
+                {
+                    PerformPhysicalMoveDirectoryAcrossChannels(oldMount, newMount, oldSub, newItemName, newParent);
+                }
+                else
+                {
+                    PerformPhysicalMoveFileAcrossChannels(sourceRecord, oldMount, newMount, newItemName, newParent);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Error physically moving '{oldPath}' to '{newPath}': {ex.Message}");
+                return Win32Api.FS_FILE_WRITEERROR;
+            }
+        }
+
+        Win32Api.RefreshActivePanel();
+        TriggerCheckpoint(immediate: true);
+        return Win32Api.FS_FILE_OK;
+    }
+
+    private static void PerformPhysicalMoveFileAcrossChannels(
+        VfsDatabase.FileRecord fileRecord,
+        VfsDatabase.MountInfo oldMount,
+        VfsDatabase.MountInfo newMount,
+        string newItemName,
+        string? newParent)
+    {
+        string tempPath = Path.Combine(Path.GetTempPath(), $"tgvfs_mv_{Guid.NewGuid():N}_{fileRecord.Name}");
+        try
+        {
+            Logger.Log($"[Physical Move] Downloading file '{fileRecord.Name}' from channel {oldMount.ChannelName} ({oldMount.ChannelId}), msg={fileRecord.TgMessageId}...");
+            Task.Run(() => TelegramManager.DownloadFileAsync(oldMount.ChannelId, fileRecord.TgMessageId, tempPath)).GetAwaiter().GetResult();
+
+            string relativeCaption = string.IsNullOrEmpty(newParent) ? newItemName : newParent + "\\" + newItemName;
+            Logger.Log($"[Physical Move] Uploading file '{newItemName}' to channel {newMount.ChannelName} ({newMount.ChannelId})...");
+            int newMsgId = Task.Run(() => TelegramManager.UploadAndSendFileAsync(newMount.ChannelId, tempPath, newItemName, relativeCaption)).GetAwaiter().GetResult();
+
+            Logger.Log($"[Physical Move] Updating SQLite record for UID={fileRecord.Uid} with new mount={newMount.Id}, msg={newMsgId}...");
+            _db!.UpdateFileMessageAndMount(fileRecord.Uid, newMount.Id, newMsgId, newItemName, newParent);
+
+            Logger.Log($"[Physical Move] Deleting old message {fileRecord.TgMessageId} from old channel {oldMount.ChannelName}...");
+            Task.Run(() => TelegramManager.DeleteMessageAsync(oldMount.ChannelId, fileRecord.TgMessageId)).GetAwaiter().GetResult();
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { }
+            }
+        }
+    }
+
+    private static void PerformPhysicalMoveDirectoryAcrossChannels(
+        VfsDatabase.MountInfo oldMount,
+        VfsDatabase.MountInfo newMount,
+        string oldSubPath,
+        string newItemName,
+        string? newParent)
+    {
+        string cleanOldSub = oldSubPath.Trim('\\', '/').Replace('/', '\\');
+        string cleanNewParent = string.IsNullOrEmpty(newParent) ? "" : newParent.Trim('\\', '/').Replace('/', '\\');
+        string newSubPath = string.IsNullOrEmpty(cleanNewParent) ? newItemName : cleanNewParent + "\\" + newItemName;
+
+        _db!.AddDirectoryRecord(newMount.Id, newItemName, newParent);
+
+        var subItems = _db.GetSubTreeItems(oldMount.Id, cleanOldSub);
+        foreach (var item in subItems)
+        {
+            string itemRelativeParent = item.Parent ?? "";
+            string recalculatedParent;
+            if (itemRelativeParent.Equals(cleanOldSub, StringComparison.OrdinalIgnoreCase))
+            {
+                recalculatedParent = newSubPath;
+            }
+            else if (itemRelativeParent.StartsWith(cleanOldSub + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                recalculatedParent = newSubPath + itemRelativeParent.Substring(cleanOldSub.Length);
+            }
+            else
+            {
+                recalculatedParent = newSubPath;
+            }
+
+            if (item.IsDir)
+            {
+                _db.AddDirectoryRecord(newMount.Id, item.Name, recalculatedParent);
+            }
+            else
+            {
+                PerformPhysicalMoveFileAcrossChannels(item, oldMount, newMount, item.Name, recalculatedParent);
+            }
+        }
+
+        _db.RenameMoveDirectory(oldMount.Id, cleanOldSub, newItemName, newParent, newMount.Id);
+    }
+
     // Вызывается Total Commander при выгрузке плагина или закрытии программы
     [UnmanagedCallersOnly(EntryPoint = "FsContentPluginUnload", CallConvs = [typeof(CallConvStdcall)])]
     public static void FsContentPluginUnload()

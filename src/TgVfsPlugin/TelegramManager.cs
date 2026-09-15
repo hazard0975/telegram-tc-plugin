@@ -276,6 +276,47 @@ public static class TelegramManager
         }
     }
 
+    public static async Task DeleteMessageAsync(long channelId, int messageId)
+    {
+        try
+        {
+            if (_client == null || _user == null)
+            {
+                await LoginAsync(silent: true);
+                if (_client == null || _user == null) return;
+            }
+
+            if (!_chatsCache.TryGetValue(channelId, out var chat))
+            {
+                var allChats = await _client.Messages_GetAllChats();
+                if (allChats?.chats != null)
+                {
+                    foreach (var kvp in allChats.chats)
+                    {
+                        _chatsCache[kvp.Key] = kvp.Value;
+                    }
+                }
+                _chatsCache.TryGetValue(channelId, out chat);
+            }
+
+            if (chat is Channel channel)
+            {
+                var inputChannel = new InputChannel(channel.id, channel.access_hash);
+                await _client.Channels_DeleteMessages(inputChannel, new[] { messageId });
+                Logger.Log($"Deleted message {messageId} from Telegram channel {channelId}.");
+            }
+            else if (chat is Chat smallGroup)
+            {
+                await _client.Messages_DeleteMessages(new[] { messageId }, revoke: true);
+                Logger.Log($"Deleted message {messageId} from Telegram group {channelId}.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Failed to delete message {messageId} from channel {channelId}: {ex.Message}");
+        }
+    }
+
     public static async Task<int> UploadAndSendFileAsync(
         long channelId, 
         string localPath, 

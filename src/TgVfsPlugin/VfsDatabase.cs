@@ -261,6 +261,42 @@ public class VfsDatabase : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    public List<FileRecord> GetSubTreeItems(string mountId, string subPath)
+    {
+        string cleanPath = subPath.Trim('\\', '/').Replace('/', '\\');
+        var list = new List<FileRecord>();
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+            FROM files
+            WHERE mount_id = @mid 
+              AND (parent = @exactPath OR parent LIKE @prefixPath)
+              AND (in_trash IS NULL OR in_trash = 0)
+        ";
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        cmd.Parameters.AddWithValue("@exactPath", cleanPath);
+        cmd.Parameters.AddWithValue("@prefixPath", cleanPath + "\\%");
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new FileRecord
+            {
+                Uid = reader.GetString(0),
+                MountId = reader.GetString(1),
+                IsDir = reader.GetInt32(2) == 1,
+                Name = reader.GetString(3),
+                Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
+                MTime = ReadDateTime(reader, 5),
+                Size = reader.GetInt64(6),
+                TgMessageId = reader.GetInt32(7),
+                InTrash = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9)
+            });
+        }
+        return list;
+    }
+
     public void MoveDirectoryToTrash(string mountId, string dirRelativePath)
     {
         string cleanPath = dirRelativePath.Trim('\\', '/').Replace('/', '\\');
@@ -306,6 +342,84 @@ public class VfsDatabase : IDisposable
         cmd.Parameters.AddWithValue("@msgid", file.TgMessageId);
         cmd.Parameters.AddWithValue("@trash", file.InTrash);
         cmd.Parameters.AddWithValue("@ver", file.Ver);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void UpdateFileMessageAndMount(string uid, string newMountId, int newTgMessageId, string newName, string? newParent)
+    {
+        string cleanParent = string.IsNullOrEmpty(newParent) ? "" : newParent.Trim('\\', '/').Replace('/', '\\');
+        string? parentValue = string.IsNullOrEmpty(cleanParent) ? null : cleanParent;
+
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE files
+            SET mount_id = @newMountId,
+                tg_message_id = @newMsgId,
+                name = @name,
+                parent = @parent
+            WHERE uid = @uid
+        ";
+        cmd.Parameters.AddWithValue("@newMountId", newMountId);
+        cmd.Parameters.AddWithValue("@newMsgId", newTgMessageId);
+        cmd.Parameters.AddWithValue("@name", newName);
+        cmd.Parameters.AddWithValue("@parent", (object?)parentValue ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@uid", uid);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void RenameMoveFile(string uid, string newName, string? newParent, string? newMountId)
+    {
+        string cleanParent = string.IsNullOrEmpty(newParent) ? "" : newParent.Trim('\\', '/').Replace('/', '\\');
+        string? parentValue = string.IsNullOrEmpty(cleanParent) ? null : cleanParent;
+
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE files
+            SET name = @name,
+                parent = @parent,
+                mount_id = COALESCE(@newMountId, mount_id)
+            WHERE uid = @uid
+        ";
+        cmd.Parameters.AddWithValue("@name", newName);
+        cmd.Parameters.AddWithValue("@parent", (object?)parentValue ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@newMountId", (object?)newMountId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@uid", uid);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void RenameMoveDirectory(string oldMountId, string oldSubPath, string newName, string? newParent, string? newMountId)
+    {
+        string cleanOld = oldSubPath.Trim('\\', '/').Replace('/', '\\');
+        string cleanNewParent = string.IsNullOrEmpty(newParent) ? "" : newParent.Trim('\\', '/').Replace('/', '\\');
+        string newSubPath = string.IsNullOrEmpty(cleanNewParent) ? newName : cleanNewParent + "\\" + newName;
+        string targetMountId = newMountId ?? oldMountId;
+
+        int lastSlash = cleanOld.LastIndexOf('\\');
+        string oldDirName = lastSlash >= 0 ? cleanOld.Substring(lastSlash + 1) : cleanOld;
+        string? oldParent = lastSlash >= 0 ? cleanOld.Substring(0, lastSlash) : null;
+
+        var dirRecord = GetFile(oldMountId, oldDirName, oldParent);
+        if (dirRecord != null)
+        {
+            RenameMoveFile(dirRecord.Uid, newName, newParent, targetMountId);
+        }
+
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE files 
+            SET parent = CASE 
+                    WHEN parent = @exactOld THEN @newSubPath
+                    ELSE @newSubPath || SUBSTR(parent, LENGTH(@exactOld) + 1)
+                END,
+                mount_id = @targetMountId
+            WHERE mount_id = @oldMountId 
+              AND (parent = @exactOld OR parent LIKE @prefixOldEscaped)
+        ";
+        cmd.Parameters.AddWithValue("@exactOld", cleanOld);
+        cmd.Parameters.AddWithValue("@newSubPath", newSubPath);
+        cmd.Parameters.AddWithValue("@prefixOldEscaped", cleanOld + "\\%");
+        cmd.Parameters.AddWithValue("@targetMountId", targetMountId);
+        cmd.Parameters.AddWithValue("@oldMountId", oldMountId);
         cmd.ExecuteNonQuery();
     }
 
