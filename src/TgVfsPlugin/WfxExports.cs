@@ -32,11 +32,15 @@ public static unsafe class WfxExports
     // Вспомогательный метод для конвертации DateTime в FILETIME
     private static Win32Api.FILETIME DateTimeToFileTime(DateTime time)
     {
-        // Total Commander в WIN32_FIND_DATA ожидает FILETIME в UTC,
+        // Total Commander в WIN32_FIND_DATA ожидает FILETIME (в формате UTC),
         // после чего сам нативно переводит его в локальное системное время пользователя.
-        // Даты из SQLite и Telegram являются UTC (или Unspecified), поэтому используем ToFileTimeUtc(),
-        // чтобы .NET не производил ошибочное вычитание локального часового пояса.
-        long fileTime = (time.Kind == DateTimeKind.Local) ? time.ToFileTime() : time.ToFileTimeUtc();
+        // Даты из SQLite являются Unspecified, поэтому принудительно задаем Kind = Local,
+        // а метод ToFileTime() корректно переведет локальное время в UTC FILETIME.
+        DateTime localTime = (time.Kind == DateTimeKind.Utc) 
+            ? time.ToLocalTime() 
+            : DateTime.SpecifyKind(time, DateTimeKind.Local);
+
+        long fileTime = localTime.ToFileTime();
         return new Win32Api.FILETIME
         {
             dwLowDateTime = (uint)(fileTime & 0xFFFFFFFF),
@@ -1241,6 +1245,69 @@ public static unsafe class WfxExports
         return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD | Win32Api.BG_ASK_USER;
     }
 
+    // Удаление файла / объекта (ANSI) - Обязательный экспорт для F8 / Del в Total Commander
+    [UnmanagedCallersOnly(EntryPoint = "FsDeleteFile", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsDeleteFile(byte* remoteName)
+    {
+        string path = Marshal.PtrToStringAnsi((IntPtr)remoteName) ?? "";
+        return HandleDeleteFile(path);
+    }
+
+    // Удаление файла / объекта (Unicode) - Обязательный экспорт для F8 / Del в Total Commander
+    [UnmanagedCallersOnly(EntryPoint = "FsDeleteFileW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsDeleteFileW(char* remoteName)
+    {
+        string path = Marshal.PtrToStringUni((IntPtr)remoteName) ?? "";
+        return HandleDeleteFile(path);
+    }
+
+    private static int HandleDeleteFile(string remotePath)
+    {
+        Logger.Log($"FsDeleteFile called for: '{remotePath}'");
+
+        if (_db == null) return 0; // false
+
+        string cleanPath = remotePath.TrimStart('\\', '/').TrimEnd('\\', '/');
+        if (string.IsNullOrEmpty(cleanPath)) return 0;
+
+        // Игнорируем и защищаем от удаления служебные триггеры
+        if (cleanPath.Contains("[📁+] Создать папку") || cleanPath.Contains("[+] Создать папку") ||
+            cleanPath.Contains("[❌] Удалить папку") || cleanPath.Contains("[-] Удалить папку") ||
+            cleanPath.Contains("[⚙] Настройки") || cleanPath.Contains("[*] Настройки плагина"))
+        {
+            Logger.Log($"Protected trigger item, skipping deletion: '{cleanPath}'");
+            return 0; // false
+        }
+
+        int firstSlash = cleanPath.IndexOfAny(new[] { '\\', '/' });
+        if (firstSlash < 0)
+        {
+            // Это имя корневой папки монтирования (канала)
+            return HandleRemoveDir(cleanPath);
+        }
+        else
+        {
+            // Это файл внутри канала (например "Work Chat\doc.pdf")
+            string channelName = cleanPath.Substring(0, firstSlash);
+            string fileName = Path.GetFileName(cleanPath.Substring(firstSlash + 1));
+
+            var mount = _db.GetMountByName(channelName);
+            if (mount != null)
+            {
+                var fileRecord = _db.GetFile(mount.Id, fileName, parent: null);
+                if (fileRecord != null)
+                {
+                    _db.MoveFileToTrash(fileRecord.Uid);
+                    Logger.Log($"File '{fileName}' in channel '{channelName}' moved to trash via FsDeleteFile.");
+                    Win32Api.RefreshActivePanel();
+                    return 1; // true
+                }
+            }
+        }
+
+        return 0; // false
+    }
+
     // Удаление каталога (ANSI) - Вызывается при нажатии F8 / Del в Total Commander
     [UnmanagedCallersOnly(EntryPoint = "FsRemoveDir", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsRemoveDir(byte* remoteDir)
@@ -1265,6 +1332,14 @@ public static unsafe class WfxExports
 
         string cleanPath = dirPath.TrimStart('\\', '/').TrimEnd('\\', '/');
         if (string.IsNullOrEmpty(cleanPath)) return 0; // нельзя удалить корень
+
+        // Защищаем служебные триггеры
+        if (cleanPath.Contains("[📁+] Создать папку") || cleanPath.Contains("[+] Создать папку") ||
+            cleanPath.Contains("[❌] Удалить папку") || cleanPath.Contains("[-] Удалить папку") ||
+            cleanPath.Contains("[⚙] Настройки") || cleanPath.Contains("[*] Настройки плагина"))
+        {
+            return 0;
+        }
 
         int firstSlash = cleanPath.IndexOfAny(new[] { '\\', '/' });
         if (firstSlash < 0)
