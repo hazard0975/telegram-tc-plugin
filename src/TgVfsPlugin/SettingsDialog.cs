@@ -124,7 +124,7 @@ public static class SettingsDialog
                     Left = 390,
                     Top = 146,
                     Width = 88,
-                    Height = 27,
+                    Height = 30,
                     Enabled = rbCustom.Checked
                 };
 
