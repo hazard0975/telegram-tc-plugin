@@ -110,6 +110,23 @@ public class VfsDatabase : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    public void DeleteMount(string mountId)
+    {
+        using (var cmdFiles = _connection.CreateCommand())
+        {
+            cmdFiles.CommandText = "DELETE FROM files WHERE mount_id = @mid";
+            cmdFiles.Parameters.AddWithValue("@mid", mountId);
+            cmdFiles.ExecuteNonQuery();
+        }
+
+        using (var cmdMount = _connection.CreateCommand())
+        {
+            cmdMount.CommandText = "DELETE FROM mounts WHERE id = @mid";
+            cmdMount.Parameters.AddWithValue("@mid", mountId);
+            cmdMount.ExecuteNonQuery();
+        }
+    }
+
     public MountInfo? GetMountByName(string name)
     {
         var cmd = _connection.CreateCommand();

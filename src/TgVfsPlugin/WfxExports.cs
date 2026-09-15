@@ -155,14 +155,21 @@ public static unsafe class WfxExports
                 Logger.Log("Fetching channels for root.");
                 state.Items.Add(new VfsDatabase.VfsItem 
                 { 
-                    Name = "[+] Создать папку", 
+                    Name = "[📁+] Создать папку", 
                     IsDirectory = false, 
                     Size = 0,
                     Date = DateTime.Now 
                 });
                 state.Items.Add(new VfsDatabase.VfsItem 
                 { 
-                    Name = "[*] Настройки плагина", 
+                    Name = "[❌] Удалить папку", 
+                    IsDirectory = false, 
+                    Size = 0,
+                    Date = DateTime.Now 
+                });
+                state.Items.Add(new VfsDatabase.VfsItem 
+                { 
+                    Name = "[⚙] Настройки", 
                     IsDirectory = false, 
                     Size = 0,
                     Date = DateTime.Now 
@@ -409,7 +416,7 @@ public static unsafe class WfxExports
 
         if (verb != "open" && verb != "") return 2; // FS_EXEC_ERROR
 
-        if (path.EndsWith("[+] Создать папку"))
+        if (path.EndsWith("[📁+] Создать папку") || path.EndsWith("[+] Создать папку"))
         {
             System.Threading.Tasks.Task.Run(() => 
             {
@@ -442,7 +449,41 @@ public static unsafe class WfxExports
             return 0; // FS_EXEC_OK
         }
 
-        if (path.EndsWith("[*] Настройки плагина"))
+        if (path.EndsWith("[❌] Удалить папку") || path.EndsWith("[-] Удалить папку"))
+        {
+            System.Threading.Tasks.Task.Run(() => 
+            {
+                try
+                {
+                    var mounts = _db?.GetMounts() ?? new List<VfsDatabase.VfsItem>();
+                    var folderNames = mounts.Select(m => m.Name).ToList();
+                    string? selectedFolder = DeleteFolderDialog.Show(folderNames);
+                    if (!string.IsNullOrEmpty(selectedFolder))
+                    {
+                        var mount = _db?.GetMountByName(selectedFolder);
+                        if (mount != null)
+                        {
+                            _db?.DeleteMount(mount.Id);
+                            Logger.Log($"Folder '{selectedFolder}' successfully deleted from mounts.");
+                            Win32Api.RefreshActivePanel();
+                            System.Windows.Forms.MessageBox.Show(
+                                $"Папка '{selectedFolder}' отмонтирована и удалена из списка плагина.",
+                                "Удаление папки",
+                                System.Windows.Forms.MessageBoxButtons.OK,
+                                System.Windows.Forms.MessageBoxIcon.Information);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Delete folder error: {ex}");
+                }
+            }).GetAwaiter().GetResult();
+
+            return 0; // FS_EXEC_OK
+        }
+
+        if (path.EndsWith("[⚙] Настройки") || path.EndsWith("[*] Настройки плагина"))
         {
             System.Threading.Tasks.Task.Run(() => 
             {
@@ -885,7 +926,9 @@ public static unsafe class WfxExports
         string fileName = Path.GetFileName(subPath);
 
         // Игнорируем служебные элементы
-        if (fileName == "[+] Создать папку" || fileName == "[*] Настройки плагина" || fileName == "[ Login required.txt ]")
+        if (fileName == "[📁+] Создать папку" || fileName == "[+] Создать папку" || 
+            fileName == "[❌] Удалить папку" || fileName == "[⚙] Настройки" || 
+            fileName == "[*] Настройки плагина" || fileName == "[ Login required.txt ]")
         {
             return Win32Api.FS_FILE_NOTSUPPORTED;
         }
@@ -1178,5 +1221,58 @@ public static unsafe class WfxExports
     {
         Logger.Log("FsGetBackgroundFlagsW called -> Returning BG_DOWNLOAD | BG_UPLOAD | BG_ASK_USER (7)");
         return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD | Win32Api.BG_ASK_USER;
+    }
+
+    // Удаление каталога (ANSI) - Вызывается при нажатии F8 / Del в Total Commander
+    [UnmanagedCallersOnly(EntryPoint = "FsRemoveDir", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsRemoveDir(byte* remoteDir)
+    {
+        string dirPath = Marshal.PtrToStringAnsi((IntPtr)remoteDir) ?? "";
+        return HandleRemoveDir(dirPath);
+    }
+
+    // Удаление каталога (Unicode) - Вызывается при нажатии F8 / Del в Total Commander
+    [UnmanagedCallersOnly(EntryPoint = "FsRemoveDirW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsRemoveDirW(char* remoteDir)
+    {
+        string dirPath = Marshal.PtrToStringUni((IntPtr)remoteDir) ?? "";
+        return HandleRemoveDir(dirPath);
+    }
+
+    private static int HandleRemoveDir(string dirPath)
+    {
+        Logger.Log($"FsRemoveDir called for: '{dirPath}'");
+
+        if (_db == null) return 0; // false
+
+        string cleanPath = dirPath.TrimStart('\\', '/').TrimEnd('\\', '/');
+        if (string.IsNullOrEmpty(cleanPath)) return 0; // нельзя удалить корень
+
+        int firstSlash = cleanPath.IndexOfAny(new[] { '\\', '/' });
+        if (firstSlash < 0)
+        {
+            // Это корневая папка монтирования (канал)
+            string channelName = cleanPath;
+            var mount = _db.GetMountByName(channelName);
+            if (mount != null)
+            {
+                var dialogRes = System.Windows.Forms.MessageBox.Show(
+                    $"Удалить виртуальную папку '{channelName}' из базы плагина?",
+                    "Удаление папки",
+                    System.Windows.Forms.MessageBoxButtons.YesNo,
+                    System.Windows.Forms.MessageBoxIcon.Question);
+
+                if (dialogRes == System.Windows.Forms.DialogResult.Yes)
+                {
+                    _db.DeleteMount(mount.Id);
+                    Logger.Log($"Mount '{channelName}' deleted via FsRemoveDir.");
+                    Win32Api.RefreshActivePanel();
+                    return 1; // true (успех)
+                }
+                return 0; // пользователь отменил
+            }
+        }
+
+        return 0;
     }
 }
