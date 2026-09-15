@@ -14,6 +14,7 @@ namespace TgVfsPlugin;
 public class VfsDatabase : IDisposable
 {
     private readonly SqliteConnection _connection;
+    private bool _disposed;
     private static string DbPath => SettingsManager.DbPath;
 
     public VfsDatabase()
@@ -327,8 +328,10 @@ public class VfsDatabase : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+
         Checkpoint(truncate: true);
         _connection?.Dispose();
-        _connection = null;
     }
 }
