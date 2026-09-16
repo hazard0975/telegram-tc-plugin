@@ -18,6 +18,10 @@ public static unsafe class WfxExports
     private static Win32Api.ProgressProc? _progressProcDelegate;
     private static bool _isUnicode = true;
     private static string? _lastMirrorPath;
+    public const string TrashDirName = ".[🗑] Корзина";
+    public static bool IsTrashFolder(string name) =>
+        name.Equals(".[🗑] Корзина", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("[🗑] Корзина", StringComparison.OrdinalIgnoreCase);
 
     // Класс для хранения состояния поиска
     private class FindState
@@ -287,18 +291,19 @@ public static unsafe class WfxExports
                 
                 var mount = _db.GetMountByName(channelTitle);
 
-                // Проверяем, не находимся ли мы внутри виртуальной папки "[🗑] Корзина"
-                if (parts.Length > 1 && parts[1].Equals("[🗑] Корзина", StringComparison.OrdinalIgnoreCase))
+                // Проверяем, не находимся ли мы внутри виртуальной папки ".[🗑] Корзина"
+                if (parts.Length > 1 && IsTrashFolder(parts[1]))
                 {
                     if (mount != null)
                     {
-                        var trashFiles = _db.GetTrashFiles(mount.Id);
+                        string? trashParent = parts.Length > 2 ? string.Join("\\", parts, 2, parts.Length - 2) : null;
+                        var trashFiles = _db.GetTrashFiles(mount.Id, trashParent);
                         foreach (var tf in trashFiles)
                         {
-                            string vName = VfsDatabase.GetVersionedFileName(tf.Name, tf.Ver);
+                            string displayName = tf.IsDir ? tf.Name : VfsDatabase.GetVersionedFileName(tf.Name, tf.Ver);
                             state.Items.Add(new VfsDatabase.VfsItem
                             {
-                                Name = vName,
+                                Name = displayName,
                                 IsDirectory = tf.IsDir,
                                 Size = tf.Size,
                                 Date = tf.MTime
@@ -306,7 +311,7 @@ public static unsafe class WfxExports
                         }
                     }
 
-                    if (state.Items.Count == 0)
+                    if (state.Items.Count == 0 && parts.Length == 2)
                     {
                         state.Items.Add(new VfsDatabase.VfsItem
                         {
@@ -345,7 +350,7 @@ public static unsafe class WfxExports
                     {
                         state.Items.Add(new VfsDatabase.VfsItem
                         {
-                            Name = "[🗑] Корзина",
+                            Name = TrashDirName,
                             IsDirectory = true,
                             Size = 0,
                             Date = DateTime.Now
@@ -604,21 +609,22 @@ public static unsafe class WfxExports
                         return Win32Api.FS_EXEC_OK;
                     }
 
-                    // Свойства корзины: \Channel\[🗑] Корзина
-                    if (parts.Length == 2 && parts[1].Equals("[🗑] Корзина", StringComparison.OrdinalIgnoreCase))
+                    // Свойства корзины: \Channel\.[🗑] Корзина
+                    if (parts.Length == 2 && IsTrashFolder(parts[1]))
                     {
                         FilePropertiesDialog.ShowTrashProperties(mount.ChannelName, mount.ChannelId, mount.Id, _db);
                         return Win32Api.FS_EXEC_OK;
                     }
 
-                    // Свойства файла внутри корзины: \Channel\[🗑] Корзина\file_v1.txt
-                    if (parts.Length > 2 && parts[1].Equals("[🗑] Корзина", StringComparison.OrdinalIgnoreCase))
+                    // Свойства файла/папки внутри корзины: \Channel\.[🗑] Корзина\folder\file_v1.txt
+                    if (parts.Length > 2 && IsTrashFolder(parts[1]))
                     {
                         string versionedName = parts[^1];
-                        var trashFile = _db.GetTrashFileByVersionedName(mount.Id, versionedName);
+                        string? trashSubParent = parts.Length > 3 ? string.Join("\\", parts, 2, parts.Length - 3) : null;
+                        var trashFile = _db.GetTrashFileByVersionedName(mount.Id, versionedName, trashSubParent);
                         if (trashFile != null)
                         {
-                            FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, $"[🗑] Корзина\\{versionedName}", trashFile, _db);
+                            FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, string.Join("\\", parts.Skip(1)), trashFile, _db);
                             return Win32Api.FS_EXEC_OK;
                         }
                     }
@@ -1212,9 +1218,11 @@ public static unsafe class WfxExports
 
         // Поиск файла в базе данных (с поддержкой корзины)
         VfsDatabase.FileRecord? fileRecord = null;
-        if (subPath.StartsWith("[🗑] Корзина", StringComparison.OrdinalIgnoreCase))
+        string[] subParts = subPath.Split('\\');
+        if (subParts.Length > 1 && IsTrashFolder(subParts[0]))
         {
-            fileRecord = _db.GetTrashFileByVersionedName(mount.Id, fileName);
+            string? trashSubParent = subParts.Length > 2 ? string.Join("\\", subParts, 1, subParts.Length - 2) : null;
+            fileRecord = _db.GetTrashFileByVersionedName(mount.Id, fileName, trashSubParent);
         }
         else
         {
@@ -1638,31 +1646,21 @@ public static unsafe class WfxExports
             var mount = _db.GetMountByName(channelName);
             if (mount != null)
             {
-                // Удаление элемента из корзины (удаление навсегда)
-                if (subPath.StartsWith("[🗑] Корзина", StringComparison.OrdinalIgnoreCase))
+                string[] subParts = subPath.Split('\\');
+                // Удаление элемента из корзины (удаление навсегда без дублирующего окна - пользователь уже подтвердил в Total Commander)
+                if (subParts.Length > 1 && IsTrashFolder(subParts[0]))
                 {
-                    var trashFile = _db.GetTrashFileByVersionedName(mount.Id, fileName);
+                    string? trashSubParent = subParts.Length > 2 ? string.Join("\\", subParts, 1, subParts.Length - 2) : null;
+                    var trashFile = _db.GetTrashFileByVersionedName(mount.Id, fileName, trashSubParent);
                     if (trashFile != null)
                     {
-                        var ask = System.Windows.Forms.MessageBox.Show(
-                            $"Удалить '{trashFile.Name}' (v{trashFile.Ver}) навсегда из Telegram и базы данных?",
-                            "Удаление навсегда",
-                            System.Windows.Forms.MessageBoxButtons.YesNo,
-                            System.Windows.Forms.MessageBoxIcon.Warning,
-                            System.Windows.Forms.MessageBoxDefaultButton.Button2);
-
-                        if (ask == System.Windows.Forms.DialogResult.Yes)
+                        if (trashFile.TgMessageId > 0 && mount.ChannelId != 0)
                         {
-                            if (trashFile.TgMessageId > 0 && mount.ChannelId != 0)
-                            {
-                                System.Threading.Tasks.Task.Run(() => TelegramManager.DeleteMessageAsync(mount.ChannelId, trashFile.TgMessageId));
-                            }
-                            _db.DeleteFilePermanently(trashFile.Uid);
-                            TriggerCheckpoint(immediate: true);
-                            Win32Api.RefreshActivePanel();
-                            return 1;
+                            System.Threading.Tasks.Task.Run(() => TelegramManager.DeleteMessageAsync(mount.ChannelId, trashFile.TgMessageId));
                         }
-                        return 0;
+                        _db.DeleteFilePermanently(trashFile.Uid);
+                        TriggerCheckpoint(immediate: true);
+                        return 1;
                     }
                     return 1;
                 }
@@ -1771,35 +1769,34 @@ public static unsafe class WfxExports
             var mount = _db.GetMountByName(channelName);
             if (mount != null)
             {
-                if (subPath.Equals("[🗑] Корзина", StringComparison.OrdinalIgnoreCase))
+                string[] subParts = subPath.Split('\\');
+                if (subParts.Length == 1 && IsTrashFolder(subParts[0]))
                 {
                     _db.GetTrashStats(mount.Id, out int trashCount, out long totalSize);
                     if (trashCount == 0)
                     {
-                        System.Windows.Forms.MessageBox.Show("Корзина уже пуста.", "Очистка корзины", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
-                        return 0;
-                    }
-
-                    var ask = System.Windows.Forms.MessageBox.Show(
-                        $"Вы действительно хотите навсегда очистить корзину канала '{channelName}'?\n\n" +
-                        $"⚠️ Это удалит {trashCount} файлов ({FilePropertiesDialog.FormatSize(totalSize)}) навсегда из Telegram и базы данных!",
-                        "Очистка корзины",
-                        System.Windows.Forms.MessageBoxButtons.YesNo,
-                        System.Windows.Forms.MessageBoxIcon.Warning,
-                        System.Windows.Forms.MessageBoxDefaultButton.Button2);
-
-                    if (ask == System.Windows.Forms.DialogResult.Yes)
-                    {
-                        var msgIds = _db.EmptyTrash(mount.Id);
-                        if (mount.ChannelId != 0 && msgIds.Count > 0)
-                        {
-                            System.Threading.Tasks.Task.Run(() => TelegramManager.DeleteMessagesAsync(mount.ChannelId, msgIds.ToArray()));
-                        }
-                        TriggerCheckpoint(immediate: true);
-                        Win32Api.RefreshActivePanel();
                         return 1;
                     }
-                    return 0;
+
+                    var msgIds = _db.EmptyTrash(mount.Id);
+                    if (mount.ChannelId != 0 && msgIds.Count > 0)
+                    {
+                        System.Threading.Tasks.Task.Run(() => TelegramManager.DeleteMessagesAsync(mount.ChannelId, msgIds.ToArray()));
+                    }
+                    TriggerCheckpoint(immediate: true);
+                    return 1;
+                }
+                else if (subParts.Length > 1 && IsTrashFolder(subParts[0]))
+                {
+                    // Удаление подпапки ВНУТРИ корзины навсегда
+                    string folderUnderTrash = string.Join("\\", subParts.Skip(1));
+                    var msgIds = _db.DeleteTrashSubTree(mount.Id, folderUnderTrash);
+                    if (mount.ChannelId != 0 && msgIds.Count > 0)
+                    {
+                        System.Threading.Tasks.Task.Run(() => TelegramManager.DeleteMessagesAsync(mount.ChannelId, msgIds.ToArray()));
+                    }
+                    TriggerCheckpoint(immediate: true);
+                    return 1;
                 }
 
                 _db.MoveDirectoryToTrash(mount.Id, subPath);

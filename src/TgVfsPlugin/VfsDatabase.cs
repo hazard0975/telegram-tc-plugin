@@ -270,16 +270,34 @@ public class VfsDatabase : IDisposable
         cmd.ExecuteNonQuery();
     }
 
-    public List<FileRecord> GetTrashFiles(string mountId)
+    public List<FileRecord> GetTrashFiles(string mountId, string? parent = null)
     {
         var list = new List<FileRecord>();
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
-            SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
-            FROM files
-            WHERE mount_id = @mid AND in_trash = 1
-            ORDER BY mtime DESC
-        ";
+        string cleanParent = string.IsNullOrEmpty(parent) ? "" : parent.Trim('\\', '/').Replace('/', '\\');
+
+        if (string.IsNullOrEmpty(cleanParent))
+        {
+            // В корне корзины показываем удаленные элементы, чей родитель не находится в корзине
+            cmd.CommandText = @"
+                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+                FROM files
+                WHERE mount_id = @mid AND in_trash = 1
+                  AND (parent IS NULL OR parent = '' OR parent = 'false' OR parent NOT IN (SELECT (CASE WHEN parent IS NULL OR parent = '' THEN name ELSE parent || '\' || name END) FROM files WHERE mount_id = @mid AND isdir = 1 AND in_trash = 1))
+                ORDER BY isdir DESC, mtime DESC
+            ";
+        }
+        else
+        {
+            cmd.CommandText = @"
+                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+                FROM files
+                WHERE mount_id = @mid AND in_trash = 1
+                  AND parent = @parent COLLATE NOCASE
+                ORDER BY isdir DESC, mtime DESC
+            ";
+            cmd.Parameters.AddWithValue("@parent", cleanParent);
+        }
         cmd.Parameters.AddWithValue("@mid", mountId);
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
@@ -301,19 +319,98 @@ public class VfsDatabase : IDisposable
         return list;
     }
 
-    public FileRecord? GetTrashFileByVersionedName(string mountId, string versionedName)
+    public FileRecord? GetTrashFileByVersionedName(string mountId, string versionedName, string? parent = null)
     {
-        var trashFiles = GetTrashFiles(mountId);
+        var trashFiles = GetTrashFiles(mountId, parent);
         foreach (var f in trashFiles)
         {
-            string vName = GetVersionedFileName(f.Name, f.Ver);
-            if (vName.Equals(versionedName, StringComparison.OrdinalIgnoreCase) ||
-                f.Name.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
+            if (f.IsDir)
             {
-                return f;
+                if (f.Name.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
+                    return f;
+            }
+            else
+            {
+                string vName = GetVersionedFileName(f.Name, f.Ver);
+                if (vName.Equals(versionedName, StringComparison.OrdinalIgnoreCase) ||
+                    f.Name.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return f;
+                }
             }
         }
+
+        // Fallback: если не найден с точным родителем, поищем глобально среди удаленных
+        if (!string.IsNullOrEmpty(parent))
+        {
+            var allTrash = GetTrashFiles(mountId, null);
+            foreach (var f in allTrash)
+            {
+                if (f.IsDir)
+                {
+                    if (f.Name.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
+                        return f;
+                }
+                else
+                {
+                    string vName = GetVersionedFileName(f.Name, f.Ver);
+                    if (vName.Equals(versionedName, StringComparison.OrdinalIgnoreCase) ||
+                        f.Name.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return f;
+                    }
+                }
+            }
+        }
+
         return null;
+    }
+
+    public List<int> DeleteTrashSubTree(string mountId, string subPath)
+    {
+        string cleanPath = subPath.Trim('\\', '/').Replace('/', '\\');
+        int lastSlash = cleanPath.LastIndexOf('\\');
+        string dirName = lastSlash >= 0 ? cleanPath.Substring(lastSlash + 1) : cleanPath;
+        string? parent = lastSlash >= 0 ? cleanPath.Substring(0, lastSlash) : null;
+
+        var msgIds = new List<int>();
+
+        using (var cmdSelect = _connection.CreateCommand())
+        {
+            cmdSelect.CommandText = @"
+                SELECT tg_message_id FROM files 
+                WHERE mount_id = @mid AND in_trash = 1 
+                  AND (parent = @exactPath OR parent LIKE @prefixPath OR (name = @dirName COLLATE NOCASE AND (parent = @parent OR (@parent IS NULL AND (parent IS NULL OR parent = '')))))
+                  AND tg_message_id > 0
+            ";
+            cmdSelect.Parameters.AddWithValue("@mid", mountId);
+            cmdSelect.Parameters.AddWithValue("@exactPath", cleanPath);
+            cmdSelect.Parameters.AddWithValue("@prefixPath", cleanPath + "\\%");
+            cmdSelect.Parameters.AddWithValue("@dirName", dirName);
+            cmdSelect.Parameters.AddWithValue("@parent", (object?)parent ?? DBNull.Value);
+            using var reader = cmdSelect.ExecuteReader();
+            while (reader.Read())
+            {
+                msgIds.Add(reader.GetInt32(0));
+            }
+        }
+
+        using (var cmdDelete = _connection.CreateCommand())
+        {
+            cmdDelete.CommandText = @"
+                DELETE FROM files 
+                WHERE mount_id = @mid AND in_trash = 1 
+                  AND (parent = @exactPath OR parent LIKE @prefixPath OR (name = @dirName COLLATE NOCASE AND (parent = @parent OR (@parent IS NULL AND (parent IS NULL OR parent = '')))))
+            ";
+            cmdDelete.Parameters.AddWithValue("@mid", mountId);
+            cmdDelete.Parameters.AddWithValue("@exactPath", cleanPath);
+            cmdDelete.Parameters.AddWithValue("@prefixPath", cleanPath + "\\%");
+            cmdDelete.Parameters.AddWithValue("@dirName", dirName);
+            cmdDelete.Parameters.AddWithValue("@parent", (object?)parent ?? DBNull.Value);
+            cmdDelete.ExecuteNonQuery();
+        }
+
+        return msgIds;
     }
 
     public void GetTrashStats(string mountId, out int count, out long totalSize)
