@@ -29,6 +29,12 @@ public static class Win32Api
     public const int FS_FILE_NOTSUPPORTED = 6;
     public const int FS_FILE_EXISTSRESUMEALLOWED = 7;
 
+    // WFX Execute File Return Codes
+    public const int FS_EXEC_OK = 0;
+    public const int FS_EXEC_ERROR = 1;
+    public const int FS_EXEC_YOURSELF = -1;
+    public const int FS_EXEC_SYMLINK = 2;
+
     // WFX Copy Flags
     public const int FS_COPYFLAGS_OVERWRITE = 1;
     public const int FS_COPYFLAGS_RESUME = 2;

@@ -519,7 +519,7 @@ public static unsafe class WfxExports
     {
         Logger.Log($"FsExecuteFile called for: {path} (Verb: {verb})");
 
-        if (verb != "open" && verb != "") return 2; // FS_EXEC_ERROR
+        if (verb != "open" && verb != "") return Win32Api.FS_EXEC_ERROR;
 
         if (path.EndsWith("[📁+] Создать папку") || path.EndsWith("[+] Создать папку"))
         {
@@ -552,7 +552,7 @@ public static unsafe class WfxExports
                 }
             }).GetAwaiter().GetResult();
             
-            return 0; // FS_EXEC_OK
+            return Win32Api.FS_EXEC_OK;
         }
 
         if (path.EndsWith("[❌] Удалить папку") || path.EndsWith("[-] Удалить папку"))
@@ -604,7 +604,7 @@ public static unsafe class WfxExports
                 }
             }).GetAwaiter().GetResult();
 
-            return 0; // FS_EXEC_OK
+            return Win32Api.FS_EXEC_OK;
         }
 
         if (path.EndsWith("[⚙] Настройки") || path.EndsWith("[*] Настройки плагина"))
@@ -688,7 +688,7 @@ public static unsafe class WfxExports
                 }
             }).GetAwaiter().GetResult();
             
-            return 0; // FS_EXEC_OK
+            return Win32Api.FS_EXEC_OK;
         }
 
         if (path.EndsWith("[ Login required.txt ]"))
@@ -711,10 +711,12 @@ public static unsafe class WfxExports
                 }
             }).GetAwaiter().GetResult();
             
-            return 0; // FS_EXEC_OK
+            return Win32Api.FS_EXEC_OK;
         }
 
-        return 2; // FS_EXEC_ERROR
+        // Для обычных файлов возвращаем FS_EXEC_YOURSELF (-1), чтобы Total Commander
+        // скачал файл во временную директорию и запустил его ассоциированным приложением.
+        return Win32Api.FS_EXEC_YOURSELF;
     }
 
     private static int ReportProgress(string sourceName, string targetName, int percentDone)
@@ -1115,7 +1117,12 @@ public static unsafe class WfxExports
                 bool canOverwrite = (copyFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
                 bool canResume = (copyFlags & Win32Api.FS_COPYFLAGS_RESUME) != 0;
 
-                if (!canOverwrite && !canResume)
+                // Total Commander при FsExecuteFile (FS_EXEC_YOURSELF) может предварительно создать пустой (0 байт) файл
+                // или скачивать во временный каталог пользователя Path.GetTempPath(). В этих случаях разрешаем перезапись.
+                bool isTempOrZeroByte = existingInfo.Length == 0 ||
+                    localPath.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase);
+
+                if (!canOverwrite && !canResume && !isTempOrZeroByte)
                 {
                     Logger.Log($"FsGetFile: Target file '{localPath}' exists but is different and OVERWRITE flag not set.");
                     return Win32Api.FS_FILE_EXISTS;
