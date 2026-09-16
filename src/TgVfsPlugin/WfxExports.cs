@@ -519,6 +519,58 @@ public static unsafe class WfxExports
     {
         Logger.Log($"FsExecuteFile called for: {path} (Verb: {verb})");
 
+        // Обработка запроса свойств (Alt+Enter в Total Commander)
+        if (verb.Equals("properties", StringComparison.OrdinalIgnoreCase))
+        {
+            string cleanVfs = NormalizeVfsPath(path);
+            if (string.IsNullOrEmpty(cleanVfs))
+            {
+                return Win32Api.FS_EXEC_OK; // Корень плагина
+            }
+
+            string[] parts = cleanVfs.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length > 0 && _db != null)
+            {
+                string mountName = parts[0];
+                var mount = _db.GetMountByName(mountName);
+                if (mount != null)
+                {
+                    if (parts.Length == 1)
+                    {
+                        // Свойства самого тома/канала
+                        var mountAsFile = new VfsDatabase.FileRecord
+                        {
+                            Uid = mount.Id,
+                            MountId = mount.Id,
+                            IsDir = true,
+                            Name = mount.ChannelName,
+                            Parent = null,
+                            MTime = DateTime.UtcNow,
+                            Size = 0,
+                            TgMessageId = 0,
+                            InTrash = 0,
+                            Ver = 1
+                        };
+                        FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, "", mountAsFile);
+                        return Win32Api.FS_EXEC_OK;
+                    }
+
+                    string fileName = parts[^1];
+                    string? parent = parts.Length > 2 ? string.Join("\\", parts.Skip(1).Take(parts.Length - 2)) : null;
+                    string relativePath = parts.Length > 1 ? string.Join("\\", parts.Skip(1)) : fileName;
+
+                    var fileRecord = _db.GetFile(mount.Id, fileName, parent);
+                    if (fileRecord != null)
+                    {
+                        FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, relativePath, fileRecord);
+                        return Win32Api.FS_EXEC_OK;
+                    }
+                }
+            }
+
+            return Win32Api.FS_EXEC_OK;
+        }
+
         if (verb != "open" && verb != "") return Win32Api.FS_EXEC_ERROR;
 
         if (path.EndsWith("[📁+] Создать папку") || path.EndsWith("[+] Создать папку"))
