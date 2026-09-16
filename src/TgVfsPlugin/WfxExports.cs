@@ -948,11 +948,18 @@ public static unsafe class WfxExports
             bool userAborted = false;
             int messageId = 0;
 
-            // Начальное отображение прогресса для инициализации окна Total Commander
+            // Начальное отображение прогресса для инициализации окна Total Commander с защитой от залипания Abort
             int initialRes = ReportProgress(localPath, remotePath, 0);
             if (initialRes == 1)
             {
-                userAborted = true;
+                // Если TC на старте вернул отмену (например, пользователь только что нажал "Да" в диалоге "Продолжить?"),
+                // делаем повторный опрос через 50 мс, чтобы дать TC обновить состояние диалога
+                System.Threading.Thread.Sleep(50);
+                initialRes = ReportProgress(localPath, remotePath, 0);
+                if (initialRes == 1)
+                {
+                    userAborted = true;
+                }
             }
 
             if (!userAborted)
@@ -1271,11 +1278,16 @@ public static unsafe class WfxExports
             bool userAborted = false;
             bool isFinished = false;
 
-            // Начальное отображение прогресса для инициализации окна Total Commander
+            // Начальное отображение прогресса для инициализации окна Total Commander с защитой от залипания Abort
             int initialRes = ReportProgress(remotePath, localPath, 0);
             if (initialRes == 1)
             {
-                userAborted = true;
+                System.Threading.Thread.Sleep(50);
+                initialRes = ReportProgress(remotePath, localPath, 0);
+                if (initialRes == 1)
+                {
+                    userAborted = true;
+                }
             }
 
             while (!isFinished && !userAborted)
