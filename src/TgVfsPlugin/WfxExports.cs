@@ -1301,7 +1301,6 @@ public static unsafe class WfxExports
             {
                 _db.MoveFileToTrash(fileRecord.Uid);
                 Logger.Log($"FsGetFile: Remote file '{fileName}' marked in_trash=1 per FS_COPYFLAGS_MOVE.");
-                Win32Api.RefreshActivePanel();
                 TriggerCheckpoint(immediate: true);
             }
 
@@ -1363,16 +1362,26 @@ public static unsafe class WfxExports
         string startEndStr = infoStartEnd == Win32Api.FS_STATUS_START ? "START" : "END";
         Logger.Log($"FsStatusInfo: {startEndStr} for Dir='{remoteDir}', Operation={infoOperation}");
 
+        bool isBatchOp = infoOperation == Win32Api.FS_STATUS_OP_GET_MULTI ||
+                         infoOperation == Win32Api.FS_STATUS_OP_PUT_MULTI ||
+                         infoOperation == Win32Api.FS_STATUS_OP_RENMOV_MULTI ||
+                         infoOperation == Win32Api.FS_STATUS_OP_DELETE;
+
         if (infoStartEnd == Win32Api.FS_STATUS_START)
         {
-            _isBatchOperation = true;
+            if (isBatchOp)
+            {
+                _isBatchOperation = true;
+            }
         }
         else if (infoStartEnd == Win32Api.FS_STATUS_END)
         {
-            _isBatchOperation = false;
-            Logger.Log("FsStatusInfo: Batch operation completed. Executing WAL checkpoint.");
-            Win32Api.RefreshActivePanel();
-            TriggerCheckpoint(immediate: true);
+            if (_isBatchOperation)
+            {
+                _isBatchOperation = false;
+                Logger.Log("FsStatusInfo: Batch operation completed. Executing WAL checkpoint.");
+                TriggerCheckpoint(immediate: true);
+            }
         }
     }
 
@@ -1437,7 +1446,6 @@ public static unsafe class WfxExports
         _db.AddDirectoryRecord(mount.Id, dirName, parent);
         
         Logger.Log($"FsMkDir: Directory '{dirName}' created in parent '{parent}' for channel '{channelName}'.");
-        Win32Api.RefreshActivePanel();
         TriggerCheckpoint(immediate: true);
 
         return 1; // true (success)
@@ -1507,7 +1515,6 @@ public static unsafe class WfxExports
                         _db.MoveFileToTrash(fileRecord.Uid);
                     }
                     Logger.Log($"Item '{subPath}' in channel '{channelName}' moved to trash via FsDeleteFile.");
-                    Win32Api.RefreshActivePanel();
                     TriggerCheckpoint(immediate: true);
                     return 1; // true
                 }
@@ -1515,7 +1522,6 @@ public static unsafe class WfxExports
                 {
                     // Элемент уже удален или перемещен (например, в FsGetFile по флагу FS_COPYFLAGS_MOVE)
                     Logger.Log($"Item '{subPath}' in channel '{channelName}' already moved/deleted. Returning success for FsDeleteFile.");
-                    Win32Api.RefreshActivePanel();
                     return 1; // true (успех для Total Commander)
                 }
             }
@@ -1603,7 +1609,6 @@ public static unsafe class WfxExports
             {
                 _db.MoveDirectoryToTrash(mount.Id, subPath);
                 Logger.Log($"Virtual directory '{subPath}' in channel '{channelName}' moved to trash via FsRemoveDir.");
-                Win32Api.RefreshActivePanel();
                 TriggerCheckpoint(immediate: true);
                 return 1; // true
             }
