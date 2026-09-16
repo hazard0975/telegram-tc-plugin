@@ -1296,6 +1296,15 @@ public static unsafe class WfxExports
             }
 
             Logger.Log($"FsGetFile: Successfully downloaded '{fileName}' -> '{localPath}'.");
+
+            if ((copyFlags & Win32Api.FS_COPYFLAGS_MOVE) != 0)
+            {
+                _db.MoveFileToTrash(fileRecord.Uid);
+                Logger.Log($"FsGetFile: Remote file '{fileName}' marked in_trash=1 per FS_COPYFLAGS_MOVE.");
+                Win32Api.RefreshActivePanel();
+                TriggerCheckpoint(immediate: true);
+            }
+
             return Win32Api.FS_FILE_OK;
         }
         catch (OperationCanceledException)
@@ -1362,6 +1371,7 @@ public static unsafe class WfxExports
         {
             _isBatchOperation = false;
             Logger.Log("FsStatusInfo: Batch operation completed. Executing WAL checkpoint.");
+            Win32Api.RefreshActivePanel();
             TriggerCheckpoint(immediate: true);
         }
     }
@@ -1500,6 +1510,13 @@ public static unsafe class WfxExports
                     Win32Api.RefreshActivePanel();
                     TriggerCheckpoint(immediate: true);
                     return 1; // true
+                }
+                else
+                {
+                    // Элемент уже удален или перемещен (например, в FsGetFile по флагу FS_COPYFLAGS_MOVE)
+                    Logger.Log($"Item '{subPath}' in channel '{channelName}' already moved/deleted. Returning success for FsDeleteFile.");
+                    Win32Api.RefreshActivePanel();
+                    return 1; // true (успех для Total Commander)
                 }
             }
         }
