@@ -1083,6 +1083,13 @@ public static unsafe class WfxExports
                         return Win32Api.FS_FILE_WRITEERROR;
                     }
                 }
+
+                // Если сетевая задача завершилась успешно и вернула ID сообщения,
+                // значит файл гарантированно передан в Telegram (любые последующие или запоздалые флаги отмены игнорируются)
+                if (messageId > 0)
+                {
+                    userAborted = false;
+                }
             }
 
             if (userAborted)
@@ -1349,9 +1356,10 @@ public static unsafe class WfxExports
                 try
                 {
                     downloadTask.GetAwaiter().GetResult();
-                    if (!cts.IsCancellationRequested && !userAborted)
+                    if (!cts.IsCancellationRequested)
                     {
                         isFinished = true; // Загрузка успешно завершена
+                        userAborted = false; // Файл уже скачан целиком на диск
                     }
                 }
                 catch (OperationCanceledException)
