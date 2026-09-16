@@ -356,7 +356,14 @@ public static class TelegramManager
         }
 
         Logger.Log($"Uploading file '{localPath}' to Telegram servers...");
-        FileStream fileStream = File.OpenRead(localPath);
+        FileStream fileStream = new FileStream(
+            localPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 65536,
+            options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+
         Stream effectiveStream = (pauseGate != null)
             ? new PausableStream(fileStream, pauseGate, cancellationToken)
             : fileStream;
@@ -377,10 +384,10 @@ public static class TelegramManager
                 }
             });
         }
-        catch
+        finally
         {
-            effectiveStream.Dispose();
-            throw;
+            try { effectiveStream.Dispose(); } catch { }
+            try { fileStream.Dispose(); } catch { }
         }
 
         cancellationToken.ThrowIfCancellationRequested();

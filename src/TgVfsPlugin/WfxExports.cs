@@ -1005,6 +1005,22 @@ public static unsafe class WfxExports
             Logger.Log($"FsPutFile: File '{fileName}' successfully added to database.");
             TriggerCheckpoint(immediate: false);
 
+            if ((copyFlags & Win32Api.FS_COPYFLAGS_MOVE) != 0)
+            {
+                try
+                {
+                    if (System.IO.File.Exists(localPath))
+                    {
+                        System.IO.File.Delete(localPath);
+                        Logger.Log($"FsPutFile: Deleted source local file '{localPath}' as specified by FS_COPYFLAGS_MOVE.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"FsPutFile: Note on deleting source local file '{localPath}': {ex.Message}");
+                }
+            }
+
             return Win32Api.FS_FILE_OK;
         }
         catch (Exception ex)
