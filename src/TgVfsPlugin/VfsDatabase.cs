@@ -253,12 +253,168 @@ public class VfsDatabase : IDisposable
         return null;
     }
 
+    public static string GetVersionedFileName(string fileName, int ver)
+    {
+        if (ver <= 0) ver = 1;
+        string ext = Path.GetExtension(fileName);
+        string nameNoExt = Path.GetFileNameWithoutExtension(fileName);
+        if (string.IsNullOrEmpty(nameNoExt)) nameNoExt = fileName;
+        return $"{nameNoExt}_v{ver}{ext}";
+    }
+
     public void MoveFileToTrash(string uid)
     {
         var cmd = _connection.CreateCommand();
         cmd.CommandText = "UPDATE files SET in_trash = 1 WHERE uid = @uid";
         cmd.Parameters.AddWithValue("@uid", uid);
         cmd.ExecuteNonQuery();
+    }
+
+    public List<FileRecord> GetTrashFiles(string mountId)
+    {
+        var list = new List<FileRecord>();
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+            FROM files
+            WHERE mount_id = @mid AND in_trash = 1
+            ORDER BY mtime DESC
+        ";
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new FileRecord
+            {
+                Uid = reader.GetString(0),
+                MountId = reader.GetString(1),
+                IsDir = reader.GetInt32(2) == 1,
+                Name = reader.GetString(3),
+                Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
+                MTime = ReadDateTime(reader, 5),
+                Size = reader.GetInt64(6),
+                TgMessageId = reader.GetInt32(7),
+                InTrash = reader.GetInt32(8),
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9)
+            });
+        }
+        return list;
+    }
+
+    public FileRecord? GetTrashFileByVersionedName(string mountId, string versionedName)
+    {
+        var trashFiles = GetTrashFiles(mountId);
+        foreach (var f in trashFiles)
+        {
+            string vName = GetVersionedFileName(f.Name, f.Ver);
+            if (vName.Equals(versionedName, StringComparison.OrdinalIgnoreCase) ||
+                f.Name.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
+            {
+                return f;
+            }
+        }
+        return null;
+    }
+
+    public void GetTrashStats(string mountId, out int count, out long totalSize)
+    {
+        count = 0;
+        totalSize = 0;
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT COUNT(*), COALESCE(SUM(size), 0)
+            FROM files
+            WHERE mount_id = @mid AND in_trash = 1
+        ";
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        using var reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            count = reader.GetInt32(0);
+            totalSize = reader.GetInt64(1);
+        }
+    }
+
+    public FileRecord? GetFileByUid(string uid)
+    {
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+            FROM files
+            WHERE uid = @uid
+            LIMIT 1
+        ";
+        cmd.Parameters.AddWithValue("@uid", uid);
+        using var reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            return new FileRecord
+            {
+                Uid = reader.GetString(0),
+                MountId = reader.GetString(1),
+                IsDir = reader.GetInt32(2) == 1,
+                Name = reader.GetString(3),
+                Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
+                MTime = ReadDateTime(reader, 5),
+                Size = reader.GetInt64(6),
+                TgMessageId = reader.GetInt32(7),
+                InTrash = reader.GetInt32(8),
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9)
+            };
+        }
+        return null;
+    }
+
+    public bool RestoreFile(string uid)
+    {
+        var file = GetFileByUid(uid);
+        if (file == null) return false;
+
+        EnsureParentDirectoriesExist(file.MountId, file.Parent);
+
+        var activeConflict = GetFile(file.MountId, file.Name, file.Parent);
+        if (activeConflict != null && activeConflict.Uid != uid)
+        {
+            MoveFileToTrash(activeConflict.Uid);
+        }
+
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = "UPDATE files SET in_trash = 0 WHERE uid = @uid";
+        cmd.Parameters.AddWithValue("@uid", uid);
+        cmd.ExecuteNonQuery();
+        return true;
+    }
+
+    public void DeleteFilePermanently(string uid)
+    {
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM files WHERE uid = @uid";
+        cmd.Parameters.AddWithValue("@uid", uid);
+        cmd.ExecuteNonQuery();
+    }
+
+    public List<int> EmptyTrash(string mountId)
+    {
+        var msgIds = new List<int>();
+        using (var cmdSelect = _connection.CreateCommand())
+        {
+            cmdSelect.CommandText = "SELECT tg_message_id FROM files WHERE mount_id = @mid AND in_trash = 1 AND tg_message_id > 0";
+            cmdSelect.Parameters.AddWithValue("@mid", mountId);
+            using var reader = cmdSelect.ExecuteReader();
+            while (reader.Read())
+            {
+                msgIds.Add(reader.GetInt32(0));
+            }
+        }
+
+        using (var cmdDelete = _connection.CreateCommand())
+        {
+            cmdDelete.CommandText = "DELETE FROM files WHERE mount_id = @mid AND in_trash = 1";
+            cmdDelete.Parameters.AddWithValue("@mid", mountId);
+            cmdDelete.ExecuteNonQuery();
+        }
+
+        return msgIds;
     }
 
     public List<FileRecord> GetSubTreeItems(string mountId, string subPath)

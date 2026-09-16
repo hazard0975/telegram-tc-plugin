@@ -278,6 +278,12 @@ public static class TelegramManager
 
     public static async Task DeleteMessageAsync(long channelId, int messageId)
     {
+        await DeleteMessagesAsync(channelId, new[] { messageId });
+    }
+
+    public static async Task DeleteMessagesAsync(long channelId, int[] messageIds)
+    {
+        if (messageIds == null || messageIds.Length == 0) return;
         try
         {
             if (_client == null || _user == null)
@@ -299,21 +305,25 @@ public static class TelegramManager
                 _chatsCache.TryGetValue(channelId, out chat);
             }
 
-            if (chat is Channel channel)
+            for (int i = 0; i < messageIds.Length; i += 100)
             {
-                var inputChannel = new InputChannel(channel.id, channel.access_hash);
-                await _client.Channels_DeleteMessages(inputChannel, new[] { messageId });
-                Logger.Log($"Deleted message {messageId} from Telegram channel {channelId}.");
-            }
-            else if (chat is Chat smallGroup)
-            {
-                await _client.Messages_DeleteMessages(new[] { messageId }, revoke: true);
-                Logger.Log($"Deleted message {messageId} from Telegram group {channelId}.");
+                var chunk = messageIds.Skip(i).Take(100).ToArray();
+                if (chat is Channel channel)
+                {
+                    var inputChannel = new InputChannel(channel.id, channel.access_hash);
+                    await _client.Channels_DeleteMessages(inputChannel, chunk);
+                    Logger.Log($"Deleted batch of {chunk.Length} messages from Telegram channel {channelId}.");
+                }
+                else if (chat is Chat smallGroup)
+                {
+                    await _client.Messages_DeleteMessages(chunk, revoke: true);
+                    Logger.Log($"Deleted batch of {chunk.Length} messages from Telegram group {channelId}.");
+                }
             }
         }
         catch (Exception ex)
         {
-            Logger.Log($"Failed to delete message {messageId} from channel {channelId}: {ex.Message}");
+            Logger.Log($"Failed to delete messages from channel {channelId}: {ex.Message}");
         }
     }
 
