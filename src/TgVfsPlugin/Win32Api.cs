@@ -236,37 +236,111 @@ public static class Win32Api
         IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
         if (tcWindow == IntPtr.Zero) return;
 
-        // По умолчанию считаем, что активна левая панель (самый частый кейс)
-        bool isLeftPanelActive = true;
+        // Определяем, на какой стороне (слева или справа) открыт VFS-плагин
+        bool isLeftVfs = false;
+        bool isRightVfs = false;
+        bool detectedByPathBox = false;
+
         try
         {
-            uint threadId = GetWindowThreadProcessId(tcWindow, IntPtr.Zero);
-            if (threadId != 0)
+            if (GetWindowRect(tcWindow, out RECT tcRect))
             {
-                GUITHREADINFO gui = new GUITHREADINFO();
-                gui.cbSize = Marshal.SizeOf<GUITHREADINFO>();
-                if (GetGUIThreadInfo(threadId, ref gui) && gui.hwndFocus != IntPtr.Zero)
+                int tcMidX = tcRect.Left + (tcRect.Right - tcRect.Left) / 2;
+
+                EnumChildWindows(tcWindow, (hWnd, lParam) =>
                 {
-                    if (GetWindowRect(tcWindow, out RECT tcRect) && GetWindowRect(gui.hwndFocus, out RECT focusRect))
+                    StringBuilder clsSb = new StringBuilder(256);
+                    GetClassName(hWnd, clsSb, clsSb.Capacity);
+                    string clsName = clsSb.ToString();
+
+                    if (clsName.Contains("PathBox", StringComparison.OrdinalIgnoreCase) ||
+                        clsName.Contains("TMyPath", StringComparison.OrdinalIgnoreCase))
                     {
-                        int tcMidX = tcRect.Left + (tcRect.Right - tcRect.Left) / 2;
-                        int focusCenterX = focusRect.Left + (focusRect.Right - focusRect.Left) / 2;
-                        isLeftPanelActive = focusCenterX < tcMidX;
+                        StringBuilder textSb = new StringBuilder(512);
+                        GetWindowText(hWnd, textSb, textSb.Capacity);
+                        string text = textSb.ToString().Trim();
+
+                        if (!string.IsNullOrEmpty(text))
+                        {
+                            if (GetWindowRect(hWnd, out RECT boxRect))
+                            {
+                                int boxCenterX = boxRect.Left + (boxRect.Right - boxRect.Left) / 2;
+                                bool isLeftBox = boxCenterX < tcMidX;
+
+                                bool isPluginPath = text.StartsWith("\\\\", StringComparison.Ordinal) ||
+                                                   text.StartsWith("/", StringComparison.Ordinal) ||
+                                                   text.Contains("tgvfs", StringComparison.OrdinalIgnoreCase) ||
+                                                   text.Contains("Telegram", StringComparison.OrdinalIgnoreCase);
+
+                                if (isLeftBox && isPluginPath)
+                                {
+                                    isLeftVfs = true;
+                                    detectedByPathBox = true;
+                                }
+                                else if (!isLeftBox && isPluginPath)
+                                {
+                                    isRightVfs = true;
+                                    detectedByPathBox = true;
+                                }
+                            }
+                        }
                     }
-                }
+                    return true;
+                }, IntPtr.Zero);
             }
         }
         catch (Exception ex)
         {
-            Logger.Log($"Error determining active panel side: {ex.Message}");
+            Logger.Log($"Error inspecting TC PathBox controls: {ex.Message}");
         }
 
-        Logger.Log($"ChangeInactivePanelDir: Active panel is {(isLeftPanelActive ? "Left" : "Right")}. Sending target directory to {(isLeftPanelActive ? "Right" : "Left")} panel.");
+        bool isLeftPanelActive = true;
+        if (detectedByPathBox)
+        {
+            // Если плагин открыт в Левой панели -> целевая неактивная панель Правая (isLeftPanelActive = true)
+            // Если плагин открыт в Правой панели -> целевая неактивная панель Левая (isLeftPanelActive = false)
+            if (isLeftVfs && !isRightVfs)
+            {
+                isLeftPanelActive = true;
+            }
+            else if (isRightVfs && !isLeftVfs)
+            {
+                isLeftPanelActive = false;
+            }
+        }
+        else
+        {
+            // Резервное определение по фокусу ввода GUI
+            try
+            {
+                uint threadId = GetWindowThreadProcessId(tcWindow, IntPtr.Zero);
+                if (threadId != 0)
+                {
+                    GUITHREADINFO gui = new GUITHREADINFO();
+                    gui.cbSize = Marshal.SizeOf<GUITHREADINFO>();
+                    if (GetGUIThreadInfo(threadId, ref gui) && gui.hwndFocus != IntPtr.Zero)
+                    {
+                        if (GetWindowRect(tcWindow, out RECT tcRect) && GetWindowRect(gui.hwndFocus, out RECT focusRect))
+                        {
+                            int tcMidX = tcRect.Left + (tcRect.Right - tcRect.Left) / 2;
+                            int focusCenterX = focusRect.Left + (focusRect.Right - focusRect.Left) / 2;
+                            isLeftPanelActive = focusCenterX < tcMidX;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Error determining active panel side: {ex.Message}");
+            }
+        }
+
+        Logger.Log($"ChangeInactivePanelDir: Detected VFS side={(detectedByPathBox ? (isLeftVfs ? "Left" : "Right") : "ByFocus")}. Sending target directory '{inactivePath}' to {(isLeftPanelActive ? "Right" : "Left")} panel.");
 
         // В Total Commander формат команды смены директории через WM_COPYDATA ('CD'):
         // "путь_левой\rпуть_правой\0"
-        // Если активна левая панель -> меняем правую: "\r" + path + "\0"
-        // Если активна правая панель -> меняем левую: path + "\r\0"
+        // Если VFS слева -> меняем правую: "\r" + path + "\0"
+        // Если VFS справа -> меняем левую: path + "\r\0"
         string payload = isLeftPanelActive ? ("\r" + inactivePath + "\0") : (inactivePath + "\r\0");
         byte[] payloadBytes = System.Text.Encoding.Default.GetBytes(payload);
         

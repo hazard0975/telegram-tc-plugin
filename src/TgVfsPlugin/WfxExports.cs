@@ -245,7 +245,10 @@ public static unsafe class WfxExports
         {
             if (string.IsNullOrEmpty(cleanPath))
             {
-                _lastMirrorPath = null;
+                if (!_isBatchOperation)
+                {
+                    _lastMirrorPath = null;
+                }
                 // Корень: возвращаем каналы и служебные триггеры
                 Logger.Log("Fetching channels for root.");
                 state.Items.Add(new VfsDatabase.VfsItem 
@@ -293,7 +296,7 @@ public static unsafe class WfxExports
                         localPathToSet = System.IO.Path.Combine(mount.LocalPath, System.IO.Path.Combine(subParts));
                     }
                     
-                    if (!string.Equals(_lastMirrorPath, localPathToSet, StringComparison.OrdinalIgnoreCase))
+                    if (!_isBatchOperation && !string.Equals(_lastMirrorPath, localPathToSet, StringComparison.OrdinalIgnoreCase))
                     {
                         _lastMirrorPath = localPathToSet;
                         Logger.Log($"Entering Mirror folder '{channelTitle}'. Sending CD '{localPathToSet}' to target panel.");
