@@ -100,7 +100,8 @@ public static class FilePropertiesDialog
                         ReadOnly = true,
                         BorderStyle = BorderStyle.None,
                         BackColor = SystemColors.Control,
-                        Font = new Font("Segoe UI", 9, FontStyle.Regular)
+                        Font = new Font("Segoe UI", 9, FontStyle.Regular),
+                        TabStop = false
                     };
                     infoGroup.Controls.Add(lbl);
                     infoGroup.Controls.Add(valBox);
@@ -172,6 +173,11 @@ public static class FilePropertiesDialog
                 form.Controls.Add(okBtn);
                 form.AcceptButton = okBtn;
                 form.CancelButton = okBtn;
+
+                form.Shown += (s, e) =>
+                {
+                    okBtn.Focus();
+                };
 
                 form.ShowDialog();
             }
