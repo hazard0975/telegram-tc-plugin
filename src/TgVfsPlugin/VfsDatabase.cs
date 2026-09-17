@@ -413,13 +413,17 @@ public class VfsDatabase : IDisposable
         return msgIds;
     }
 
-    public void GetTrashStats(string mountId, out int count, out long totalSize)
+    public void GetTrashStats(string mountId, out int filesCount, out int dirsCount, out long totalSize)
     {
-        count = 0;
+        filesCount = 0;
+        dirsCount = 0;
         totalSize = 0;
         var cmd = _connection.CreateCommand();
         cmd.CommandText = @"
-            SELECT COUNT(*), COALESCE(SUM(size), 0)
+            SELECT 
+                COUNT(CASE WHEN isdir = 0 THEN 1 END),
+                COUNT(CASE WHEN isdir = 1 THEN 1 END),
+                COALESCE(SUM(size), 0)
             FROM files
             WHERE mount_id = @mid AND in_trash = 1
         ";
@@ -427,9 +431,16 @@ public class VfsDatabase : IDisposable
         using var reader = cmd.ExecuteReader();
         if (reader.Read())
         {
-            count = reader.GetInt32(0);
-            totalSize = reader.GetInt64(1);
+            filesCount = reader.GetInt32(0);
+            dirsCount = reader.GetInt32(1);
+            totalSize = reader.GetInt64(2);
         }
+    }
+
+    public void GetTrashStats(string mountId, out int count, out long totalSize)
+    {
+        GetTrashStats(mountId, out int filesCount, out int dirsCount, out totalSize);
+        count = filesCount + dirsCount;
     }
 
     public FileRecord? GetFileByUid(string uid)

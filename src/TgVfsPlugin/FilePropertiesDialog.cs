@@ -241,12 +241,13 @@ public static class FilePropertiesDialog
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
-                db.GetTrashStats(mountId, out int trashCount, out long totalTrashSize);
+                db.GetTrashStats(mountId, out int filesCount, out int dirsCount, out long totalTrashSize);
+                int totalItems = filesCount + dirsCount;
 
                 using Form form = new Form()
                 {
                     Width = 480,
-                    Height = 320,
+                    Height = 350,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = $"Свойства корзины: {channelName}",
                     StartPosition = FormStartPosition.CenterScreen,
@@ -296,38 +297,58 @@ public static class FilePropertiesDialog
                     Left = 20,
                     Top = 75,
                     Width = 425,
-                    Height = 135,
+                    Height = 165,
                     Text = "Состояние корзины"
                 };
 
-                Label countLbl = new Label()
+                int labelWidth = 155;
+                int valLeft = 175;
+                int valWidth = 235;
+
+                Label filesLbl = new Label()
                 {
                     Left = 15,
-                    Top = 30,
-                    Width = 140,
-                    Text = "Удалённых файлов:"
+                    Top = 26,
+                    Width = labelWidth,
+                    Text = "Файлов:"
                 };
-                Label countVal = new Label()
+                Label filesVal = new Label()
                 {
-                    Left = 160,
-                    Top = 30,
-                    Width = 240,
+                    Left = valLeft,
+                    Top = 26,
+                    Width = valWidth,
                     Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                    Text = $"{trashCount} шт."
+                    Text = $"{filesCount} шт."
+                };
+
+                Label dirsLbl = new Label()
+                {
+                    Left = 15,
+                    Top = 50,
+                    Width = labelWidth,
+                    Text = "Папок:"
+                };
+                Label dirsVal = new Label()
+                {
+                    Left = valLeft,
+                    Top = 50,
+                    Width = valWidth,
+                    Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                    Text = $"{dirsCount} шт."
                 };
 
                 Label sizeLbl = new Label()
                 {
                     Left = 15,
-                    Top = 60,
-                    Width = 140,
+                    Top = 74,
+                    Width = labelWidth,
                     Text = "Занимаемый объём:"
                 };
                 Label sizeVal = new Label()
                 {
-                    Left = 160,
-                    Top = 60,
-                    Width = 240,
+                    Left = valLeft,
+                    Top = 74,
+                    Width = valWidth,
                     Font = new Font("Segoe UI", 9, FontStyle.Bold),
                     Text = $"{FormatSize(totalTrashSize)} ({totalTrashSize:N0} байт)"
                 };
@@ -335,15 +356,17 @@ public static class FilePropertiesDialog
                 Label noteLbl = new Label()
                 {
                     Left = 15,
-                    Top = 90,
-                    Width = 390,
-                    Height = 35,
+                    Top = 104,
+                    Width = 395,
+                    Height = 45,
                     ForeColor = Color.DimGray,
                     Text = "Файлы в корзине сохраняют свои версии в Telegram и могут быть восстановлены в исходные папки."
                 };
 
-                infoGroup.Controls.Add(countLbl);
-                infoGroup.Controls.Add(countVal);
+                infoGroup.Controls.Add(filesLbl);
+                infoGroup.Controls.Add(filesVal);
+                infoGroup.Controls.Add(dirsLbl);
+                infoGroup.Controls.Add(dirsVal);
                 infoGroup.Controls.Add(sizeLbl);
                 infoGroup.Controls.Add(sizeVal);
                 infoGroup.Controls.Add(noteLbl);
@@ -351,19 +374,23 @@ public static class FilePropertiesDialog
 
                 Button cleanBtn = new Button()
                 {
-                    Text = "♻ Очистить корзину",
+                    Text = "Очистить",
                     Left = 20,
-                    Top = 230,
-                    Width = 160,
-                    Height = 32,
+                    Top = 255,
+                    Width = 110,
+                    Height = 30,
                     BackColor = Color.FromArgb(255, 235, 235),
-                    Enabled = trashCount > 0
+                    Enabled = totalItems > 0
                 };
                 cleanBtn.Click += (s, e) =>
                 {
+                    string details = filesCount > 0 && dirsCount > 0
+                        ? $"{filesCount} файлов и {dirsCount} папок"
+                        : (filesCount > 0 ? $"{filesCount} файлов" : $"{dirsCount} папок");
+
                     var ask = MessageBox.Show(form,
                         $"Вы действительно хотите навсегда очистить корзину канала '{channelName}'?\n\n" +
-                        $"⚠️ ВНИМАНИЕ: Это удалит {trashCount} файлов ({FormatSize(totalTrashSize)}) и связанные с ними сообщения из Telegram без возможности восстановления!",
+                        $"⚠️ ВНИМАНИЕ: Это безвозвратно удалит {details} ({FormatSize(totalTrashSize)}) и связанные с ними сообщения из Telegram!",
                         "Подтверждение очистки корзины",
                         MessageBoxButtons.YesNo,
                         MessageBoxIcon.Warning,
@@ -386,9 +413,9 @@ public static class FilePropertiesDialog
                 {
                     Text = "Закрыть",
                     Left = 345,
-                    Top = 230,
+                    Top = 255,
                     Width = 100,
-                    Height = 32,
+                    Height = 30,
                     DialogResult = DialogResult.OK
                 };
 
