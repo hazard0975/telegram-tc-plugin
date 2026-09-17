@@ -1348,6 +1348,19 @@ public static unsafe class WfxExports
             return Win32Api.FS_FILE_NOTFOUND;
         }
 
+        // Очищаем суффикс версии (_v1, _v2) для имени сохраняемого локального файла
+        string localDir = Path.GetDirectoryName(localPath) ?? "";
+        string localFileName = Path.GetFileName(localPath);
+        if (!string.IsNullOrEmpty(localDir) && !string.IsNullOrEmpty(localFileName))
+        {
+            if (!localFileName.Equals(fileRecord.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                string cleanLocalPath = Path.Combine(localDir, fileRecord.Name);
+                Logger.Info("WFX", $"[GET FILE] Stripping version suffix for local file: '{localPath}' -> '{cleanLocalPath}'");
+                localPath = cleanLocalPath;
+            }
+        }
+
         try
         {
             // Проверка существующего локального файла
@@ -2009,11 +2022,53 @@ public static unsafe class WfxExports
         string newItemName = newLastSlash >= 0 ? newSub.Substring(newLastSlash + 1) : newSub;
         string? newParent = newLastSlash >= 0 ? newSub.Substring(0, newLastSlash) : null;
 
-        // Проверяем запись источника
-        var sourceRecord = _db.GetFile(oldMount.Id, oldItemName, oldParent);
+        // Проверяем запись источника (с поддержкой элементов из Корзины)
+        string[] oldSubParts = oldSub.Split('\\');
+        bool oldIsInTrash = oldSubParts.Length > 0 && IsTrashFolder(oldSubParts[0]);
+
+        VfsDatabase.FileRecord? sourceRecord = null;
+        if (oldIsInTrash)
+        {
+            string? trashSubParent = oldSubParts.Length > 2 ? string.Join("\\", oldSubParts, 1, oldSubParts.Length - 2) : null;
+            sourceRecord = _db.GetTrashFileByVersionedName(oldMount.Id, oldItemName, trashSubParent);
+        }
+        else
+        {
+            sourceRecord = _db.GetFile(oldMount.Id, oldItemName, oldParent);
+        }
+
         if (sourceRecord == null)
         {
             return Win32Api.FS_FILE_NOTFOUND;
+        }
+
+        // Если объект находится в корзине, а назначение — обычная директория (восстановление через F5/F6)
+        string[] newSubParts = newSub.Split('\\');
+        bool newIsInTrash = newSubParts.Length > 0 && IsTrashFolder(newSubParts[0]);
+
+        if (oldIsInTrash && !newIsInTrash)
+        {
+            _db.RestoreFile(sourceRecord.Uid);
+
+            // Имя восстанавливаемого файла должно быть чистым (без суффикса _v1)
+            string cleanTargetName = sourceRecord.IsDir ? newItemName : sourceRecord.Name;
+
+            _db.EnsureParentDirectoriesExist(newMount.Id, newParent);
+
+            if (sourceRecord.IsDir)
+            {
+                _db.RenameMoveDirectory(oldMount.Id, oldSub, cleanTargetName, newParent, newMount.Id);
+                Logger.Info("DB", $"[RESTORE MOVED] Restored folder '{sourceRecord.Name}' from Trash to '{newChannel}\\{newParent}'");
+            }
+            else
+            {
+                _db.RenameMoveFile(sourceRecord.Uid, cleanTargetName, newParent, newMount.Id);
+                Logger.Info("DB", $"[RESTORE MOVED] Restored file '{sourceRecord.Name}' from Trash to '{newChannel}\\{newParent}'");
+            }
+
+            Win32Api.RefreshActivePanel();
+            TriggerCheckpoint(immediate: true);
+            return Win32Api.FS_FILE_OK;
         }
 
         // Проверяем на циклический путь, если это директория
