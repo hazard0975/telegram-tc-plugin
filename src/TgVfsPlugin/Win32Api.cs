@@ -423,3 +423,18 @@ public static class Win32Api
         public fixed char cAlternateFileName[14];
     }
 }
+
+public class Win32Window : IWin32Window
+{
+    public IntPtr Handle { get; }
+    public Win32Window(IntPtr handle)
+    {
+        Handle = handle;
+    }
+
+    public static IWin32Window? GetTcOwner()
+    {
+        IntPtr hwnd = Win32Api.FindWindow("TTOTAL_CMD", null!);
+        return hwnd != IntPtr.Zero ? new Win32Window(hwnd) : null;
+    }
+}

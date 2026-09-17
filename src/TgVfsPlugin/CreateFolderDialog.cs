@@ -34,7 +34,7 @@ public static class CreateFolderDialog
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
-                    TopMost = true,
+                    TopMost = false,
                     Font = new Font("Segoe UI", 9)
                 };
 
@@ -66,7 +66,7 @@ public static class CreateFolderDialog
                 form.AcceptButton = okBtn;
                 form.CancelButton = cancelBtn;
 
-                if (form.ShowDialog() == DialogResult.OK)
+                if (form.ShowDialog(Win32Window.GetTcOwner()) == DialogResult.OK)
                 {
                     if (string.IsNullOrWhiteSpace(nameBox.Text)) {
                         MessageBox.Show("Введите название папки", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);

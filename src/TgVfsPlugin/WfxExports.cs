@@ -1766,8 +1766,8 @@ public static unsafe class WfxExports
                 string[] subParts = subPath.Split('\\');
                 if (subParts.Length == 1 && IsTrashFolder(subParts[0]))
                 {
-                    _db.GetTrashStats(mount.Id, out int trashCount, out long totalSize);
-                    if (trashCount == 0)
+                    _db.GetTrashStats(mount.Id, out int filesCount, out int dirsCount, out long totalSize);
+                    if (filesCount + dirsCount == 0)
                     {
                         return 1;
                     }

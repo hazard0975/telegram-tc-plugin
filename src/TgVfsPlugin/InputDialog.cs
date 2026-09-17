@@ -29,7 +29,7 @@ public static class InputDialog
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
-                    TopMost = true,
+                    TopMost = false,
                     Font = new Font("Segoe UI", 9)
                 };
 
@@ -52,7 +52,7 @@ public static class InputDialog
                 promptForm.CancelButton = cancel;
 
                 Logger.Info("UI", $"Showing input dialog: '{title}'");
-                if (promptForm.ShowDialog() == DialogResult.OK)
+                if (promptForm.ShowDialog(Win32Window.GetTcOwner()) == DialogResult.OK)
                 {
                     result = inputBox.Text;
                     Logger.Info("UI", $"Input dialog '{title}' submitted (OK).");

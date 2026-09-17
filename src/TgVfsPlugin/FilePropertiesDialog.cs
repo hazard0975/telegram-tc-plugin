@@ -25,7 +25,7 @@ public static class FilePropertiesDialog
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
-                    TopMost = true,
+                    TopMost = false,
                     Font = new Font("Segoe UI", 9)
                 };
 
@@ -73,7 +73,7 @@ public static class FilePropertiesDialog
                     Top = 75,
                     Width = 465,
                     Height = 265,
-                    Text = "Параметры Telegram VFS"
+                    Text = file.IsDir ? "Параметры папки" : "Параметры Telegram VFS"
                 };
 
                 int curTop = 25;
@@ -108,20 +108,48 @@ public static class FilePropertiesDialog
                     curTop += rowHeight;
                 }
 
-                string sizeFormatted = FormatSize(file.Size);
-                string sizeFull = file.IsDir ? "Каталог" : $"{file.Size:N0} байт ({sizeFormatted})";
+                int dirFilesCount = 0;
+                int dirDirsCount = 0;
+                long dirTotalSize = 0;
+                if (file.IsDir && db != null)
+                {
+                    string dirSubPath = string.IsNullOrEmpty(file.Parent) ? file.Name : $"{file.Parent}\\{file.Name}";
+                    db.GetDirectoryStats(file.MountId, dirSubPath, file.InTrash == 1, out dirFilesCount, out dirDirsCount, out dirTotalSize);
+                }
+
                 string dateStr = file.MTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss");
                 string channelStr = $"{channelName} (ID: {channelId})";
-                string msgIdStr = file.TgMessageId > 0 ? $"#{file.TgMessageId}" : "Локально / Виртуально";
-                string versionStr = $"v{file.Ver}";
                 string statusStr = file.InTrash == 1 ? "В корзине [.Trash]" : "Активный (в хранилище)";
 
                 AddRow("Имя:", file.Name);
                 AddRow("Канал Telegram:", channelStr);
-                AddRow("Размер:", sizeFull);
+
+                string sizeReport;
+                string msgIdReport = file.TgMessageId > 0 ? $"#{file.TgMessageId}" : "Локально / Виртуально";
+                string versionReport = $"v{file.Ver}";
+
+                if (file.IsDir)
+                {
+                    sizeReport = $"{FormatSize(dirTotalSize)} ({dirTotalSize:N0} байт)";
+                    AddRow("Файлов:", $"{dirFilesCount} шт.");
+                    AddRow("Папок:", $"{dirDirsCount} шт.");
+                    AddRow("Размер:", sizeReport);
+                }
+                else
+                {
+                    string sizeFormatted = FormatSize(file.Size);
+                    sizeReport = $"{file.Size:N0} байт ({sizeFormatted})";
+                    AddRow("Размер:", sizeReport);
+                }
+
                 AddRow("Дата изменения:", dateStr);
-                AddRow("ID сообщения TG:", msgIdStr);
-                AddRow("Ревизия / Версия:", versionStr);
+
+                if (!file.IsDir)
+                {
+                    AddRow("ID сообщения TG:", msgIdReport);
+                    AddRow("Ревизия / Версия:", versionReport);
+                }
+
                 AddRow("Статус файла:", statusStr);
                 AddRow("Уникальный UID:", file.Uid);
 
@@ -138,14 +166,24 @@ public static class FilePropertiesDialog
                 };
                 copyBtn.Click += (s, e) =>
                 {
-                    string infoReport = 
+                    string infoReport = file.IsDir ?
                         $"Имя: {file.Name}\r\n" +
                         $"Путь: {fullVirtualPath}\r\n" +
                         $"Канал: {channelStr}\r\n" +
-                        $"Размер: {sizeFull}\r\n" +
+                        $"Файлов: {dirFilesCount}\r\n" +
+                        $"Папок: {dirDirsCount}\r\n" +
+                        $"Размер: {sizeReport}\r\n" +
                         $"Дата изменения: {dateStr}\r\n" +
-                        $"ID сообщения TG: {msgIdStr}\r\n" +
-                        $"Версия: {versionStr}\r\n" +
+                        $"Статус: {statusStr}\r\n" +
+                        $"UID: {file.Uid}"
+                        :
+                        $"Имя: {file.Name}\r\n" +
+                        $"Путь: {fullVirtualPath}\r\n" +
+                        $"Канал: {channelStr}\r\n" +
+                        $"Размер: {sizeReport}\r\n" +
+                        $"Дата изменения: {dateStr}\r\n" +
+                        $"ID сообщения TG: {msgIdReport}\r\n" +
+                        $"Версия: {versionReport}\r\n" +
                         $"Статус: {statusStr}\r\n" +
                         $"UID: {file.Uid}";
                     try
@@ -219,7 +257,7 @@ public static class FilePropertiesDialog
                     else okBtn.Focus();
                 };
 
-                form.ShowDialog();
+                form.ShowDialog(Win32Window.GetTcOwner());
             }
             catch (Exception ex)
             {
@@ -253,7 +291,7 @@ public static class FilePropertiesDialog
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
-                    TopMost = true,
+                    TopMost = false,
                     Font = new Font("Segoe UI", 9)
                 };
 
@@ -423,7 +461,7 @@ public static class FilePropertiesDialog
                 form.Controls.Add(closeBtn);
                 form.CancelButton = closeBtn;
 
-                form.ShowDialog();
+                form.ShowDialog(Win32Window.GetTcOwner());
             }
             catch (Exception ex)
             {

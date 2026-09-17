@@ -437,10 +437,40 @@ public class VfsDatabase : IDisposable
         }
     }
 
-    public void GetTrashStats(string mountId, out int count, out long totalSize)
+    public void GetDirectoryStats(string mountId, string dirSubPath, bool inTrash, out int filesCount, out int dirsCount, out long totalSize)
     {
-        GetTrashStats(mountId, out int filesCount, out int dirsCount, out totalSize);
-        count = filesCount + dirsCount;
+        filesCount = 0;
+        dirsCount = 0;
+        totalSize = 0;
+
+        string normalizedDir = dirSubPath.Replace('/', '\\').Trim('\\');
+        string prefixPattern = string.IsNullOrEmpty(normalizedDir) 
+            ? "%" 
+            : normalizedDir + "\\%";
+
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT 
+                COUNT(CASE WHEN isdir = 0 THEN 1 END),
+                COUNT(CASE WHEN isdir = 1 THEN 1 END),
+                COALESCE(SUM(size), 0)
+            FROM files
+            WHERE mount_id = @mid 
+              AND (parent = @dir OR parent LIKE @prefix)
+              AND in_trash = @trash
+        ";
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        cmd.Parameters.AddWithValue("@dir", normalizedDir);
+        cmd.Parameters.AddWithValue("@prefix", prefixPattern);
+        cmd.Parameters.AddWithValue("@trash", inTrash ? 1 : 0);
+
+        using var reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            filesCount = reader.GetInt32(0);
+            dirsCount = reader.GetInt32(1);
+            totalSize = reader.GetInt64(2);
+        }
     }
 
     public FileRecord? GetFileByUid(string uid)

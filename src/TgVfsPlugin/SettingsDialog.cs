@@ -36,7 +36,7 @@ public static class SettingsDialog
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
-                    TopMost = true,
+                    TopMost = false,
                     Font = new Font("Segoe UI", 9)
                 };
 
@@ -184,7 +184,7 @@ public static class SettingsDialog
                 form.AcceptButton = okBtn;
                 form.CancelButton = cancelBtn;
 
-                if (form.ShowDialog() == DialogResult.OK)
+                if (form.ShowDialog(Win32Window.GetTcOwner()) == DialogResult.OK)
                 {
                     StorageMode newMode = StorageMode.DefaultAppData;
                     string newPath = "";

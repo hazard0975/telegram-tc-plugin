@@ -35,7 +35,7 @@ public static class DeleteFolderDialog
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
-                    TopMost = true,
+                    TopMost = false,
                     Font = new Font("Segoe UI", 9)
                 };
 
@@ -90,7 +90,7 @@ public static class DeleteFolderDialog
                 form.AcceptButton = deleteBtn;
                 form.CancelButton = cancelBtn;
 
-                if (form.ShowDialog() == DialogResult.OK && combo.SelectedItem != null)
+                if (form.ShowDialog(Win32Window.GetTcOwner()) == DialogResult.OK && combo.SelectedItem != null)
                 {
                     selectedFolder = combo.SelectedItem.ToString();
                 }
