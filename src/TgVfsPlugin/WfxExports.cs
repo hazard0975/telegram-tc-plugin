@@ -1023,6 +1023,19 @@ public static unsafe class WfxExports
 
         string channelName = cleanRemote.Substring(0, firstSlash);
         string subPath = cleanRemote.Substring(firstSlash + 1).Replace('/', '\\');
+
+        string[] putSubParts = subPath.Split('\\');
+        if (putSubParts.Length > 0 && IsTrashFolder(putSubParts[0]))
+        {
+            Logger.Warn("WFX", $"[PUT FILE BLOCKED] Uploading to Trash is prohibited: '{remotePath}'");
+            System.Windows.Forms.MessageBox.Show(
+                "Загрузка и копирование файлов в Корзину запрещены.\n\nДля удаления объектов используйте клавишу F8 / Delete.",
+                "Операция заблокирована",
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Warning);
+            return Win32Api.FS_FILE_NOTSUPPORTED;
+        }
+
         string fileName = System.IO.Path.GetFileName(subPath);
         string? parentSubPath = System.IO.Path.GetDirectoryName(subPath);
         if (string.IsNullOrEmpty(parentSubPath)) parentSubPath = null;
@@ -1726,6 +1739,18 @@ public static unsafe class WfxExports
         string channelName = cleanPath.Substring(0, firstSlash);
         string subPath = cleanPath.Substring(firstSlash + 1).Replace('/', '\\');
 
+        string[] mkdirSubParts = subPath.Split('\\');
+        if (mkdirSubParts.Length > 0 && IsTrashFolder(mkdirSubParts[0]))
+        {
+            Logger.Warn("WFX", $"[MKDIR BLOCKED] Creating directories in Trash is prohibited: '{dirPath}'");
+            System.Windows.Forms.MessageBox.Show(
+                "Создание папок в Корзине запрещено.",
+                "Операция заблокирована",
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Warning);
+            return 0; // false
+        }
+
         var mount = _db.GetMountByName(channelName);
         if (mount == null) return 0;
 
@@ -2045,6 +2070,17 @@ public static unsafe class WfxExports
         // Если объект находится в корзине, а назначение — обычная директория (восстановление через F5/F6)
         string[] newSubParts = newSub.Split('\\');
         bool newIsInTrash = newSubParts.Length > 0 && IsTrashFolder(newSubParts[0]);
+
+        if (newIsInTrash)
+        {
+            Logger.Warn("WFX", $"[RENMOV BLOCKED] Copying or moving to Trash is prohibited: '{newPath}'");
+            System.Windows.Forms.MessageBox.Show(
+                "Загрузка и копирование файлов в Корзину запрещены.\n\nДля удаления объектов используйте клавишу F8 / Delete.",
+                "Операция заблокирована",
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Warning);
+            return Win32Api.FS_FILE_NOTSUPPORTED;
+        }
 
         if (oldIsInTrash && !newIsInTrash)
         {
