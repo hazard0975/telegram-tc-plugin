@@ -17,7 +17,7 @@
 В среде должен быть установлен компилятор .NET 9.0 SDK. Ты ОБЯЗАНА проверять любой написанный или изменённый C# код на компилируемость перед тем, как давать ответ. 
 Путь к компилятору: `/workspace/.dotnet/dotnet`
 Команда для установки (если бинарник отсутствует в новом чате/сессии):
-`curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --install-dir /workspace/.dotnet --channel 9.0`
+`mkdir -p /workspace/.dotnet && curl -sSL https://dotnetcli.azureedge.net/dotnet/Sdk/9.0.100/dotnet-sdk-9.0.100-linux-x64.tar.gz | tar -xz -C /workspace/.dotnet`
 Команда для сборки проекта: `/workspace/.dotnet/dotnet build src/TgVfsPlugin/TgVfsPlugin.csproj -p:EnableWindowsTargeting=true`
 Если при первом запуске бинарник `/workspace/.dotnet/dotnet` не найден — автоматически выполни команду установки, а затем обязательно проверь сборку проекта перед ответом.
 Никогда не утверждай, что код работает, пока не проверишь его этой командой!

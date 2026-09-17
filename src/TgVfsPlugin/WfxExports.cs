@@ -1361,10 +1361,25 @@ public static unsafe class WfxExports
             return Win32Api.FS_FILE_NOTFOUND;
         }
 
-        // Очищаем суффикс версии (_v1, _v2) для имени сохраняемого локального файла
+        // Очищаем суффикс версии (_v1, _v2) для имени сохраняемого локального файла,
+        // но ТОЛЬКО если это НЕ временная папка Total Commander (иначе открытие/просмотр по Enter/F3 выдаст "Файл не найден")
         string localDir = Path.GetDirectoryName(localPath) ?? "";
         string localFileName = Path.GetFileName(localPath);
-        if (!string.IsNullOrEmpty(localDir) && !string.IsNullOrEmpty(localFileName))
+
+        string sysTemp = Path.GetTempPath();
+        string userTemp = Environment.GetEnvironmentVariable("TEMP") ?? "";
+        string userTmp = Environment.GetEnvironmentVariable("TMP") ?? "";
+
+        bool isTempTarget = !string.IsNullOrEmpty(localPath) && (
+            (!string.IsNullOrEmpty(sysTemp) && localPath.StartsWith(sysTemp, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrEmpty(userTemp) && localPath.StartsWith(userTemp, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrEmpty(userTmp) && localPath.StartsWith(userTmp, StringComparison.OrdinalIgnoreCase)) ||
+            localPath.IndexOf("\\_tc\\", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            localPath.IndexOf("\\_tc_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            localPath.IndexOf("\\AppData\\Local\\Temp\\", StringComparison.OrdinalIgnoreCase) >= 0
+        );
+
+        if (!isTempTarget && !string.IsNullOrEmpty(localDir) && !string.IsNullOrEmpty(localFileName))
         {
             if (!localFileName.Equals(fileRecord.Name, StringComparison.OrdinalIgnoreCase))
             {
@@ -1394,8 +1409,7 @@ public static unsafe class WfxExports
 
                 // Total Commander при FsExecuteFile (FS_EXEC_YOURSELF) может предварительно создать пустой (0 байт) файл
                 // или скачивать во временный каталог пользователя Path.GetTempPath(). В этих случаях разрешаем перезапись.
-                bool isTempOrZeroByte = existingInfo.Length == 0 ||
-                    localPath.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase);
+                bool isTempOrZeroByte = existingInfo.Length == 0 || isTempTarget;
 
                 if (!canOverwrite && !canResume && !isTempOrZeroByte)
                 {
