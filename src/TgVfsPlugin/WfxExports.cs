@@ -37,6 +37,120 @@ public static unsafe class WfxExports
     private static System.Threading.Timer? _debouncedCheckpointTimer;
     private static bool _processExitHooked = false;
 
+    private class PendingTrashItem
+    {
+        public string MountId { get; set; } = "";
+        public long ChannelId { get; set; }
+        public string Uid { get; set; } = "";
+        public int TgMessageId { get; set; }
+        public string FileName { get; set; } = "";
+    }
+
+    private static readonly List<PendingTrashItem> _pendingTrashDeletions = new();
+    private static readonly object _trashDeleteLock = new();
+
+    public static void PurgeTrashRecords(string mountId, long channelId, List<VfsDatabase.FileRecord> trashRecords)
+    {
+        if (trashRecords == null || trashRecords.Count == 0 || _db == null) return;
+
+        var itemsWithMsg = trashRecords.Where(x => x.TgMessageId > 0).ToList();
+        var itemsWithoutMsg = trashRecords.Where(x => x.TgMessageId <= 0).ToList();
+
+        // Виртуальные папки и элементы без сообщения сразу удаляем из БД
+        if (itemsWithoutMsg.Count > 0)
+        {
+            _db.DeleteFilesByUids(itemsWithoutMsg.Select(x => x.Uid));
+        }
+
+        if (itemsWithMsg.Count > 0 && channelId != 0)
+        {
+            int[] allMsgIds = itemsWithMsg.Select(x => x.TgMessageId).ToArray();
+            var msgToUidMap = itemsWithMsg.ToDictionary(x => x.TgMessageId, x => x.Uid);
+            int total = allMsgIds.Length;
+            int processed = 0;
+
+            for (int i = 0; i < allMsgIds.Length; i += 100)
+            {
+                var chunk = allMsgIds.Skip(i).Take(100).ToArray();
+                int batchNum = (i / 100) + 1;
+                int totalBatches = (int)Math.Ceiling((double)total / 100.0);
+                int percentDone = total > 0 ? (int)((processed * 100.0) / total) : 0;
+
+                string statusMsg = $"Очистка корзины ({processed}/{total})";
+                int progressRes = ReportProgress(".[🗑] Корзина", statusMsg, percentDone);
+                if (progressRes == 1)
+                {
+                    Logger.Warn("WFX", $"[TRASH PURGE CANCELLED] User pressed Cancel in Total Commander at batch {batchNum}/{totalBatches}. Stopping further deletion.");
+                    break;
+                }
+
+                Logger.Info("WFX", $"[TRASH PURGE BATCH {batchNum}/{totalBatches}] Requesting Telegram to delete {chunk.Length} messages...");
+
+                var deletedMsgIds = System.Threading.Tasks.Task.Run(() => 
+                    TelegramManager.DeleteMessagesAsync(
+                        channelId, 
+                        chunk, 
+                        onProgress: null, 
+                        cancellationToken: System.Threading.CancellationToken.None
+                    )).GetAwaiter().GetResult();
+
+                if (deletedMsgIds.Count > 0)
+                {
+                    _db.DeleteFilesByTgMessageIds(mountId, deletedMsgIds);
+                    var uidsToRemove = deletedMsgIds.Where(msgToUidMap.ContainsKey).Select(id => msgToUidMap[id]);
+                    _db.DeleteFilesByUids(uidsToRemove);
+                    Logger.Info("DB", $"[DB PURGE SUCCESS] Deleted {deletedMsgIds.Count} items from SQLite database after Telegram confirmation.");
+                }
+                else
+                {
+                    Logger.Warn("DB", $"[DB PURGE SKIPPED] No messages deleted in Telegram for batch {batchNum}/{totalBatches}. Preserving database records.");
+                }
+
+                processed += chunk.Length;
+
+                if (i + 100 < allMsgIds.Length)
+                {
+                    System.Threading.Thread.Sleep(250);
+                }
+            }
+        }
+
+        _db.DeleteEmptyTrashDirectories(mountId);
+        ReportProgress(".[🗑] Корзина", "Очистка завершена", 100);
+        TriggerCheckpoint(immediate: true);
+    }
+
+    private static void ProcessPendingTrashDeletions()
+    {
+        List<PendingTrashItem> itemsToProcess;
+        lock (_trashDeleteLock)
+        {
+            if (_pendingTrashDeletions.Count == 0) return;
+            itemsToProcess = new List<PendingTrashItem>(_pendingTrashDeletions);
+            _pendingTrashDeletions.Clear();
+        }
+
+        Logger.Info("WFX", $"[BATCH TRASH DELETE START] Processing {itemsToProcess.Count} pending trash items...");
+
+        var groupedByChannel = itemsToProcess.GroupBy(x => (x.MountId, x.ChannelId));
+        foreach (var group in groupedByChannel)
+        {
+            string mountId = group.Key.MountId;
+            long channelId = group.Key.ChannelId;
+            var trashRecords = group.Select(x => new VfsDatabase.FileRecord
+            {
+                Uid = x.Uid,
+                MountId = x.MountId,
+                TgMessageId = x.TgMessageId,
+                Name = x.FileName
+            }).ToList();
+
+            PurgeTrashRecords(mountId, channelId, trashRecords);
+        }
+
+        Logger.Info("WFX", $"[BATCH TRASH DELETE FINISHED] Processed batch trash deletions.");
+    }
+
     private static void OnProcessExit(object? sender, EventArgs e)
     {
         try
@@ -1516,6 +1630,10 @@ public static unsafe class WfxExports
             if (_isBatchOperation)
             {
                 _isBatchOperation = false;
+                if (infoOperation == Win32Api.FS_STATUS_OP_DELETE)
+                {
+                    ProcessPendingTrashDeletions();
+                }
                 Logger.Info("DB", "[WAL CHECKPOINT] Batch operation completed. Executing SQLite checkpoint.");
                 TriggerCheckpoint(immediate: true);
             }
@@ -1648,13 +1766,26 @@ public static unsafe class WfxExports
                     var trashFile = _db.GetTrashFileByVersionedName(mount.Id, fileName, trashSubParent);
                     if (trashFile != null)
                     {
-                        if (trashFile.TgMessageId > 0 && mount.ChannelId != 0)
+                        if (_isBatchOperation)
                         {
-                            System.Threading.Tasks.Task.Run(() => TelegramManager.DeleteMessageAsync(mount.ChannelId, trashFile.TgMessageId));
+                            lock (_trashDeleteLock)
+                            {
+                                _pendingTrashDeletions.Add(new PendingTrashItem
+                                {
+                                    MountId = mount.Id,
+                                    ChannelId = mount.ChannelId,
+                                    Uid = trashFile.Uid,
+                                    TgMessageId = trashFile.TgMessageId,
+                                    FileName = fileName
+                                });
+                            }
+                            return 1;
                         }
-                        _db.DeleteFilePermanently(trashFile.Uid);
-                        TriggerCheckpoint(immediate: true);
-                        return 1;
+                        else
+                        {
+                            PurgeTrashRecords(mount.Id, mount.ChannelId, new List<VfsDatabase.FileRecord> { trashFile });
+                            return 1;
+                        }
                     }
                     return 1;
                 }
@@ -1772,24 +1903,16 @@ public static unsafe class WfxExports
                         return 1;
                     }
 
-                    var msgIds = _db.EmptyTrash(mount.Id);
-                    if (mount.ChannelId != 0 && msgIds.Count > 0)
-                    {
-                        System.Threading.Tasks.Task.Run(() => TelegramManager.DeleteMessagesAsync(mount.ChannelId, msgIds.ToArray()));
-                    }
-                    TriggerCheckpoint(immediate: true);
+                    var trashRecords = _db.GetTrashFileRecords(mount.Id);
+                    PurgeTrashRecords(mount.Id, mount.ChannelId, trashRecords);
                     return 1;
                 }
                 else if (subParts.Length > 1 && IsTrashFolder(subParts[0]))
                 {
                     // Удаление подпапки ВНУТРИ корзины навсегда
                     string folderUnderTrash = string.Join("\\", subParts.Skip(1));
-                    var msgIds = _db.DeleteTrashSubTree(mount.Id, folderUnderTrash);
-                    if (mount.ChannelId != 0 && msgIds.Count > 0)
-                    {
-                        System.Threading.Tasks.Task.Run(() => TelegramManager.DeleteMessagesAsync(mount.ChannelId, msgIds.ToArray()));
-                    }
-                    TriggerCheckpoint(immediate: true);
+                    var trashRecords = _db.GetTrashSubTreeFileRecords(mount.Id, folderUnderTrash);
+                    PurgeTrashRecords(mount.Id, mount.ChannelId, trashRecords);
                     return 1;
                 }
 

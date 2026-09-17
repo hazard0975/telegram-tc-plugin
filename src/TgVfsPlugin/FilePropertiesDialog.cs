@@ -436,10 +436,10 @@ public static class FilePropertiesDialog
 
                     if (ask == DialogResult.Yes)
                     {
-                        var msgIds = db.EmptyTrash(mountId);
-                        if (channelId != 0 && msgIds.Count > 0)
+                        var trashRecords = db.GetTrashFileRecords(mountId);
+                        if (trashRecords.Count > 0)
                         {
-                            System.Threading.Tasks.Task.Run(() => TelegramManager.DeleteMessagesAsync(channelId, msgIds.ToArray()));
+                            WfxExports.PurgeTrashRecords(mountId, channelId, trashRecords);
                         }
                         Win32Api.RefreshActivePanel();
                         MessageBox.Show(form, "Корзина успешно очищена.", "Очистка завершена", MessageBoxButtons.OK, MessageBoxIcon.Information);

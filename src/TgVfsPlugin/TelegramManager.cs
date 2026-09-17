@@ -277,20 +277,27 @@ public static class TelegramManager
         }
     }
 
-    public static async Task DeleteMessageAsync(long channelId, int messageId)
+    public static async Task<bool> DeleteMessageAsync(long channelId, int messageId, CancellationToken cancellationToken = default)
     {
-        await DeleteMessagesAsync(channelId, new[] { messageId });
+        var deleted = await DeleteMessagesAsync(channelId, new[] { messageId }, cancellationToken: cancellationToken);
+        return deleted.Contains(messageId);
     }
 
-    public static async Task DeleteMessagesAsync(long channelId, int[] messageIds)
+    public static async Task<List<int>> DeleteMessagesAsync(
+        long channelId, 
+        int[] messageIds, 
+        Action<int, int, string>? onProgress = null, 
+        CancellationToken cancellationToken = default)
     {
-        if (messageIds == null || messageIds.Length == 0) return;
+        var deletedMessageIds = new List<int>();
+        if (messageIds == null || messageIds.Length == 0) return deletedMessageIds;
+
         try
         {
             if (_client == null || _user == null)
             {
                 await LoginAsync(silent: true);
-                if (_client == null || _user == null) return;
+                if (_client == null || _user == null) return deletedMessageIds;
             }
 
             if (!_chatsCache.TryGetValue(channelId, out var chat))
@@ -306,26 +313,54 @@ public static class TelegramManager
                 _chatsCache.TryGetValue(channelId, out chat);
             }
 
+            int totalCount = messageIds.Length;
+            int processedCount = 0;
+
             for (int i = 0; i < messageIds.Length; i += 100)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var chunk = messageIds.Skip(i).Take(100).ToArray();
+                int batchNum = (i / 100) + 1;
+                int totalBatches = (int)Math.Ceiling((double)totalCount / 100.0);
+
+                Logger.Info("TG", $"[DELETE BATCH {batchNum}/{totalBatches}] Sending request to delete {chunk.Length} messages from channel {channelId}...");
+
                 if (chat is Channel channel)
                 {
                     var inputChannel = new InputChannel(channel.id, channel.access_hash);
                     await _client.Channels_DeleteMessages(inputChannel, chunk);
-                    Logger.Info("TG", $"Deleted batch of {chunk.Length} messages from Telegram channel {channelId}.");
+                    deletedMessageIds.AddRange(chunk);
+                    processedCount += chunk.Length;
+                    Logger.Info("TG", $"[DELETE BATCH {batchNum}/{totalBatches}] Successfully deleted batch of {chunk.Length} messages from channel {channelId}. (Total deleted: {processedCount}/{totalCount})");
                 }
                 else if (chat is Chat smallGroup)
                 {
                     await _client.Messages_DeleteMessages(chunk, revoke: true);
-                    Logger.Info("TG", $"Deleted batch of {chunk.Length} messages from Telegram group {channelId}.");
+                    deletedMessageIds.AddRange(chunk);
+                    processedCount += chunk.Length;
+                    Logger.Info("TG", $"[DELETE BATCH {batchNum}/{totalBatches}] Successfully deleted batch of {chunk.Length} messages from group {channelId}. (Total deleted: {processedCount}/{totalCount})");
+                }
+
+                onProgress?.Invoke(processedCount, totalCount, $"Batch {batchNum}/{totalBatches}");
+
+                // Задержка 250 мс между пакетами для защиты от FLOOD_WAIT
+                if (i + 100 < messageIds.Length)
+                {
+                    await Task.Delay(250, cancellationToken);
                 }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.Warn("TG", $"[DELETE CANCELLED] Message deletion operation was cancelled by user.");
         }
         catch (Exception ex)
         {
             Logger.Error("TG", $"Failed to delete messages from channel {channelId}", ex);
         }
+
+        return deletedMessageIds;
     }
 
     public static async Task<int> UploadAndSendFileAsync(

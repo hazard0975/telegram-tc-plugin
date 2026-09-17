@@ -531,6 +531,151 @@ public class VfsDatabase : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    public List<FileRecord> GetTrashFileRecords(string mountId)
+    {
+        var list = new List<FileRecord>();
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+            FROM files
+            WHERE mount_id = @mid AND in_trash = 1";
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new FileRecord
+            {
+                Uid = reader.GetString(0),
+                MountId = reader.GetString(1),
+                IsDir = reader.GetInt32(2) == 1,
+                Name = reader.GetString(3),
+                Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
+                MTime = ReadDateTime(reader, 5),
+                Size = reader.GetInt64(6),
+                TgMessageId = reader.GetInt32(7),
+                InTrash = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9)
+            });
+        }
+        return list;
+    }
+
+    public List<FileRecord> GetTrashSubTreeFileRecords(string mountId, string trashSubPath)
+    {
+        string cleanPath = trashSubPath.Trim('\\', '/').Replace('/', '\\');
+        if (string.IsNullOrEmpty(cleanPath)) return GetTrashFileRecords(mountId);
+
+        int lastSlash = cleanPath.LastIndexOf('\\');
+        string dirName = lastSlash >= 0 ? cleanPath.Substring(lastSlash + 1) : cleanPath;
+        string? parent = lastSlash >= 0 ? cleanPath.Substring(0, lastSlash) : null;
+
+        var list = new List<FileRecord>();
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+            FROM files
+            WHERE mount_id = @mid 
+              AND in_trash = 1
+              AND (
+                  (name = @dirName COLLATE NOCASE AND (parent = @parent OR (@parent IS NULL AND (parent IS NULL OR parent = ''))))
+                  OR parent = @cleanPath
+                  OR parent LIKE @prefixPath
+              )";
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        cmd.Parameters.AddWithValue("@dirName", dirName);
+        cmd.Parameters.AddWithValue("@parent", (object?)parent ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@cleanPath", cleanPath);
+        cmd.Parameters.AddWithValue("@prefixPath", cleanPath + "\\%");
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new FileRecord
+            {
+                Uid = reader.GetString(0),
+                MountId = reader.GetString(1),
+                IsDir = reader.GetInt32(2) == 1,
+                Name = reader.GetString(3),
+                Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
+                MTime = ReadDateTime(reader, 5),
+                Size = reader.GetInt64(6),
+                TgMessageId = reader.GetInt32(7),
+                InTrash = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9)
+            });
+        }
+        return list;
+    }
+
+    public void DeleteFilesByTgMessageIds(string mountId, IEnumerable<int> messageIds)
+    {
+        if (messageIds == null) return;
+        var list = messageIds.Where(id => id > 0).Distinct().ToList();
+        if (list.Count == 0) return;
+
+        using var transaction = _connection.BeginTransaction();
+        using var cmd = _connection.CreateCommand();
+        cmd.Transaction = transaction;
+
+        for (int i = 0; i < list.Count; i += 500)
+        {
+            var chunk = list.Skip(i).Take(500).ToList();
+            cmd.Parameters.Clear();
+            cmd.Parameters.AddWithValue("@mid", mountId);
+
+            var paramNames = new List<string>();
+            for (int j = 0; j < chunk.Count; j++)
+            {
+                string pName = "@msg" + j;
+                paramNames.Add(pName);
+                cmd.Parameters.AddWithValue(pName, chunk[j]);
+            }
+
+            cmd.CommandText = $"DELETE FROM files WHERE mount_id = @mid AND tg_message_id IN ({string.Join(", ", paramNames)})";
+            cmd.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public void DeleteFilesByUids(IEnumerable<string> uids)
+    {
+        if (uids == null) return;
+        var list = uids.Where(u => !string.IsNullOrEmpty(u)).Distinct().ToList();
+        if (list.Count == 0) return;
+
+        using var transaction = _connection.BeginTransaction();
+        using var cmd = _connection.CreateCommand();
+        cmd.Transaction = transaction;
+
+        for (int i = 0; i < list.Count; i += 500)
+        {
+            var chunk = list.Skip(i).Take(500).ToList();
+            cmd.Parameters.Clear();
+
+            var paramNames = new List<string>();
+            for (int j = 0; j < chunk.Count; j++)
+            {
+                string pName = "@u" + j;
+                paramNames.Add(pName);
+                cmd.Parameters.AddWithValue(pName, chunk[j]);
+            }
+
+            cmd.CommandText = $"DELETE FROM files WHERE uid IN ({string.Join(", ", paramNames)})";
+            cmd.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public void DeleteEmptyTrashDirectories(string mountId)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM files WHERE mount_id = @mid AND in_trash = 1 AND isdir = 1";
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        cmd.ExecuteNonQuery();
+    }
+
     public List<int> EmptyTrash(string mountId)
     {
         var msgIds = new List<int>();
