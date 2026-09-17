@@ -301,46 +301,6 @@ public static unsafe class WfxExports
 
     private static FindState? CreateStateForPath(string pathStr)
     {
-        Logger.Debug("WFX", $"Requested path: '{pathStr}'");
-
-        if (!TelegramManager.IsLoggedIn)
-        {
-            // Попытка тихо авторизоваться, если есть сессия
-            try
-            {
-                if (System.IO.File.Exists(TelegramManager.ConfigPath + "\\WTelegram.session"))
-                {
-                    Logger.Info("TG", "Found session file, attempting silent login...");
-                    // Вызываем синхронно, передаем true для тихого режима
-                    System.Threading.Tasks.Task.Run(() => TelegramManager.LoginAsync(true)).GetAwaiter().GetResult();
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Warn("TG", $"Silent login failed: {ex.Message}");
-            }
-
-            if (!TelegramManager.IsLoggedIn)
-            {
-                Logger.Info("WFX", "User is not logged in. Returning [ Login required.txt ].");
-                var loginState = new FindState();
-                loginState.Items.Add(new VfsDatabase.VfsItem 
-                { 
-                    Name = "[ Login required.txt ]", 
-                    IsDirectory = false, 
-                    Size = 100, 
-                    Date = DateTime.Now 
-                });
-                return loginState;
-            }
-        }
-
-        if (_db == null)
-        {
-            Logger.Error("WFX", "Error: Database is null in CreateStateForPath.");
-            return null;
-        }
-
         string dirPath = pathStr;
         
         // Удаляем маску поиска (например *.*) если она есть в конце пути
@@ -356,8 +316,47 @@ public static unsafe class WfxExports
         }
 
         string cleanPath = NormalizeVfsPath(dirPath);
-        Logger.Debug("WFX", $"Parsed directory path for search: '{cleanPath}'");
-        
+        string displayPath = string.IsNullOrEmpty(cleanPath) ? "\\" : $"\\{cleanPath}";
+        Logger.Info("WFX", $"[DIR OPEN] Opened folder '{displayPath}'");
+
+        if (!TelegramManager.IsLoggedIn)
+        {
+            // Попытка тихо авторизоваться, если есть сессия
+            try
+            {
+                if (System.IO.File.Exists(TelegramManager.ConfigPath + "\\WTelegram.session"))
+                {
+                    Logger.Info("TG", "[AUTH] Found session file, attempting silent login...");
+                    // Вызываем синхронно, передаем true для тихого режима
+                    System.Threading.Tasks.Task.Run(() => TelegramManager.LoginAsync(true)).GetAwaiter().GetResult();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn("TG", $"[AUTH WARN] Silent login failed: {ex.Message}");
+            }
+
+            if (!TelegramManager.IsLoggedIn)
+            {
+                Logger.Info("WFX", "[AUTH REQUIRED] User is not logged in. Returning '[ Login required.txt ]'.");
+                var loginState = new FindState();
+                loginState.Items.Add(new VfsDatabase.VfsItem 
+                { 
+                    Name = "[ Login required.txt ]", 
+                    IsDirectory = false, 
+                    Size = 100, 
+                    Date = DateTime.Now 
+                });
+                return loginState;
+            }
+        }
+
+        if (_db == null)
+        {
+            Logger.Error("WFX", "[DB ERROR] Database is null in CreateStateForPath.");
+            return null;
+        }
+
         var state = new FindState();
         try
         {
@@ -368,7 +367,6 @@ public static unsafe class WfxExports
                     _lastMirrorPath = null;
                 }
                 // Корень: возвращаем каналы и служебные триггеры
-                Logger.Debug("WFX", "Fetching channels for root list.");
                 state.Items.Add(new VfsDatabase.VfsItem 
                 { 
                     Name = "[📁+] Создать папку", 
@@ -391,6 +389,7 @@ public static unsafe class WfxExports
                     Date = DateTime.Now 
                 });
                 state.Items.AddRange(_db.GetMounts());
+                Logger.Info("WFX", $"[DIR LIST] Root directory: Found {state.Items.Count} item(s) (Channels & Triggers)");
             }
             else
             {
@@ -435,6 +434,7 @@ public static unsafe class WfxExports
                             Date = DateTime.Now
                         });
                     }
+                    Logger.Info("WFX", $"[TRASH LIST] Folder '{displayPath}': Found {state.Items.Count} deleted item(s)");
                 }
                 else
                 {
@@ -451,7 +451,7 @@ public static unsafe class WfxExports
                         if (!_isBatchOperation && !string.Equals(_lastMirrorPath, localPathToSet, StringComparison.OrdinalIgnoreCase))
                         {
                             _lastMirrorPath = localPathToSet;
-                            Logger.Info("WFX", $"Entering Mirror folder '{channelTitle}'. Sending CD '{localPathToSet}' to target panel.");
+                            Logger.Info("WFX", $"[MIRROR] Syncing target panel to local folder '{localPathToSet}'");
                             // Cannot use async/await in unsafe context, use ContinueWith or thread pool
                             System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => {
                                 Win32Api.ChangeInactivePanelDir(localPathToSet);
@@ -471,16 +471,15 @@ public static unsafe class WfxExports
                         });
                     }
 
-                    Logger.Debug("WFX", $"Fetching files for channel: '{channelTitle}', parent: '{parentSubPath}'");
-                    state.Items.AddRange(_db.GetFiles(channelTitle, parentSubPath));
+                    var channelFiles = _db.GetFiles(channelTitle, parentSubPath);
+                    state.Items.AddRange(channelFiles);
+                    Logger.Info("WFX", $"[DIR LIST] Folder '{displayPath}': Found {state.Items.Count} item(s) (Channel: '{channelTitle}')");
                 }
             }
-
-            Logger.Debug("WFX", $"Found {state.Items.Count} items.");
         }
         catch (Exception ex)
         {
-            Logger.Error("WFX", "Exception in CreateStateForPath", ex);
+            Logger.Error("WFX", "[DIR ERROR] Exception in CreateStateForPath", ex);
             return null;
         }
 
@@ -1610,8 +1609,32 @@ public static unsafe class WfxExports
 
     private static void HandleStatusInfo(string remoteDir, int infoStartEnd, int infoOperation)
     {
-        string startEndStr = infoStartEnd == Win32Api.FS_STATUS_START ? "START" : "END";
-        Logger.Debug("WFX", $"FsStatusInfo: {startEndStr} Dir='{remoteDir}', Op={infoOperation}");
+        string opName = infoOperation switch
+        {
+            Win32Api.FS_STATUS_OP_LIST => "LIST_DIR",
+            Win32Api.FS_STATUS_OP_GET_SINGLE => "GET_FILE",
+            Win32Api.FS_STATUS_OP_GET_MULTI => "GET_MULTI",
+            Win32Api.FS_STATUS_OP_PUT_SINGLE => "PUT_FILE",
+            Win32Api.FS_STATUS_OP_PUT_MULTI => "PUT_MULTI",
+            Win32Api.FS_STATUS_OP_RENMOV_SINGLE => "RENMOV",
+            Win32Api.FS_STATUS_OP_RENMOV_MULTI => "RENMOV_MULTI",
+            Win32Api.FS_STATUS_OP_DELETE => "DELETE",
+            Win32Api.FS_STATUS_OP_ATTRIB => "ATTRIB",
+            Win32Api.FS_STATUS_OP_MKDIR => "MKDIR",
+            _ => $"OP_{infoOperation}"
+        };
+
+        string cleanDir = NormalizeVfsPath(remoteDir);
+        string displayDir = string.IsNullOrEmpty(cleanDir) ? "\\" : $"\\{cleanDir}";
+
+        if (infoStartEnd == Win32Api.FS_STATUS_START)
+        {
+            Logger.Info("WFX", $"[STATUS START] Operation: {opName} | Dir: '{displayDir}'");
+        }
+        else
+        {
+            Logger.Info("WFX", $"[STATUS END]   Operation: {opName} | Dir: '{displayDir}'");
+        }
 
         bool isBatchOp = infoOperation == Win32Api.FS_STATUS_OP_GET_MULTI ||
                          infoOperation == Win32Api.FS_STATUS_OP_PUT_MULTI ||
