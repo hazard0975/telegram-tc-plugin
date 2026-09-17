@@ -2098,7 +2098,7 @@ public static unsafe class WfxExports
 
         if (oldIsInTrash && !newIsInTrash)
         {
-            _db.RestoreFile(sourceRecord.Uid);
+            _db.RestoreFile(sourceRecord);
 
             // Имя восстанавливаемого файла должно быть чистым (без суффикса _v1)
             string cleanTargetName = sourceRecord.IsDir ? newItemName : sourceRecord.Name;

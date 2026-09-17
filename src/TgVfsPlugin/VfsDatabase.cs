@@ -591,18 +591,72 @@ public class VfsDatabase : IDisposable
             Logger.Warn("DB", $"[RESTORE WARN] Item with UID '{uid}' not found in SQLite.");
             return false;
         }
+        return RestoreFile(file);
+    }
+
+    public bool RestoreFile(FileRecord file)
+    {
+        if (file == null) return false;
+
+        // 1. Попробуем найти реальную запись по UID в базе, если она есть
+        var dbFile = GetFileByUid(file.Uid);
+        if (dbFile != null)
+        {
+            file = dbFile; // Используем полную информацию из базы
+        }
+
+        // 2. Сценарий: Виртуальная папка, которой нет в БД как записи (например, isdir = 1),
+        // но в базе есть файлы, у которых папка указана в качестве родителя
+        if (dbFile == null && file.IsDir)
+        {
+            EnsureParentDirectoriesExist(file.MountId, file.Parent);
+
+            string dirSubPath = string.IsNullOrEmpty(file.Parent) 
+                ? file.Name 
+                : file.Parent.Trim('\\', '/') + "\\" + file.Name;
+
+            using var cmdSub = _connection.CreateCommand();
+            cmdSub.CommandText = @"
+                UPDATE files 
+                SET in_trash = 0 
+                WHERE uid IN (
+                    SELECT uid FROM (
+                        SELECT uid, ROW_NUMBER() OVER (PARTITION BY parent, name ORDER BY isdir DESC, ver DESC, mtime DESC) as rn
+                        FROM files
+                        WHERE mount_id = @mid 
+                          AND (parent = @exactPath OR parent LIKE @prefixPath)
+                          AND in_trash = 1
+                    ) WHERE rn = 1
+                )
+            ";
+            cmdSub.Parameters.AddWithValue("@mid", file.MountId);
+            cmdSub.Parameters.AddWithValue("@exactPath", dirSubPath);
+            cmdSub.Parameters.AddWithValue("@prefixPath", dirSubPath + "\\%");
+            int nestedRestored = cmdSub.ExecuteNonQuery();
+
+            Logger.Info("DB", $"[RESTORE OK] Restored virtual folder '{file.Name}' and {nestedRestored} nested item(s) from Trash");
+            CleanupDuplicateActiveFiles(file.MountId);
+            return true;
+        }
+
+        // 3. Если это обычный файл/папка и в базе его нет — пишем предупреждение
+        if (dbFile == null)
+        {
+            Logger.Warn("DB", $"[RESTORE WARN] Item '{file.Name}' with UID '{file.Uid}' not found in SQLite.");
+            return false;
+        }
 
         EnsureParentDirectoriesExist(file.MountId, file.Parent);
 
         var activeConflict = GetFile(file.MountId, file.Name, file.Parent);
-        if (activeConflict != null && activeConflict.Uid != uid)
+        if (activeConflict != null && activeConflict.Uid != file.Uid)
         {
             MoveFileToTrash(activeConflict.Uid);
         }
 
         var cmd = _connection.CreateCommand();
         cmd.CommandText = "UPDATE files SET in_trash = 0 WHERE uid = @uid";
-        cmd.Parameters.AddWithValue("@uid", uid);
+        cmd.Parameters.AddWithValue("@uid", file.Uid);
         cmd.ExecuteNonQuery();
 
         if (file.IsDir)

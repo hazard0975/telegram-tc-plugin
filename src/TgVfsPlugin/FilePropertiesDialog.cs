@@ -220,7 +220,7 @@ public static class FilePropertiesDialog
 
                         if (ask == DialogResult.Yes)
                         {
-                            bool success = db.RestoreFile(file.Uid);
+                            bool success = db.RestoreFile(file);
                             if (success)
                             {
                                 Win32Api.RefreshActivePanel();
