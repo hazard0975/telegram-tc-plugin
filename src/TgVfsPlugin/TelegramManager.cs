@@ -17,7 +17,7 @@ public static class TelegramManager
     {
         AppDomain.CurrentDomain.ProcessExit += (s, e) => 
         {
-            Logger.Log("ProcessExit triggered, disposing WTelegramClient to flush session...");
+            Logger.Info("TG", "ProcessExit triggered, disposing WTelegramClient to flush session...");
             _client?.Dispose();
         };
     }
@@ -33,12 +33,12 @@ public static class TelegramManager
     {
         try
         {
-            Logger.Log("Resetting TelegramManager client...");
+            Logger.Info("TG", "Resetting TelegramManager client...");
             _client?.Dispose();
         }
         catch (Exception ex)
         {
-            Logger.Log($"Error disposing client: {ex.Message}");
+            Logger.Warn("TG", $"Error disposing client: {ex.Message}");
         }
         finally
         {
@@ -56,7 +56,7 @@ public static class TelegramManager
     {
         try
         {
-            Logger.Log($"Starting LoginAsync (silent: {silent})...");
+            Logger.Info("TG", $"Starting LoginAsync (silent: {silent})...");
             EnsureSettingsExist(requirePhone: !silent);
             
             if (File.Exists(SessionFile))
@@ -64,38 +64,38 @@ public static class TelegramManager
                 var fi = new FileInfo(SessionFile);
                 if (fi.Length == 0)
                 {
-                    Logger.Log("Found 0-byte session file! Deleting it proactively before WTelegramClient touches it.");
+                    Logger.Warn("TG", "Found 0-byte session file! Deleting it proactively before WTelegramClient touches it.");
                     File.Delete(SessionFile);
                 }
             }
 
             if (_client == null)
             {
-                Helpers.Log = (lvl, str) => Logger.Log($"[WTelegram] {lvl}: {str}");
-                Logger.Log("Creating new WTelegramClient instance...");
+                Helpers.Log = (lvl, str) => Logger.Debug("TG", $"[WTelegram {lvl}] {str}");
+                Logger.Info("TG", "Creating new WTelegramClient instance...");
                 _client = new Client(what => Config(what));
             }
 
             // Устанавливаем флаг перед вызовом
             _isSilentLogin = silent;
             
-            Logger.Log("Calling LoginUserIfNeeded...");
+            Logger.Info("TG", "Calling LoginUserIfNeeded...");
             _user = await _client.LoginUserIfNeeded();
-            Logger.Log($"Successfully logged in as {_user.username ?? _user.first_name}");
+            Logger.Info("TG", $"Successfully logged in as {_user.username ?? _user.first_name} (ID: {_user.id})");
             
             return true;
         }
         catch (Exception ex)
         {
-            Logger.Log($"Login failed: {ex.Message}");
+            Logger.Error("TG", "Login failed", ex);
             if (ex.Message.Contains("session file") || ex.Message.Contains("rgbKey") || ex.Message.Contains("algorithm"))
             {
-                Logger.Log("Detected corrupted session or invalid API_HASH. Resetting client only, preserving credentials.");
+                Logger.Warn("TG", "Detected corrupted session or invalid API_HASH. Resetting client only, preserving credentials.");
                 
-                try { _client?.Dispose(); } catch (Exception e) { Logger.Log($"Dispose error: {e.Message}"); }
+                try { _client?.Dispose(); } catch (Exception e) { Logger.Warn("TG", $"Dispose error: {e.Message}"); }
                 _client = null;
                 
-                try { if (File.Exists(SessionFile)) { File.Delete(SessionFile); Logger.Log("Deleted WTelegram.session"); } } catch (Exception e) { Logger.Log($"Delete session error: {e.Message}"); }
+                try { if (File.Exists(SessionFile)) { File.Delete(SessionFile); Logger.Info("TG", "Deleted corrupted WTelegram.session"); } } catch (Exception e) { Logger.Warn("TG", $"Delete session error: {e.Message}"); }
             }
             return false;
         }
@@ -109,7 +109,7 @@ public static class TelegramManager
 
     private static string? Config(string what)
     {
-        Logger.Log($"[WTelegram Config] Requested: {what}");
+        Logger.Debug("TG", $"[Config Request] {what}");
         string? result = null;
         switch (what)
         {
@@ -119,13 +119,13 @@ public static class TelegramManager
                 result = GetSetting("phone_number");
                 if (!string.IsNullOrEmpty(result))
                 {
-                    Logger.Log("Returning cached phone_number from settings.ini");
+                    Logger.Debug("TG", "Returning cached phone_number from settings.ini");
                     break;
                 }
 
                 if (_isSilentLogin) 
                 {
-                    Logger.Log("Silent login requested, returning null for phone_number to prevent UI prompt.");
+                    Logger.Debug("TG", "Silent login requested, returning null for phone_number to prevent UI prompt.");
                     return null; 
                 }
                 result = InputDialog.Show("Enter your phone number (with +):", "Telegram Login"); 
@@ -146,9 +146,9 @@ public static class TelegramManager
         }
 
         if (what == "api_hash" || what == "password" || what == "phone_number")
-            Logger.Log($"[WTelegram Config] Returning for {what}: {(string.IsNullOrEmpty(result) ? "EMPTY/NULL" : "***")}");
+            Logger.Debug("TG", $"[Config Provide] {what}: {(string.IsNullOrEmpty(result) ? "EMPTY/NULL" : "***")}");
         else
-            Logger.Log($"[WTelegram Config] Returning for {what}: {result ?? "null"}");
+            Logger.Debug("TG", $"[Config Provide] {what}: {result ?? "null"}");
 
         return result;
     }
@@ -165,7 +165,7 @@ public static class TelegramManager
 
     private static void EnsureSettingsExist(bool requirePhone)
     {
-        Logger.Log($"Checking credentials in: {SettingsFile}");
+        Logger.Debug("CFG", $"Checking credentials in: {SettingsFile}");
         string? apiId = GetSetting("api_id");
         string? apiHash = GetSetting("api_hash");
         string? phone = GetSetting("phone_number");
@@ -174,7 +174,7 @@ public static class TelegramManager
 
         if (!isValidApi)
         {
-            Logger.Log("Credentials missing or invalid. Prompting user via UI...");
+            Logger.Info("CFG", "Credentials missing or invalid. Prompting user via UI...");
             apiId = InputDialog.Show("Enter your Telegram API_ID (get it from my.telegram.org):", "Initial Setup");
             apiHash = InputDialog.Show("Enter your Telegram API_HASH (32 chars):", "Initial Setup");
             
@@ -193,7 +193,7 @@ public static class TelegramManager
 
             SaveSetting("api_id", apiId);
             SaveSetting("api_hash", apiHash);
-            Logger.Log($"Successfully saved new credentials to settings.ini");
+            Logger.Info("CFG", "Successfully saved new credentials to settings.ini");
         }
 
         if (requirePhone && string.IsNullOrWhiteSpace(phone))
@@ -202,7 +202,7 @@ public static class TelegramManager
             if (!string.IsNullOrWhiteSpace(phone))
             {
                 SaveSetting("phone_number", phone.Trim());
-                Logger.Log($"Successfully saved phone number to settings.ini");
+                Logger.Info("CFG", "Successfully saved phone number to settings.ini");
             }
             else
             {
@@ -214,7 +214,7 @@ public static class TelegramManager
     public static async Task<long> CreateChannelAsync(string title, string description = "")
     {
         if (_client == null || _user == null) throw new Exception("Not logged in");
-        Logger.Log($"Creating channel: {title}");
+        Logger.Info("TG", $"Creating Telegram channel: '{title}'...");
         
         var updatesBase = await _client.Channels_CreateChannel(title, description, broadcast: true);
         
@@ -230,6 +230,7 @@ public static class TelegramManager
         
         if (chat == null) throw new Exception("Failed to get channel ID after creation.");
         _chatsCache[chat.ID] = chat;
+        Logger.Info("TG", $"Telegram channel '{title}' created successfully (ID: {chat.ID}).");
         return chat.ID;
     }
 
@@ -258,21 +259,21 @@ public static class TelegramManager
 
             if (chat is Channel channel)
             {
-                Logger.Log($"Deleting Telegram channel {channelId} ({channel.title})...");
+                Logger.Info("TG", $"Deleting Telegram channel {channelId} ('{channel.title}')...");
                 await _client.Channels_DeleteChannel(new InputChannel(channel.id, channel.access_hash));
                 _chatsCache.TryRemove(channelId, out _);
-                Logger.Log($"Telegram channel {channelId} successfully deleted.");
+                Logger.Info("TG", $"Telegram channel {channelId} successfully deleted from Telegram.");
             }
             else if (chat is Chat smallGroup)
             {
-                Logger.Log($"Deleting Telegram small group chat {channelId}...");
+                Logger.Info("TG", $"Leaving/deleting Telegram small group chat {channelId}...");
                 await _client.Messages_DeleteChatUser(smallGroup.id, _user);
                 _chatsCache.TryRemove(channelId, out _);
             }
         }
         catch (Exception ex)
         {
-            Logger.Log($"Failed to delete Telegram channel {channelId}: {ex.Message}");
+            Logger.Error("TG", $"Failed to delete Telegram channel {channelId}", ex);
         }
     }
 
@@ -312,18 +313,18 @@ public static class TelegramManager
                 {
                     var inputChannel = new InputChannel(channel.id, channel.access_hash);
                     await _client.Channels_DeleteMessages(inputChannel, chunk);
-                    Logger.Log($"Deleted batch of {chunk.Length} messages from Telegram channel {channelId}.");
+                    Logger.Info("TG", $"Deleted batch of {chunk.Length} messages from Telegram channel {channelId}.");
                 }
                 else if (chat is Chat smallGroup)
                 {
                     await _client.Messages_DeleteMessages(chunk, revoke: true);
-                    Logger.Log($"Deleted batch of {chunk.Length} messages from Telegram group {channelId}.");
+                    Logger.Info("TG", $"Deleted batch of {chunk.Length} messages from Telegram group {channelId}.");
                 }
             }
         }
         catch (Exception ex)
         {
-            Logger.Log($"Failed to delete messages from channel {channelId}: {ex.Message}");
+            Logger.Error("TG", $"Failed to delete messages from channel {channelId}", ex);
         }
     }
 
@@ -338,7 +339,7 @@ public static class TelegramManager
     {
         if (_client == null || _user == null)
         {
-            Logger.Log("UploadAndSendFileAsync: Client not logged in, attempting silent login...");
+            Logger.Info("TG", "UploadAndSendFileAsync: Client not logged in, attempting silent login...");
             await LoginAsync(silent: true);
             if (_client == null || _user == null)
             {
@@ -346,7 +347,7 @@ public static class TelegramManager
             }
         }
 
-        Logger.Log($"Resolving channel {channelId} for upload...");
+        Logger.Debug("TG", $"Resolving channel {channelId} for upload...");
         if (!_chatsCache.TryGetValue(channelId, out var chat))
         {
             var allChats = await _client.Messages_GetAllChats();
@@ -365,7 +366,9 @@ public static class TelegramManager
             throw new Exception($"Channel with ID {channelId} not found in Telegram account chats.");
         }
 
-        Logger.Log($"Uploading file '{localPath}' to Telegram servers...");
+        var fi = new FileInfo(localPath);
+        Logger.Info("TG", $"Uploading file '{fileName}' ({Logger.FormatBytes(fi.Length)}) to channel '{chat.Title}' ({channelId})...");
+        
         FileStream fileStream = new FileStream(
             localPath,
             FileMode.Open,
@@ -402,7 +405,7 @@ public static class TelegramManager
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        Logger.Log($"Sending uploaded file '{fileName}' as document to channel {channelId}...");
+        Logger.Info("TG", $"Sending document message for '{fileName}' to channel {channelId}...");
         var media = new InputMediaUploadedDocument
         {
             file = inputFile,
@@ -414,7 +417,7 @@ public static class TelegramManager
         };
 
         var message = await _client.SendMessageAsync(chat, relativeCaption, media);
-        Logger.Log($"File uploaded successfully! Telegram Message ID: {message.id}");
+        Logger.Info("TG", $"File uploaded and message posted! Telegram MsgId: {message.id}");
         return message.id;
     }
 
@@ -428,7 +431,7 @@ public static class TelegramManager
     {
         if (_client == null || _user == null)
         {
-            Logger.Log("DownloadFileAsync: Client not logged in, attempting silent login...");
+            Logger.Info("TG", "DownloadFileAsync: Client not logged in, attempting silent login...");
             await LoginAsync(silent: true);
             if (_client == null || _user == null)
             {
@@ -436,7 +439,7 @@ public static class TelegramManager
             }
         }
 
-        Logger.Log($"Resolving channel {channelId} for download...");
+        Logger.Debug("TG", $"Resolving channel {channelId} for download...");
         if (!_chatsCache.TryGetValue(channelId, out var chat))
         {
             var allChats = await _client.Messages_GetAllChats();
@@ -462,7 +465,7 @@ public static class TelegramManager
 
         var inputChannel = new InputChannel(channel.id, channel.access_hash);
 
-        Logger.Log($"Fetching message {messageId} from channel {channelId}...");
+        Logger.Info("TG", $"Fetching message {messageId} from channel '{channel.title}' ({channelId})...");
         var messagesBase = await _client.Channels_GetMessages(inputChannel, new InputMessage[] { new InputMessageID { id = messageId } });
 
         TL.Message? targetMsg = null;
@@ -518,17 +521,17 @@ public static class TelegramManager
                 if (expectedTotalBytes > 0 && existingBytes >= expectedTotalBytes)
                 {
                     // Файл был полностью скачан, но не успел переименоваться
-                    Logger.Log($"Existing .tgpart file is already fully downloaded ({existingBytes} bytes). Overwriting part file.");
+                    Logger.Warn("TG", $"Existing .tgpart file is already fully downloaded ({Logger.FormatBytes(existingBytes)}). Overwriting part file.");
                     existingBytes = 0;
                 }
                 else
                 {
-                    Logger.Log($"Found existing .tgpart file: {existingBytes} / {expectedTotalBytes} bytes. Resuming download...");
+                    Logger.Info("TG", $"Found existing .tgpart file: {Logger.FormatBytes(existingBytes)} / {Logger.FormatBytes(expectedTotalBytes)}. Resuming download...");
                 }
             }
             catch (Exception ex)
             {
-                Logger.Log($"Error checking existing .tgpart file: {ex.Message}. Starting fresh.");
+                Logger.Warn("TG", $"Error checking existing .tgpart file: {ex.Message}. Starting fresh.");
                 existingBytes = 0;
             }
         }
@@ -571,14 +574,14 @@ public static class TelegramManager
             effectiveStream.Dispose();
         }
 
-        Logger.Log($"Download completed into .tgpart ({partPath}). Moving to target '{targetLocalPath}'...");
+        Logger.Info("TG", $"Download completed into temporary part ({partPath}). Moving to target '{targetLocalPath}'...");
 
         if (File.Exists(targetLocalPath))
         {
             File.Delete(targetLocalPath);
         }
         File.Move(partPath, targetLocalPath);
-        Logger.Log($"File successfully downloaded and moved to: {targetLocalPath}");
+        Logger.Info("TG", $"File successfully downloaded and saved as: '{targetLocalPath}'");
     }
     private static async Task DownloadFileResumableInternalAsync(
         InputFileLocationBase fileLocation, Stream outputStream,

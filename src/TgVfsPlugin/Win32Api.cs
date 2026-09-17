@@ -295,7 +295,7 @@ public static class Win32Api
         }
         catch (Exception ex)
         {
-            Logger.Log($"Error inspecting TC PathBox controls: {ex.Message}");
+            Logger.Warn("WIN32", $"Error inspecting TC PathBox controls: {ex.Message}");
         }
 
         bool isLeftPanelActive = true;
@@ -335,11 +335,11 @@ public static class Win32Api
             }
             catch (Exception ex)
             {
-                Logger.Log($"Error determining active panel side: {ex.Message}");
+                Logger.Warn("WIN32", $"Error determining active panel side: {ex.Message}");
             }
         }
 
-        Logger.Log($"ChangeInactivePanelDir: Detected VFS side={(detectedByPathBox ? (isLeftVfs ? "Left" : "Right") : "ByFocus")}. Sending target directory '{inactivePath}' to {(isLeftPanelActive ? "Right" : "Left")} panel.");
+        Logger.Debug("WIN32", $"ChangeInactivePanelDir: Detected VFS side={(detectedByPathBox ? (isLeftVfs ? "Left" : "Right") : "ByFocus")}. Sending target directory '{inactivePath}' to {(isLeftPanelActive ? "Right" : "Left")} panel.");
 
         // В Total Commander формат команды смены директории через WM_COPYDATA ('CD'):
         // Поддержка Unicode (кириллицы и спецсимволов) с версии TC 7.50+: префикс UTF-8 BOM (0xEF, 0xBB, 0xBF) перед путем.

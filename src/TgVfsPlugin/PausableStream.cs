@@ -27,9 +27,9 @@ public class PausableStream : Stream
     {
         if (!_pauseGate.IsSet)
         {
-            Logger.Log("PausableStream: Stream operation paused by gate. Waiting for unpause...");
+            Logger.Warn("TG", "PausableStream: Stream operation paused by gate. Waiting for unpause...");
             _pauseGate.Wait(_cancellationToken);
-            Logger.Log("PausableStream: Stream operation unpaused. Continuing data transfer.");
+            Logger.Info("TG", "PausableStream: Stream operation unpaused. Continuing data transfer.");
         }
     }
 

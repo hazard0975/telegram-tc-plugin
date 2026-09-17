@@ -22,7 +22,7 @@ public static class DeleteFolderDialog
         {
             try
             {
-                Logger.Log("Initializing DeleteFolderDialog...");
+                Logger.Info("UI", "Initializing DeleteFolderDialog...");
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
@@ -97,7 +97,7 @@ public static class DeleteFolderDialog
             }
             catch (Exception ex)
             {
-                Logger.Log($"DeleteFolderDialog Error: {ex}");
+                Logger.Error("UI", "DeleteFolderDialog Error", ex);
             }
         });
 

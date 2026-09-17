@@ -16,7 +16,7 @@ public static class InputDialog
         {
             try
             {
-                Logger.Log("Initializing WinForms dialog...");
+                Logger.Debug("UI", "Initializing WinForms dialog...");
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
@@ -51,20 +51,20 @@ public static class InputDialog
                 promptForm.AcceptButton = confirmation;
                 promptForm.CancelButton = cancel;
 
-                Logger.Log($"Showing dialog for: {title}");
+                Logger.Info("UI", $"Showing input dialog: '{title}'");
                 if (promptForm.ShowDialog() == DialogResult.OK)
                 {
                     result = inputBox.Text;
-                    Logger.Log("Dialog closed with OK.");
+                    Logger.Info("UI", $"Input dialog '{title}' submitted (OK).");
                 }
                 else
                 {
-                    Logger.Log("Dialog closed with Cancel or dismissed.");
+                    Logger.Info("UI", $"Input dialog '{title}' cancelled or dismissed.");
                 }
             }
             catch (Exception ex)
             {
-                Logger.Log($"UI Error: {ex}");
+                Logger.Error("UI", $"Input dialog error ('{title}')", ex);
             }
         });
 

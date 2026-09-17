@@ -41,7 +41,7 @@ public static unsafe class WfxExports
     {
         try
         {
-            Logger.Log("ProcessExit event triggered. Performing final WAL checkpoint (TRUNCATE) and clearing connection pools.");
+            Logger.Info("DB", "ProcessExit event triggered. Performing final WAL checkpoint (TRUNCATE) and clearing connection pools.");
             if (_db != null)
             {
                 _db.Checkpoint(truncate: true);
@@ -52,7 +52,7 @@ public static unsafe class WfxExports
         }
         catch (Exception ex)
         {
-            Logger.Log($"Error during ProcessExit shutdown: {ex.Message}");
+            Logger.Error("DB", $"Error during ProcessExit shutdown: {ex.Message}", ex);
         }
     }
 
@@ -187,7 +187,7 @@ public static unsafe class WfxExports
 
     private static FindState? CreateStateForPath(string pathStr)
     {
-        Logger.Log($"Requested path: '{pathStr}'");
+        Logger.Debug("WFX", $"Requested path: '{pathStr}'");
 
         if (!TelegramManager.IsLoggedIn)
         {
@@ -196,19 +196,19 @@ public static unsafe class WfxExports
             {
                 if (System.IO.File.Exists(TelegramManager.ConfigPath + "\\WTelegram.session"))
                 {
-                    Logger.Log("Found session file, attempting silent login...");
+                    Logger.Info("TG", "Found session file, attempting silent login...");
                     // Вызываем синхронно, передаем true для тихого режима
                     System.Threading.Tasks.Task.Run(() => TelegramManager.LoginAsync(true)).GetAwaiter().GetResult();
                 }
             }
             catch (Exception ex)
             {
-                Logger.Log($"Silent login failed: {ex}");
+                Logger.Warn("TG", $"Silent login failed: {ex.Message}");
             }
 
             if (!TelegramManager.IsLoggedIn)
             {
-                Logger.Log("User is not logged in. Returning [ Login required.txt ].");
+                Logger.Info("WFX", "User is not logged in. Returning [ Login required.txt ].");
                 var loginState = new FindState();
                 loginState.Items.Add(new VfsDatabase.VfsItem 
                 { 
@@ -223,7 +223,7 @@ public static unsafe class WfxExports
 
         if (_db == null)
         {
-            Logger.Log("Error: Database is null.");
+            Logger.Error("WFX", "Error: Database is null in CreateStateForPath.");
             return null;
         }
 
@@ -242,7 +242,7 @@ public static unsafe class WfxExports
         }
 
         string cleanPath = NormalizeVfsPath(dirPath);
-        Logger.Log($"Parsed directory path for search: '{cleanPath}'");
+        Logger.Debug("WFX", $"Parsed directory path for search: '{cleanPath}'");
         
         var state = new FindState();
         try
@@ -254,7 +254,7 @@ public static unsafe class WfxExports
                     _lastMirrorPath = null;
                 }
                 // Корень: возвращаем каналы и служебные триггеры
-                Logger.Log("Fetching channels for root.");
+                Logger.Debug("WFX", "Fetching channels for root list.");
                 state.Items.Add(new VfsDatabase.VfsItem 
                 { 
                     Name = "[📁+] Создать папку", 
@@ -337,7 +337,7 @@ public static unsafe class WfxExports
                         if (!_isBatchOperation && !string.Equals(_lastMirrorPath, localPathToSet, StringComparison.OrdinalIgnoreCase))
                         {
                             _lastMirrorPath = localPathToSet;
-                            Logger.Log($"Entering Mirror folder '{channelTitle}'. Sending CD '{localPathToSet}' to target panel.");
+                            Logger.Info("WFX", $"Entering Mirror folder '{channelTitle}'. Sending CD '{localPathToSet}' to target panel.");
                             // Cannot use async/await in unsafe context, use ContinueWith or thread pool
                             System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => {
                                 Win32Api.ChangeInactivePanelDir(localPathToSet);
@@ -357,16 +357,16 @@ public static unsafe class WfxExports
                         });
                     }
 
-                    Logger.Log($"Fetching files for channel: '{channelTitle}', parent: '{parentSubPath}'");
+                    Logger.Debug("WFX", $"Fetching files for channel: '{channelTitle}', parent: '{parentSubPath}'");
                     state.Items.AddRange(_db.GetFiles(channelTitle, parentSubPath));
                 }
             }
 
-            Logger.Log($"Found {state.Items.Count} items.");
+            Logger.Debug("WFX", $"Found {state.Items.Count} items.");
         }
         catch (Exception ex)
         {
-            Logger.Log($"Exception in CreateStateForPath: {ex}");
+            Logger.Error("WFX", "Exception in CreateStateForPath", ex);
             return null;
         }
 
@@ -395,7 +395,7 @@ public static unsafe class WfxExports
         try
         {
             string initMode = _isUnicode ? "FsInitW (Unicode)" : "FsInit (ANSI)";
-            Logger.Log($"Plugin initialization: {initMode}, PluginNumber={pluginNumber}");
+            Logger.Info("WFX", $"Plugin initialization: {initMode}, PluginNumber={pluginNumber}");
             _pluginNumber = pluginNumber;
             _pProgressProc = pProgressProc;
             if (_pProgressProc != IntPtr.Zero)
@@ -406,7 +406,7 @@ public static unsafe class WfxExports
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"Failed to get ProgressProc delegate: {ex.Message}");
+                    Logger.Warn("WFX", $"Failed to get ProgressProc delegate: {ex.Message}");
                 }
             }
             
@@ -426,21 +426,21 @@ public static unsafe class WfxExports
                 string arch = IntPtr.Size == 8 ? "x64" : "x86";
                 string libPath = System.IO.Path.Combine(basePath, arch, "e_sqlite3.dll");
                 
-                Logger.Log($"Manually loading SQLite DLL from: {libPath}");
+                Logger.Debug("DB", $"Manually loading SQLite DLL from: {libPath}");
                 
                 if (System.IO.File.Exists(libPath))
                 {
                     IntPtr libHandle = System.Runtime.InteropServices.NativeLibrary.Load(libPath);
-                    Logger.Log($"Load successful, handle: {libHandle}");
+                    Logger.Debug("DB", $"Load successful, handle: {libHandle}");
                 }
                 else
                 {
-                    Logger.Log($"ERROR: File does not exist at {libPath}");
+                    Logger.Error("DB", $"File does not exist at {libPath}");
                 }
             }
             catch (Exception ex)
             {
-                Logger.Log($"Manual DLL load failed: {ex}");
+                Logger.Error("DB", "Manual DLL load failed", ex);
             }
 
             if (!_processExitHooked)
@@ -453,12 +453,12 @@ public static unsafe class WfxExports
             if (_db == null)
             {
                 _db = new VfsDatabase();
-                Logger.Log("VfsDatabase successfully initialized.");
+                Logger.Info("DB", "VfsDatabase successfully initialized.");
             }
         }
         catch (Exception ex)
         {
-            Logger.Log($"Critical Exception in HandleInit: {ex}");
+            Logger.Error("WFX", "Critical Exception in HandleInit", ex);
         }
         return 0; // успех
     }
@@ -571,7 +571,7 @@ public static unsafe class WfxExports
 
     private static int HandleExecuteFile(string path, string verb)
     {
-        Logger.Log($"FsExecuteFile called for: {path} (Verb: {verb})");
+        Logger.Info("WFX", $"FsExecuteFile: '{path}' (Verb: '{verb}')");
 
         // Обработка запроса свойств (Alt+Enter в Total Commander)
         if (verb.Equals("properties", StringComparison.OrdinalIgnoreCase))
@@ -667,14 +667,14 @@ public static unsafe class WfxExports
                             LocalPath = result.LocalPath
                         });
                         
-                        Logger.Log($"Folder created successfully: {result.Name}");
+                        Logger.Info("WFX", $"[FOLDER CREATED] Channel/folder '{result.Name}' created successfully.");
                         Win32Api.RefreshActivePanel();
                         TriggerCheckpoint(immediate: true);
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"Create folder error: {ex}");
+                    Logger.Error("WFX", "Create folder error", ex);
                 }
             }).GetAwaiter().GetResult();
             
@@ -711,7 +711,7 @@ public static unsafe class WfxExports
                                 }
 
                                 _db?.DeleteMount(mount.Id);
-                                Logger.Log($"Folder '{selectedFolder}' and Telegram channel {mount.ChannelId} deleted.");
+                                Logger.Info("WFX", $"[FOLDER DELETED] Folder '{selectedFolder}' and Telegram channel {mount.ChannelId} deleted.");
 
                                 Win32Api.RefreshActivePanel();
 
@@ -726,7 +726,7 @@ public static unsafe class WfxExports
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"Delete folder error: {ex}");
+                    Logger.Error("WFX", "Delete folder error", ex);
                 }
             }).GetAwaiter().GetResult();
 
@@ -745,7 +745,7 @@ public static unsafe class WfxExports
                     {
                         if (result.StorageLocationChanged)
                         {
-                            Logger.Log($"Storage location change requested. New mode: {result.SelectedStorageMode}, CustomPath: '{result.CustomPath}'");
+                            Logger.Info("CFG", $"Storage location change requested. New mode: {result.SelectedStorageMode}, CustomPath: '{result.CustomPath}'");
 
                             // 1. Закрываем и сбрасываем текущие ресурсы базы данных и TelegramClient
                             try
@@ -754,7 +754,7 @@ public static unsafe class WfxExports
                             }
                             catch (Exception dbEx)
                             {
-                                Logger.Log($"Error disposing DB: {dbEx.Message}");
+                                Logger.Warn("DB", $"Error disposing DB: {dbEx.Message}");
                             }
                             finally
                             {
@@ -785,15 +785,15 @@ public static unsafe class WfxExports
                             try
                             {
                                 _db = new VfsDatabase();
-                                Logger.Log("VfsDatabase re-initialized at new location.");
+                                Logger.Info("DB", "VfsDatabase re-initialized at new location.");
                             }
                             catch (Exception ex)
                             {
-                                Logger.Log($"Failed to re-initialize DB: {ex.Message}");
+                                Logger.Error("DB", $"Failed to re-initialize DB: {ex.Message}");
                             }
 
                             // 5. Оповещаем и обновляем список папок в Total Commander
-                            Logger.Log("Settings applied. Requesting panel refresh.");
+                            Logger.Info("CFG", "Settings applied. Requesting panel refresh.");
                             Win32Api.RefreshActivePanel();
 
                             try
@@ -810,7 +810,7 @@ public static unsafe class WfxExports
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"Settings dialog execution error: {ex}");
+                    Logger.Error("CFG", "Settings dialog execution error", ex);
                 }
             }).GetAwaiter().GetResult();
             
@@ -827,13 +827,13 @@ public static unsafe class WfxExports
                     bool success = TelegramManager.LoginAsync().GetAwaiter().GetResult();
                     if (success)
                     {
-                        Logger.Log("Login successful! Requesting panel refresh.");
+                        Logger.Info("TG", "Login successful! Requesting panel refresh.");
                         Win32Api.RefreshActivePanel();
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"Login task failed: {ex}");
+                    Logger.Error("TG", "Login task failed", ex);
                 }
             }).GetAwaiter().GetResult();
             
@@ -867,7 +867,7 @@ public static unsafe class WfxExports
                 int res = _progressProcDelegate(_pluginNumber, pSrc, pDst, percentDone);
                 if (res != 0 && res != 1)
                 {
-                    Logger.Log($"ProgressProc returned non-standard code: {res} (percentDone={percentDone})");
+                    Logger.Debug("WFX", $"ProgressProc returned code: {res} (percentDone={percentDone})");
                 }
                 return res;
             }
@@ -879,24 +879,24 @@ public static unsafe class WfxExports
         }
         catch (Exception ex)
         {
-            Logger.Log($"Progress callback error: {ex.Message}");
+            Logger.Warn("WFX", $"Progress callback error: {ex.Message}");
             return 0;
         }
     }
 
     private static int HandlePutFile(string localPath, string remotePath, int copyFlags)
     {
-        Logger.Log($"FsPutFile called: Local='{localPath}', Remote='{remotePath}', Flags={copyFlags}");
+        Logger.Info("WFX", $"[PUT FILE START] Local='{localPath}' -> Remote='{remotePath}' (Flags={copyFlags})");
 
         if (!System.IO.File.Exists(localPath))
         {
-            Logger.Log($"FsPutFile: Local file does not exist: '{localPath}'");
+            Logger.Error("WFX", $"FsPutFile: Local file does not exist: '{localPath}'");
             return Win32Api.FS_FILE_NOTFOUND;
         }
 
         if (_db == null)
         {
-            Logger.Log("FsPutFile: Database is not initialized.");
+            Logger.Error("WFX", "FsPutFile: Database is not initialized.");
             return Win32Api.FS_FILE_WRITEERROR;
         }
 
@@ -904,7 +904,7 @@ public static unsafe class WfxExports
         int firstSlash = cleanRemote.IndexOfAny(new[] { '\\', '/' });
         if (firstSlash <= 0)
         {
-            Logger.Log($"FsPutFile: Destination is root or invalid. Cannot copy directly to root: '{remotePath}' (cleanRemote='{cleanRemote}')");
+            Logger.Warn("WFX", $"FsPutFile: Cannot copy directly to root: '{remotePath}'");
             return Win32Api.FS_FILE_NOTSUPPORTED;
         }
 
@@ -917,7 +917,7 @@ public static unsafe class WfxExports
         var mount = _db.GetMountByName(channelName);
         if (mount == null)
         {
-            Logger.Log($"FsPutFile: Channel '{channelName}' not found in database.");
+            Logger.Error("WFX", $"FsPutFile: Channel '{channelName}' not found in database.");
             return Win32Api.FS_FILE_NOTFOUND;
         }
 
@@ -929,7 +929,7 @@ public static unsafe class WfxExports
             bool overwrite = (copyFlags & Win32Api.FS_COPYFLAGS_OVERWRITE) != 0;
             if (!overwrite)
             {
-                Logger.Log($"FsPutFile: File '{fileName}' already exists in '{channelName}' and OVERWRITE flag is not set.");
+                Logger.Warn("WFX", $"FsPutFile: File '{fileName}' already exists in '{channelName}' and OVERWRITE is not set.");
                 return Win32Api.FS_FILE_EXISTS;
             }
         }
@@ -940,7 +940,7 @@ public static unsafe class WfxExports
             long limitBytes = TelegramManager.IsPremium ? 4294967296L : 2147483648L;
             if (fileInfo.Length > limitBytes)
             {
-                Logger.Log($"FsPutFile: File size {fileInfo.Length} bytes exceeds limit of {limitBytes} bytes.");
+                Logger.Error("WFX", $"FsPutFile: File size {Logger.FormatBytes(fileInfo.Length)} exceeds limit of {Logger.FormatBytes(limitBytes)}.");
                 return Win32Api.FS_FILE_WRITEERROR;
             }
 
@@ -981,7 +981,7 @@ public static unsafe class WfxExports
                         long elapsed = Environment.TickCount64 - System.Threading.Interlocked.Read(ref lastReportTime);
                         if (elapsed > 500)
                         {
-                            Logger.Log($"Upload paused (TC blocking ReportProgress detected). Pausing stream.");
+                            Logger.Info("WFX", "[UPLOAD PAUSED] Stream paused (TC blocking ReportProgress).");
                             pauseGate.Reset();
                         }
                         System.Threading.Thread.Sleep(100);
@@ -1018,7 +1018,7 @@ public static unsafe class WfxExports
 
                     if (tcPaused)
                     {
-                        Logger.Log($"Upload paused (TC pause detected, progress={pct}%). Pausing stream.");
+                        Logger.Info("WFX", $"[UPLOAD PAUSED] Stream paused (TC pause detected, progress={pct}%).");
                         pauseGate.Reset();
 
                         while (!userAborted)
@@ -1039,7 +1039,7 @@ public static unsafe class WfxExports
                             bool stillPaused = (pauseRes != 0 && pauseRes != 1) || Win32Api.IsTotalCommanderPaused();
                             if (!stillPaused)
                             {
-                                Logger.Log("Upload resumed by TC. Resuming stream.");
+                                Logger.Info("WFX", "[UPLOAD RESUMED] Stream resumed by TC.");
                                 pauseGate.Set();
                                 break;
                             }
@@ -1051,7 +1051,7 @@ public static unsafe class WfxExports
                         // Если TC не на паузе, но шлюз был сброшен сторожевым таймером во время блокировки ReportProgress — открываем шлюз
                         if (!pauseGate.IsSet)
                         {
-                            Logger.Log("Upload unblocked / resumed. Setting pauseGate.");
+                            Logger.Info("WFX", "[UPLOAD RESUMED] Setting pauseGate.");
                             pauseGate.Set();
                         }
                     }
@@ -1079,7 +1079,7 @@ public static unsafe class WfxExports
                 {
                     if (!userAborted)
                     {
-                        Logger.Log($"FsPutFile error: {ex}");
+                        Logger.Error("WFX", "FsPutFile error", ex);
                         return Win32Api.FS_FILE_WRITEERROR;
                     }
                 }
@@ -1094,13 +1094,13 @@ public static unsafe class WfxExports
 
             if (userAborted)
             {
-                Logger.Log($"FsPutFile: Upload was cancelled by user.");
+                Logger.Warn("WFX", "[UPLOAD CANCELLED] User cancelled upload in Total Commander.");
                 return Win32Api.FS_FILE_USERABORT;
             }
 
             if (messageId <= 0)
             {
-                Logger.Log($"FsPutFile: Upload failed (no message ID).");
+                Logger.Error("WFX", "FsPutFile: Upload failed (no Telegram message ID returned).");
                 return Win32Api.FS_FILE_WRITEERROR;
             }
 
@@ -1113,7 +1113,7 @@ public static unsafe class WfxExports
             {
                 _db.MoveFileToTrash(existingFile.Uid);
                 ver = existingFile.Ver + 1;
-                Logger.Log($"FsPutFile: Existing file '{fileName}' marked in_trash=1. New version: {ver}");
+                Logger.Info("DB", $"[DB WRITE] Old version of '{fileName}' marked in_trash=1. New version: {ver}");
             }
 
             _db.AddFile(new VfsDatabase.FileRecord
@@ -1130,7 +1130,7 @@ public static unsafe class WfxExports
                 Ver = ver
             });
 
-            Logger.Log($"FsPutFile: File '{fileName}' successfully added to database.");
+            Logger.Info("DB", $"[DB WRITE] File '{fileName}' successfully recorded in DB.");
             TriggerCheckpoint(immediate: false);
 
             if ((copyFlags & Win32Api.FS_COPYFLAGS_MOVE) != 0)
@@ -1140,12 +1140,12 @@ public static unsafe class WfxExports
                     if (System.IO.File.Exists(localPath))
                     {
                         System.IO.File.Delete(localPath);
-                        Logger.Log($"FsPutFile: Deleted source local file '{localPath}' as specified by FS_COPYFLAGS_MOVE.");
+                        Logger.Info("WFX", $"[FILE MOVED] Deleted source local file '{localPath}' after upload.");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"FsPutFile: Note on deleting source local file '{localPath}': {ex.Message}");
+                    Logger.Warn("WFX", $"Note on deleting source local file '{localPath}': {ex.Message}");
                 }
             }
 
@@ -1153,7 +1153,7 @@ public static unsafe class WfxExports
         }
         catch (Exception ex)
         {
-            Logger.Log($"FsPutFile error: {ex}");
+            Logger.Error("WFX", "FsPutFile error", ex);
             return Win32Api.FS_FILE_WRITEERROR;
         }
     }
@@ -1178,11 +1178,11 @@ public static unsafe class WfxExports
 
     private static int HandleGetFile(string remotePath, string localPath, int copyFlags, Win32Api.RemoteInfoStruct* ri)
     {
-        Logger.Log($"FsGetFile called: Remote='{remotePath}', Local='{localPath}', Flags={copyFlags}");
+        Logger.Info("WFX", $"[GET FILE START] Remote='{remotePath}' -> Local='{localPath}' (Flags={copyFlags})");
 
         if (_db == null)
         {
-            Logger.Log("FsGetFile: Database is not initialized.");
+            Logger.Error("WFX", "FsGetFile: Database is not initialized.");
             return Win32Api.FS_FILE_READERROR;
         }
 
@@ -1190,7 +1190,7 @@ public static unsafe class WfxExports
         int firstSlash = cleanRemote.IndexOfAny(new[] { '\\', '/' });
         if (firstSlash <= 0)
         {
-            Logger.Log($"FsGetFile: Invalid remote path or root directory: '{remotePath}' (cleanRemote='{cleanRemote}')");
+            Logger.Warn("WFX", $"FsGetFile: Invalid remote path: '{remotePath}'");
             return Win32Api.FS_FILE_NOTSUPPORTED;
         }
 
@@ -1209,7 +1209,7 @@ public static unsafe class WfxExports
         var mount = _db.GetMountByName(channelFolderName);
         if (mount == null)
         {
-            Logger.Log($"FsGetFile: Mount '{channelFolderName}' not found.");
+            Logger.Error("WFX", $"FsGetFile: Channel '{channelFolderName}' not found.");
             return Win32Api.FS_FILE_NOTFOUND;
         }
 
@@ -1231,7 +1231,7 @@ public static unsafe class WfxExports
 
         if (fileRecord == null || fileRecord.IsDir || fileRecord.TgMessageId <= 0)
         {
-            Logger.Log($"FsGetFile: File '{fileName}' not found in DB or has no Telegram Message ID.");
+            Logger.Error("WFX", $"FsGetFile: File '{fileName}' not found in DB or has no Telegram Message ID.");
             return Win32Api.FS_FILE_NOTFOUND;
         }
 
@@ -1246,7 +1246,7 @@ public static unsafe class WfxExports
 
                 if (sameSize && sameTime)
                 {
-                    Logger.Log($"FsGetFile: Local file '{localPath}' already exists with identical size ({fileRecord.Size}) and mtime. Skipping download.");
+                    Logger.Info("WFX", $"FsGetFile: Local file '{localPath}' is identical ({Logger.FormatBytes(fileRecord.Size)}). Skipping download.");
                     return Win32Api.FS_FILE_OK;
                 }
 
@@ -1260,12 +1260,12 @@ public static unsafe class WfxExports
 
                 if (!canOverwrite && !canResume && !isTempOrZeroByte)
                 {
-                    Logger.Log($"FsGetFile: Target file '{localPath}' exists but is different and OVERWRITE flag not set.");
+                    Logger.Warn("WFX", $"FsGetFile: Target file '{localPath}' exists and OVERWRITE is not set.");
                     return Win32Api.FS_FILE_EXISTS;
                 }
             }
 
-            Logger.Log($"FsGetFile: Starting download of '{fileName}' (TgMessageId: {fileRecord.TgMessageId}, Size: {fileRecord.Size} bytes)...");
+            Logger.Info("WFX", $"[DOWNLOAD START] File '{fileName}' (MsgId: {fileRecord.TgMessageId}, Size: {Logger.FormatBytes(fileRecord.Size)})");
 
             long currentPercent = 0;
             bool userAborted = false;
@@ -1304,7 +1304,7 @@ public static unsafe class WfxExports
                         if (elapsed > 500)
                         {
                             // ReportProgress is blocking for more than 500ms! TC must be paused.
-                            Logger.Log($"Download paused (TC blocking ReportProgress detected). Cancelling network task.");
+                            Logger.Info("WFX", "[DOWNLOAD PAUSED] TC blocking ReportProgress detected.");
                             try { cts.Cancel(); } catch { }
                             break;
                         }
@@ -1344,7 +1344,7 @@ public static unsafe class WfxExports
                     if (tcPaused)
                     {
                         // Пользователь нажал "Пауза"
-                        Logger.Log($"Download paused (TC pause detected, progress={pct}%). Cancelling network task.");
+                        Logger.Info("WFX", $"[DOWNLOAD PAUSED] TC pause button detected ({pct}%).");
                         try { cts.Cancel(); } catch { }
                         break;
                     }
@@ -1374,7 +1374,7 @@ public static unsafe class WfxExports
                 {
                     if (!userAborted)
                     {
-                        Logger.Log($"FsGetFile error: {ex}");
+                        Logger.Error("WFX", "FsGetFile error", ex);
                         return Win32Api.FS_FILE_READERROR;
                     }
                 }
@@ -1384,7 +1384,7 @@ public static unsafe class WfxExports
                 if (!isFinished)
                 {
                     // Мы на паузе. Ждем, пока пользователь не отожмет паузу
-                    Logger.Log("Download is paused. Waiting for resume signal from TC...");
+                    Logger.Info("WFX", "[DOWNLOAD WAITING] Waiting for TC resume signal...");
                     while (!userAborted)
                     {
                         int pct = (int)System.Threading.Interlocked.Read(ref currentPercent);
@@ -1402,7 +1402,7 @@ public static unsafe class WfxExports
                         bool tcPaused = (progressRes != 0 && progressRes != 1) || Win32Api.IsTotalCommanderPaused();
                         if (!tcPaused)
                         {
-                            Logger.Log("Download resumed by TC. Restarting network task.");
+                            Logger.Info("WFX", "[DOWNLOAD RESUMED] Resuming download task.");
                             break; // Выходим из цикла ожидания паузы, внешний цикл перезапустит скачивание (докачку)
                         }
                         System.Threading.Thread.Sleep(100);
@@ -1412,7 +1412,7 @@ public static unsafe class WfxExports
 
             if (userAborted)
             {
-                Logger.Log($"FsGetFile: Download cancelled by user.");
+                Logger.Warn("WFX", "[DOWNLOAD CANCELLED] Download cancelled by user.");
                 return Win32Api.FS_FILE_USERABORT;
             }
 
@@ -1428,16 +1428,16 @@ public static unsafe class WfxExports
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"Warning: Failed to set LastWriteTimeUtc on '{localPath}': {ex.Message}");
+                    Logger.Warn("WFX", $"Failed to set LastWriteTimeUtc on '{localPath}': {ex.Message}");
                 }
             }
 
-            Logger.Log($"FsGetFile: Successfully downloaded '{fileName}' -> '{localPath}'.");
+            Logger.Info("WFX", $"[DOWNLOAD FINISHED] Successfully downloaded '{fileName}' -> '{localPath}'");
 
             if ((copyFlags & Win32Api.FS_COPYFLAGS_MOVE) != 0)
             {
                 _db.MoveFileToTrash(fileRecord.Uid);
-                Logger.Log($"FsGetFile: Remote file '{fileName}' marked in_trash=1 per FS_COPYFLAGS_MOVE.");
+                Logger.Info("DB", $"[DB WRITE] Remote file '{fileName}' marked in_trash=1 per MOVE.");
                 TriggerCheckpoint(immediate: true);
             }
 
@@ -1445,17 +1445,17 @@ public static unsafe class WfxExports
         }
         catch (OperationCanceledException)
         {
-            Logger.Log($"FsGetFile: Download cancelled by user (OperationCanceledException).");
+            Logger.Warn("WFX", "[DOWNLOAD CANCELLED] OperationCanceledException");
             return Win32Api.FS_FILE_USERABORT;
         }
         catch (FileNotFoundException ex)
         {
-            Logger.Log($"FsGetFile FileNotFound: {ex.Message}");
+            Logger.Error("WFX", $"FsGetFile FileNotFound: {ex.Message}");
             return Win32Api.FS_FILE_NOTFOUND;
         }
         catch (Exception ex)
         {
-            Logger.Log($"FsGetFile error: {ex}");
+            Logger.Error("WFX", "FsGetFile error", ex);
             return Win32Api.FS_FILE_READERROR;
         }
     }
@@ -1497,7 +1497,7 @@ public static unsafe class WfxExports
     private static void HandleStatusInfo(string remoteDir, int infoStartEnd, int infoOperation)
     {
         string startEndStr = infoStartEnd == Win32Api.FS_STATUS_START ? "START" : "END";
-        Logger.Log($"FsStatusInfo: {startEndStr} for Dir='{remoteDir}', Operation={infoOperation}");
+        Logger.Debug("WFX", $"FsStatusInfo: {startEndStr} Dir='{remoteDir}', Op={infoOperation}");
 
         bool isBatchOp = infoOperation == Win32Api.FS_STATUS_OP_GET_MULTI ||
                          infoOperation == Win32Api.FS_STATUS_OP_PUT_MULTI ||
@@ -1516,7 +1516,7 @@ public static unsafe class WfxExports
             if (_isBatchOperation)
             {
                 _isBatchOperation = false;
-                Logger.Log("FsStatusInfo: Batch operation completed. Executing WAL checkpoint.");
+                Logger.Info("DB", "[WAL CHECKPOINT] Batch operation completed. Executing SQLite checkpoint.");
                 TriggerCheckpoint(immediate: true);
             }
         }
@@ -1526,7 +1526,7 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsGetBackgroundFlags", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsGetBackgroundFlags()
     {
-        Logger.Log("FsGetBackgroundFlags called -> Returning BG_DOWNLOAD | BG_UPLOAD | BG_ASK_USER (7)");
+        Logger.Debug("WFX", "FsGetBackgroundFlags: BG_DOWNLOAD | BG_UPLOAD | BG_ASK_USER");
         return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD | Win32Api.BG_ASK_USER;
     }
 
@@ -1534,7 +1534,7 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsGetBackgroundFlagsW", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsGetBackgroundFlagsW()
     {
-        Logger.Log("FsGetBackgroundFlagsW called -> Returning BG_DOWNLOAD | BG_UPLOAD | BG_ASK_USER (7)");
+        Logger.Debug("WFX", "FsGetBackgroundFlagsW: BG_DOWNLOAD | BG_UPLOAD | BG_ASK_USER");
         return Win32Api.BG_DOWNLOAD | Win32Api.BG_UPLOAD | Win32Api.BG_ASK_USER;
     }
 
@@ -1556,7 +1556,7 @@ public static unsafe class WfxExports
 
     private static int HandleMkDir(string dirPath)
     {
-        Logger.Log($"FsMkDir called for: '{dirPath}'");
+        Logger.Info("WFX", $"[MKDIR START] Request: '{dirPath}'");
         if (_db == null) return 0; // false
 
         string cleanPath = NormalizeVfsPath(dirPath);
@@ -1582,7 +1582,7 @@ public static unsafe class WfxExports
         _db.EnsureParentDirectoriesExist(mount.Id, parent);
         _db.AddDirectoryRecord(mount.Id, dirName, parent);
         
-        Logger.Log($"FsMkDir: Directory '{dirName}' created in parent '{parent}' for channel '{channelName}'.");
+        Logger.Info("DB", $"[DB WRITE / MKDIR] Directory '{dirName}' created in '{channelName}/{parent}'");
         TriggerCheckpoint(immediate: true);
 
         return 1; // true (success)
@@ -1606,7 +1606,7 @@ public static unsafe class WfxExports
 
     private static int HandleDeleteFile(string remotePath)
     {
-        Logger.Log($"FsDeleteFile called for: '{remotePath}'");
+        Logger.Info("WFX", $"[DELETE FILE START] Request: '{remotePath}'");
 
         if (_db == null) return 0; // false
 
@@ -1618,7 +1618,7 @@ public static unsafe class WfxExports
             cleanPath.Contains("[❌] Удалить папку") || cleanPath.Contains("[-] Удалить папку") ||
             cleanPath.Contains("[⚙] Настройки") || cleanPath.Contains("[*] Настройки плагина"))
         {
-            Logger.Log($"Protected trigger item, skipping deletion: '{cleanPath}'");
+            Logger.Warn("WFX", $"Protected trigger item, skipping deletion: '{cleanPath}'");
             return 0; // false
         }
 
@@ -1670,14 +1670,14 @@ public static unsafe class WfxExports
                     {
                         _db.MoveFileToTrash(fileRecord.Uid);
                     }
-                    Logger.Log($"Item '{subPath}' in channel '{channelName}' moved to trash via FsDeleteFile.");
+                    Logger.Info("DB", $"[FILE DELETED / TRASH] '{subPath}' in channel '{channelName}' moved to trash.");
                     TriggerCheckpoint(immediate: true);
                     return 1; // true
                 }
                 else
                 {
                     // Элемент уже удален или перемещен (например, в FsGetFile по флагу FS_COPYFLAGS_MOVE)
-                    Logger.Log($"Item '{subPath}' in channel '{channelName}' already moved/deleted. Returning success for FsDeleteFile.");
+                    Logger.Info("DB", $"[FILE DELETED] '{subPath}' in channel '{channelName}' already marked deleted.");
                     return 1; // true (успех для Total Commander)
                 }
             }
@@ -1704,7 +1704,7 @@ public static unsafe class WfxExports
 
     private static int HandleRemoveDir(string dirPath)
     {
-        Logger.Log($"FsRemoveDir called for: '{dirPath}'");
+        Logger.Info("WFX", $"[REMOVEDIR START] Request: '{dirPath}'");
 
         if (_db == null) return 0; // false
 
@@ -1744,7 +1744,7 @@ public static unsafe class WfxExports
                             TelegramManager.DeleteChannelAsync(mount.ChannelId).GetAwaiter().GetResult();
                         }
                         _db.DeleteMount(mount.Id);
-                        Logger.Log($"Mount '{channelName}' deleted via FsRemoveDir.");
+                        Logger.Info("DB", $"[FOLDER DELETED] Mount/channel '{channelName}' deleted via FsRemoveDir.");
                         Win32Api.RefreshActivePanel();
                         TriggerCheckpoint(immediate: true);
                     }).GetAwaiter().GetResult();
@@ -1794,7 +1794,7 @@ public static unsafe class WfxExports
                 }
 
                 _db.MoveDirectoryToTrash(mount.Id, subPath);
-                Logger.Log($"Virtual directory '{subPath}' in channel '{channelName}' moved to trash via FsRemoveDir.");
+                Logger.Info("DB", $"[FOLDER DELETED / TRASH] Virtual directory '{subPath}' in channel '{channelName}' moved to trash.");
                 TriggerCheckpoint(immediate: true);
                 return 1; // true
             }
@@ -1827,7 +1827,7 @@ public static unsafe class WfxExports
 
     private static int HandleRenMovFile(string oldPath, string newPath, bool isMove, bool overwrite)
     {
-        Logger.Log($"FsRenMovFile called from '{oldPath}' to '{newPath}', isMove={isMove}, overwrite={overwrite}");
+        Logger.Info("WFX", $"[RENAME/MOVE START] '{oldPath}' -> '{newPath}' (isMove={isMove}, overwrite={overwrite})");
         if (_db == null) return Win32Api.FS_FILE_NOTFOUND;
 
         string cleanOld = NormalizeVfsPath(oldPath);
@@ -1876,7 +1876,7 @@ public static unsafe class WfxExports
             if (newSub.Equals(oldSub, StringComparison.OrdinalIgnoreCase) ||
                 newSub.StartsWith(oldSub + "\\", StringComparison.OrdinalIgnoreCase))
             {
-                Logger.Log($"Cannot move/copy directory '{oldSub}' into itself or its subfolder '{newSub}'.");
+                Logger.Warn("WFX", $"Cannot move/copy directory '{oldSub}' into itself or subfolder '{newSub}'.");
                 return Win32Api.FS_FILE_EXISTS;
             }
         }
@@ -1904,12 +1904,12 @@ public static unsafe class WfxExports
                 if (sourceRecord.IsDir)
                 {
                     _db.RenameMoveDirectory(oldMount.Id, oldSub, newItemName, newParent, newMount.Id);
-                    Logger.Log($"Directory '{oldSub}' moved/renamed in channel '{oldChannel}' to '{newSub}'.");
+                    Logger.Info("DB", $"[FOLDER RENAMED/MOVED] Directory '{oldSub}' -> '{newSub}' in channel '{oldChannel}'");
                 }
                 else
                 {
                     _db.RenameMoveFile(sourceRecord.Uid, newItemName, newParent, newMount.Id);
-                    Logger.Log($"File '{oldSub}' moved/renamed in channel '{oldChannel}' to '{newSub}'.");
+                    Logger.Info("DB", $"[FILE RENAMED/MOVED] File '{oldSub}' -> '{newSub}' in channel '{oldChannel}'");
                 }
             }
             else
@@ -1928,7 +1928,7 @@ public static unsafe class WfxExports
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"Error physically moving '{oldPath}' to '{newPath}': {ex.Message}");
+                    Logger.Error("WFX", $"Error physically moving '{oldPath}' to '{newPath}': {ex.Message}");
                     return Win32Api.FS_FILE_WRITEERROR;
                 }
             }
@@ -1942,7 +1942,7 @@ public static unsafe class WfxExports
                 if (sourceRecord.IsDir)
                 {
                     PerformCopyDirectoryWithinChannel(oldMount.Id, oldSub, newItemName, newParent);
-                    Logger.Log($"Directory '{oldSub}' virtually copied in channel '{oldChannel}' to '{newSub}'.");
+                    Logger.Info("DB", $"[FOLDER COPIED] Directory '{oldSub}' -> '{newSub}' in channel '{oldChannel}'");
                 }
                 else
                 {
@@ -1960,7 +1960,7 @@ public static unsafe class WfxExports
                         Ver = 1
                     };
                     _db.AddFile(copyRecord);
-                    Logger.Log($"File '{oldSub}' virtually copied in channel '{oldChannel}' to '{newSub}'.");
+                    Logger.Info("DB", $"[FILE COPIED] File '{oldSub}' -> '{newSub}' in channel '{oldChannel}'");
                 }
             }
             else
@@ -1979,7 +1979,7 @@ public static unsafe class WfxExports
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"Error physically copying '{oldPath}' to '{newPath}': {ex.Message}");
+                    Logger.Error("WFX", $"Error physically copying '{oldPath}' to '{newPath}': {ex.Message}");
                     return Win32Api.FS_FILE_WRITEERROR;
                 }
             }
@@ -2054,14 +2054,14 @@ public static unsafe class WfxExports
         string tempPath = Path.Combine(Path.GetTempPath(), $"tgvfs_cp_{Guid.NewGuid():N}_{fileRecord.Name}");
         try
         {
-            Logger.Log($"[Physical Copy] Downloading file '{fileRecord.Name}' from channel {oldMount.ChannelName} ({oldMount.ChannelId}), msg={fileRecord.TgMessageId}...");
+            Logger.Info("WFX", $"[CROSS-CHANNEL COPY] Downloading '{fileRecord.Name}' from {oldMount.ChannelName} (MsgId: {fileRecord.TgMessageId})...");
             Task.Run(() => TelegramManager.DownloadFileAsync(oldMount.ChannelId, fileRecord.TgMessageId, tempPath)).GetAwaiter().GetResult();
 
             string relativeCaption = string.IsNullOrEmpty(newParent) ? newItemName : newParent + "\\" + newItemName;
-            Logger.Log($"[Physical Copy] Uploading file '{newItemName}' to channel {newMount.ChannelName} ({newMount.ChannelId})...");
+            Logger.Info("WFX", $"[CROSS-CHANNEL COPY] Uploading '{newItemName}' to {newMount.ChannelName} ({newMount.ChannelId})...");
             int newMsgId = Task.Run(() => TelegramManager.UploadAndSendFileAsync(newMount.ChannelId, tempPath, newItemName, relativeCaption)).GetAwaiter().GetResult();
 
-            Logger.Log($"[Physical Copy] Creating SQLite record for new file in mount={newMount.Id}, msg={newMsgId}...");
+            Logger.Info("DB", $"[DB WRITE / CROSS-COPY] Creating record in mount={newMount.Id}, msg={newMsgId}");
             var newRecord = new VfsDatabase.FileRecord
             {
                 Uid = Guid.NewGuid().ToString("N"),
@@ -2138,17 +2138,17 @@ public static unsafe class WfxExports
         string tempPath = Path.Combine(Path.GetTempPath(), $"tgvfs_mv_{Guid.NewGuid():N}_{fileRecord.Name}");
         try
         {
-            Logger.Log($"[Physical Move] Downloading file '{fileRecord.Name}' from channel {oldMount.ChannelName} ({oldMount.ChannelId}), msg={fileRecord.TgMessageId}...");
+            Logger.Info("WFX", $"[CROSS-CHANNEL MOVE] Downloading '{fileRecord.Name}' from {oldMount.ChannelName} (MsgId: {fileRecord.TgMessageId})...");
             Task.Run(() => TelegramManager.DownloadFileAsync(oldMount.ChannelId, fileRecord.TgMessageId, tempPath)).GetAwaiter().GetResult();
 
             string relativeCaption = string.IsNullOrEmpty(newParent) ? newItemName : newParent + "\\" + newItemName;
-            Logger.Log($"[Physical Move] Uploading file '{newItemName}' to channel {newMount.ChannelName} ({newMount.ChannelId})...");
+            Logger.Info("WFX", $"[CROSS-CHANNEL MOVE] Uploading '{newItemName}' to {newMount.ChannelName} ({newMount.ChannelId})...");
             int newMsgId = Task.Run(() => TelegramManager.UploadAndSendFileAsync(newMount.ChannelId, tempPath, newItemName, relativeCaption)).GetAwaiter().GetResult();
 
-            Logger.Log($"[Physical Move] Updating SQLite record for UID={fileRecord.Uid} with new mount={newMount.Id}, msg={newMsgId}...");
+            Logger.Info("DB", $"[DB WRITE / CROSS-MOVE] Updating record UID={fileRecord.Uid} with new mount={newMount.Id}, msg={newMsgId}");
             _db!.UpdateFileMessageAndMount(fileRecord.Uid, newMount.Id, newMsgId, newItemName, newParent);
 
-            Logger.Log($"[Physical Move] Deleting old message {fileRecord.TgMessageId} from old channel {oldMount.ChannelName}...");
+            Logger.Info("TG", $"[CROSS-CHANNEL MOVE] Deleting old msg {fileRecord.TgMessageId} from {oldMount.ChannelName}...");
             Task.Run(() => TelegramManager.DeleteMessageAsync(oldMount.ChannelId, fileRecord.TgMessageId)).GetAwaiter().GetResult();
         }
         finally
@@ -2208,7 +2208,7 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsContentPluginUnload", CallConvs = [typeof(CallConvStdcall)])]
     public static void FsContentPluginUnload()
     {
-        Logger.Log("FsContentPluginUnload called. Delegating to OnProcessExit.");
+        Logger.Info("WFX", "FsContentPluginUnload called. Delegating to OnProcessExit.");
         OnProcessExit(null, EventArgs.Empty);
     }
 }

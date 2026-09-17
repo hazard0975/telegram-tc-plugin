@@ -138,7 +138,7 @@ public static class SettingsManager
         }
         catch (Exception ex)
         {
-            Logger.Log($"Error loading settings: {ex.Message}");
+            Logger.Error("CFG", "Failed to load settings", ex);
         }
     }
 
@@ -194,7 +194,7 @@ public static class SettingsManager
         }
         catch (Exception ex)
         {
-            Logger.Log($"Error saving setting '{key}': {ex.Message}");
+            Logger.Error("CFG", $"Failed to save setting '{key}'", ex);
         }
     }
 
@@ -224,7 +224,7 @@ public static class SettingsManager
         try
         {
             Directory.CreateDirectory(newDir);
-            Logger.Log($"Migrating data files from '{oldDir}' to '{newDir}'...");
+            Logger.Info("CFG", $"Migrating data files from '{oldDir}' to '{newDir}'...");
 
             string[] filesToMigrate = new[]
             {
@@ -247,18 +247,18 @@ public static class SettingsManager
                     {
                         if (File.Exists(dst)) File.Delete(dst);
                         File.Move(src, dst);
-                        Logger.Log($"Moved: {file} -> {dst}");
+                        Logger.Info("CFG", $"Migrated file: {file} -> {dst}");
                     }
                     catch (Exception ex)
                     {
-                        Logger.Log($"Warning: Failed to move file '{file}': {ex.Message}");
+                        Logger.Warn("CFG", $"Failed to move file '{file}': {ex.Message}");
                     }
                 }
             }
         }
         catch (Exception ex)
         {
-            Logger.Log($"Error during MigrateDataFiles: {ex.Message}");
+            Logger.Error("CFG", "Error during MigrateDataFiles", ex);
         }
     }
 }

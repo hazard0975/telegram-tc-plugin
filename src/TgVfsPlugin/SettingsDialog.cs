@@ -23,7 +23,7 @@ public static class SettingsDialog
         {
             try
             {
-                Logger.Log("Opening SettingsDialog...");
+                Logger.Info("UI", "Opening SettingsDialog...");
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
@@ -225,7 +225,7 @@ public static class SettingsDialog
             }
             catch (Exception ex)
             {
-                Logger.Log($"SettingsDialog Error: {ex}");
+                Logger.Error("UI", "SettingsDialog Error", ex);
             }
         });
 

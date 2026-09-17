@@ -788,7 +788,7 @@ public class VfsDatabase : IDisposable
         }
         catch (Exception ex)
         {
-            Logger.Log($"Error executing WAL checkpoint (truncate={truncate}): {ex.Message}");
+            Logger.Error("DB", $"Failed executing WAL checkpoint (truncate={truncate})", ex);
         }
     }
 

@@ -155,7 +155,7 @@ public static class FilePropertiesDialog
                     }
                     catch (Exception ex)
                     {
-                        Logger.Log($"Clipboard copy failed: {ex.Message}");
+                        Logger.Warn("UI", $"Clipboard copy failed: {ex.Message}");
                     }
                 };
 
@@ -223,7 +223,7 @@ public static class FilePropertiesDialog
             }
             catch (Exception ex)
             {
-                Logger.Log($"FilePropertiesDialog exception: {ex}");
+                Logger.Error("UI", "FilePropertiesDialog exception", ex);
             }
         });
 
@@ -400,7 +400,7 @@ public static class FilePropertiesDialog
             }
             catch (Exception ex)
             {
-                Logger.Log($"ShowTrashProperties exception: {ex}");
+                Logger.Error("UI", "ShowTrashProperties exception", ex);
             }
         });
 

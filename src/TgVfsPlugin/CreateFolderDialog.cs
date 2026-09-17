@@ -21,7 +21,7 @@ public static class CreateFolderDialog
         {
             try
             {
-                Logger.Log("Initializing CreateFolderDialog...");
+                Logger.Info("UI", "Initializing CreateFolderDialog...");
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
@@ -83,7 +83,7 @@ public static class CreateFolderDialog
             }
             catch (Exception ex)
             {
-                Logger.Log($"CreateFolderDialog Error: {ex}");
+                Logger.Error("UI", "CreateFolderDialog Error", ex);
             }
         });
 
