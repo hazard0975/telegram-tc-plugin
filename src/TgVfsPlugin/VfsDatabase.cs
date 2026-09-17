@@ -273,19 +273,18 @@ public class VfsDatabase : IDisposable
     public List<FileRecord> GetTrashFiles(string mountId, string? parent = null)
     {
         var list = new List<FileRecord>();
-        var cmd = _connection.CreateCommand();
         string cleanParent = string.IsNullOrEmpty(parent) ? "" : parent.Trim('\\', '/').Replace('/', '\\');
 
+        // 1. Извлекаем все выбывшие файлы и явно удаленные папки для данного родительского пути
+        var cmd = _connection.CreateCommand();
         if (string.IsNullOrEmpty(cleanParent))
         {
-            // В корне корзины показываем удаленные элементы, чей родитель не находится в корзине
             cmd.CommandText = @"
                 SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
                 FROM files
                 WHERE mount_id = @mid AND in_trash = 1
-                  AND (parent IS NULL OR parent = '' OR parent = 'false' OR parent NOT IN (SELECT (CASE WHEN parent IS NULL OR parent = '' THEN name ELSE parent || '\' || name END) FROM files WHERE mount_id = @mid AND isdir = 1 AND in_trash = 1))
-                ORDER BY isdir DESC, mtime DESC
-            ";
+                  AND (parent IS NULL OR parent = '' OR parent = 'false')
+                ORDER BY isdir DESC, mtime DESC";
         }
         else
         {
@@ -294,28 +293,88 @@ public class VfsDatabase : IDisposable
                 FROM files
                 WHERE mount_id = @mid AND in_trash = 1
                   AND parent = @parent COLLATE NOCASE
-                ORDER BY isdir DESC, mtime DESC
-            ";
+                ORDER BY isdir DESC, mtime DESC";
             cmd.Parameters.AddWithValue("@parent", cleanParent);
         }
         cmd.Parameters.AddWithValue("@mid", mountId);
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
+
+        using (var reader = cmd.ExecuteReader())
         {
-            list.Add(new FileRecord
+            while (reader.Read())
             {
-                Uid = reader.GetString(0),
-                MountId = reader.GetString(1),
-                IsDir = reader.GetInt32(2) == 1,
-                Name = reader.GetString(3),
-                Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
-                MTime = ReadDateTime(reader, 5),
-                Size = reader.GetInt64(6),
-                TgMessageId = reader.GetInt32(7),
-                InTrash = reader.GetInt32(8),
-                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9)
-            });
+                list.Add(new FileRecord
+                {
+                    Uid = reader.GetString(0),
+                    MountId = reader.GetString(1),
+                    IsDir = reader.GetInt32(2) == 1,
+                    Name = reader.GetString(3),
+                    Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
+                    MTime = ReadDateTime(reader, 5),
+                    Size = reader.GetInt64(6),
+                    TgMessageId = reader.GetInt32(7),
+                    InTrash = reader.GetInt32(8),
+                    Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9)
+                });
+            }
         }
+
+        // 2. Ищем родительские виртуальные папки, в которых находятся удаленные подфайлы
+        var existingDirNames = new HashSet<string>(
+            list.Where(x => x.IsDir).Select(x => x.Name),
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        using (var cmdSubDirs = _connection.CreateCommand())
+        {
+            if (string.IsNullOrEmpty(cleanParent))
+            {
+                cmdSubDirs.CommandText = @"
+                    SELECT DISTINCT parent
+                    FROM files
+                    WHERE mount_id = @mid AND in_trash = 1
+                      AND (parent IS NOT NULL AND parent != '' AND parent != 'false')";
+            }
+            else
+            {
+                cmdSubDirs.CommandText = @"
+                    SELECT DISTINCT parent
+                    FROM files
+                    WHERE mount_id = @mid AND in_trash = 1
+                      AND (parent LIKE @parentPrefix COLLATE NOCASE)";
+                cmdSubDirs.Parameters.AddWithValue("@parentPrefix", cleanParent + "\\%");
+            }
+            cmdSubDirs.Parameters.AddWithValue("@mid", mountId);
+
+            using var reader = cmdSubDirs.ExecuteReader();
+            while (reader.Read())
+            {
+                string p = reader.GetString(0);
+                string relativePath = string.IsNullOrEmpty(cleanParent)
+                    ? p
+                    : p.Substring(cleanParent.Length).TrimStart('\\');
+
+                int slashIdx = relativePath.IndexOf('\\');
+                string immediateDir = slashIdx >= 0 ? relativePath.Substring(0, slashIdx) : relativePath;
+
+                if (!string.IsNullOrEmpty(immediateDir) && existingDirNames.Add(immediateDir))
+                {
+                    list.Insert(0, new FileRecord
+                    {
+                        Uid = Guid.NewGuid().ToString("N"),
+                        MountId = mountId,
+                        IsDir = true,
+                        Name = immediateDir,
+                        Parent = string.IsNullOrEmpty(cleanParent) ? null : cleanParent,
+                        MTime = DateTime.UtcNow,
+                        Size = 0,
+                        TgMessageId = 0,
+                        InTrash = 1,
+                        Ver = 1
+                    });
+                }
+            }
+        }
+
         return list;
     }
 
@@ -340,10 +399,10 @@ public class VfsDatabase : IDisposable
             }
         }
 
-        // Fallback: если не найден с точным родителем, поищем глобально среди удаленных
+        // Fallback: если не найден с точным родителем, поищем среди всех удаленных записей канала
         if (!string.IsNullOrEmpty(parent))
         {
-            var allTrash = GetTrashFiles(mountId, null);
+            var allTrash = GetTrashFileRecords(mountId);
             foreach (var f in allTrash)
             {
                 if (f.IsDir)
