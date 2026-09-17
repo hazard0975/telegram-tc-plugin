@@ -77,6 +77,9 @@ public class VfsDatabase : IDisposable
         {
             // Колонка уже существует
         }
+
+        // Автоматическая очистка дубликатов активных файлов
+        CleanupDuplicateActiveFilesAll();
     }
 
     // Вспомогательный класс для представления элементов ФС
@@ -216,6 +219,7 @@ public class VfsDatabase : IDisposable
                 SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
                 FROM files
                 WHERE mount_id = @mid AND name = @name COLLATE NOCASE AND (parent IS NULL OR parent = '' OR parent = 'false') AND (in_trash IS NULL OR in_trash = 0)
+                ORDER BY ver DESC, mtime DESC
                 LIMIT 1
             ";
         }
@@ -225,6 +229,7 @@ public class VfsDatabase : IDisposable
                 SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
                 FROM files
                 WHERE mount_id = @mid AND name = @name COLLATE NOCASE AND parent = @parent COLLATE NOCASE AND (in_trash IS NULL OR in_trash = 0)
+                ORDER BY ver DESC, mtime DESC
                 LIMIT 1
             ";
             cmd.Parameters.AddWithValue("@parent", cleanParent);
@@ -284,7 +289,7 @@ public class VfsDatabase : IDisposable
                 FROM files
                 WHERE mount_id = @mid AND in_trash = 1
                   AND (parent IS NULL OR parent = '' OR parent = 'false')
-                ORDER BY isdir DESC, mtime DESC";
+                ORDER BY isdir DESC, ver DESC, mtime DESC";
         }
         else
         {
@@ -293,7 +298,7 @@ public class VfsDatabase : IDisposable
                 FROM files
                 WHERE mount_id = @mid AND in_trash = 1
                   AND parent = @parent COLLATE NOCASE
-                ORDER BY isdir DESC, mtime DESC";
+                ORDER BY isdir DESC, ver DESC, mtime DESC";
             cmd.Parameters.AddWithValue("@parent", cleanParent);
         }
         cmd.Parameters.AddWithValue("@mid", mountId);
@@ -381,6 +386,8 @@ public class VfsDatabase : IDisposable
     public FileRecord? GetTrashFileByVersionedName(string mountId, string versionedName, string? parent = null)
     {
         var trashFiles = GetTrashFiles(mountId, parent);
+
+        // 1. Проход 1: Точное совпадение по версионному имени (vName = "plugin_log_v2.txt") или имени папки
         foreach (var f in trashFiles)
         {
             if (f.IsDir)
@@ -391,15 +398,23 @@ public class VfsDatabase : IDisposable
             else
             {
                 string vName = GetVersionedFileName(f.Name, f.Ver);
-                if (vName.Equals(versionedName, StringComparison.OrdinalIgnoreCase) ||
-                    f.Name.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
+                if (vName.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
                 {
                     return f;
                 }
             }
         }
 
-        // Fallback: если не найден с точным родителем, поищем среди всех удаленных записей канала
+        // 2. Проход 2: Fallback — если запрошено чистое имя без версии "plugin_log.txt", берём первое совпадение
+        foreach (var f in trashFiles)
+        {
+            if (!f.IsDir && f.Name.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
+            {
+                return f;
+            }
+        }
+
+        // 3. Fallback 2: Поиск среди всех элементов Корзины канала
         if (!string.IsNullOrEmpty(parent))
         {
             var allTrash = GetTrashFileRecords(mountId);
@@ -413,11 +428,17 @@ public class VfsDatabase : IDisposable
                 else
                 {
                     string vName = GetVersionedFileName(f.Name, f.Ver);
-                    if (vName.Equals(versionedName, StringComparison.OrdinalIgnoreCase) ||
-                        f.Name.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
+                    if (vName.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
                     {
                         return f;
                     }
+                }
+            }
+            foreach (var f in allTrash)
+            {
+                if (!f.IsDir && f.Name.Equals(versionedName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return f;
                 }
             }
         }
@@ -594,8 +615,15 @@ public class VfsDatabase : IDisposable
             cmdSub.CommandText = @"
                 UPDATE files 
                 SET in_trash = 0 
-                WHERE mount_id = @mid 
-                  AND (parent = @exactPath OR parent LIKE @prefixPath)
+                WHERE uid IN (
+                    SELECT uid FROM (
+                        SELECT uid, ROW_NUMBER() OVER (PARTITION BY parent, name ORDER BY isdir DESC, ver DESC, mtime DESC) as rn
+                        FROM files
+                        WHERE mount_id = @mid 
+                          AND (parent = @exactPath OR parent LIKE @prefixPath)
+                          AND in_trash = 1
+                    ) WHERE rn = 1
+                )
             ";
             cmdSub.Parameters.AddWithValue("@mid", file.MountId);
             cmdSub.Parameters.AddWithValue("@exactPath", dirSubPath);
@@ -609,7 +637,67 @@ public class VfsDatabase : IDisposable
             Logger.Info("DB", $"[RESTORE OK] Restored file '{file.Name}' from Trash");
         }
 
+        CleanupDuplicateActiveFiles(file.MountId);
+
         return true;
+    }
+
+    public void CleanupDuplicateActiveFiles(string mountId)
+    {
+        try
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+                UPDATE files 
+                SET in_trash = 1 
+                WHERE mount_id = @mid 
+                  AND uid IN (
+                      SELECT uid FROM (
+                          SELECT uid, ROW_NUMBER() OVER (PARTITION BY parent, name ORDER BY isdir DESC, ver DESC, mtime DESC) as rn
+                          FROM files
+                          WHERE mount_id = @mid AND (in_trash IS NULL OR in_trash = 0)
+                      ) WHERE rn > 1
+                  );
+            ";
+            cmd.Parameters.AddWithValue("@mid", mountId);
+            int cleaned = cmd.ExecuteNonQuery();
+            if (cleaned > 0)
+            {
+                Logger.Info("DB", $"[CLEANUP] Moved {cleaned} duplicate active file(s) back to Trash in mount '{mountId}'.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn("DB", $"CleanupDuplicateActiveFiles error: {ex.Message}");
+        }
+    }
+
+    public void CleanupDuplicateActiveFilesAll()
+    {
+        try
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+                UPDATE files 
+                SET in_trash = 1 
+                WHERE uid IN (
+                    SELECT uid FROM (
+                        SELECT uid, ROW_NUMBER() OVER (PARTITION BY parent, name ORDER BY isdir DESC, ver DESC, mtime DESC) as rn
+                        FROM files
+                        WHERE in_trash IS NULL OR in_trash = 0
+                    ) WHERE rn > 1
+                );
+            ";
+            int cleaned = cmd.ExecuteNonQuery();
+            if (cleaned > 0)
+            {
+                Logger.Info("DB", $"[CLEANUP] Cleaned {cleaned} duplicate active file(s) across all mounts.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn("DB", $"CleanupDuplicateActiveFilesAll error: {ex.Message}");
+        }
     }
 
     public void DeleteFilePermanently(string uid)
@@ -627,7 +715,8 @@ public class VfsDatabase : IDisposable
         cmd.CommandText = @"
             SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
             FROM files
-            WHERE mount_id = @mid AND in_trash = 1";
+            WHERE mount_id = @mid AND in_trash = 1
+            ORDER BY isdir DESC, ver DESC, mtime DESC";
         cmd.Parameters.AddWithValue("@mid", mountId);
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
