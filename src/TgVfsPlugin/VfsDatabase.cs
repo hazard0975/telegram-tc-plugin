@@ -506,7 +506,11 @@ public class VfsDatabase : IDisposable
     public bool RestoreFile(string uid)
     {
         var file = GetFileByUid(uid);
-        if (file == null) return false;
+        if (file == null)
+        {
+            Logger.Warn("DB", $"[RESTORE WARN] Item with UID '{uid}' not found in SQLite.");
+            return false;
+        }
 
         EnsureParentDirectoriesExist(file.MountId, file.Parent);
 
@@ -520,6 +524,32 @@ public class VfsDatabase : IDisposable
         cmd.CommandText = "UPDATE files SET in_trash = 0 WHERE uid = @uid";
         cmd.Parameters.AddWithValue("@uid", uid);
         cmd.ExecuteNonQuery();
+
+        if (file.IsDir)
+        {
+            string dirSubPath = string.IsNullOrEmpty(file.Parent) 
+                ? file.Name 
+                : file.Parent.Trim('\\', '/') + "\\" + file.Name;
+
+            using var cmdSub = _connection.CreateCommand();
+            cmdSub.CommandText = @"
+                UPDATE files 
+                SET in_trash = 0 
+                WHERE mount_id = @mid 
+                  AND (parent = @exactPath OR parent LIKE @prefixPath)
+            ";
+            cmdSub.Parameters.AddWithValue("@mid", file.MountId);
+            cmdSub.Parameters.AddWithValue("@exactPath", dirSubPath);
+            cmdSub.Parameters.AddWithValue("@prefixPath", dirSubPath + "\\%");
+            int nestedRestored = cmdSub.ExecuteNonQuery();
+
+            Logger.Info("DB", $"[RESTORE OK] Restored folder '{file.Name}' and {nestedRestored} nested item(s) from Trash");
+        }
+        else
+        {
+            Logger.Info("DB", $"[RESTORE OK] Restored file '{file.Name}' from Trash");
+        }
+
         return true;
     }
 
