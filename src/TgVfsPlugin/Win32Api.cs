@@ -18,6 +18,9 @@ public static class Win32Api
     [DllImport("kernel32.dll")]
     public static extern void SetLastError(uint dwErrCode);
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern uint GetModuleFileName(IntPtr hModule, StringBuilder lpFilename, int nSize);
+
     public const uint ERROR_NO_MORE_FILES = 18;
 
     // WFX Plugin Return Codes
@@ -426,6 +429,36 @@ public static class Win32Api
         public uint dwReserved1;
         public fixed char cFileName[MAX_PATH];
         public fixed char cAlternateFileName[14];
+    }
+
+    public static string GetCurrentModulePath()
+    {
+        try
+        {
+            IntPtr hModule = Marshal.GetHINSTANCE(typeof(Win32Api).Module);
+            StringBuilder sb = new StringBuilder(MAX_PATH * 2);
+            uint len = GetModuleFileName(hModule, sb, sb.Capacity);
+            if (len > 0)
+            {
+                return sb.ToString();
+            }
+        }
+        catch { }
+        return AppContext.BaseDirectory;
+    }
+
+    public static string GetPluginVfsName()
+    {
+        try
+        {
+            string path = GetCurrentModulePath();
+            if (!string.IsNullOrEmpty(path))
+            {
+                return System.IO.Path.GetFileNameWithoutExtension(path);
+            }
+        }
+        catch { }
+        return "tgvfsplugin";
     }
 }
 
