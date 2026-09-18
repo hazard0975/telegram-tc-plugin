@@ -309,7 +309,7 @@ public static unsafe class WfxExports
             if (parts.Length > 1)
             {
                 var firstMount = _db.GetMountByName(parts[0]);
-                if (firstMount == null)
+                if (firstMount == null && !IsTrashFolder(parts[0]))
                 {
                     var secondMount = _db.GetMountByName(parts[1]);
                     if (secondMount != null)
@@ -349,6 +349,11 @@ public static unsafe class WfxExports
         }
 
         string cleanPath = NormalizeVfsPath(dirPath);
+        if (cleanPath.Equals("[⚙] Настройки", StringComparison.OrdinalIgnoreCase))
+        {
+            Logger.Info("WFX", "CreateStateForPath: Intercepted Settings directory. Returning empty state.");
+            return new FindState();
+        }
         string displayPath = string.IsNullOrEmpty(cleanPath) ? "\\" : $"\\{cleanPath}";
         Logger.Info("WFX", $"[DIR OPEN] Opened folder '{displayPath}'");
 
@@ -417,7 +422,7 @@ public static unsafe class WfxExports
                 state.Items.Add(new VfsDatabase.VfsItem 
                 { 
                     Name = "[⚙] Настройки", 
-                    IsDirectory = false, 
+                    IsDirectory = true, 
                     Size = 0,
                     Date = DateTime.Now 
                 });
@@ -554,12 +559,10 @@ public static unsafe class WfxExports
             {
                 string basePath = AppContext.BaseDirectory;
                 
-                using var processModule = System.Diagnostics.Process.GetCurrentProcess().Modules.Cast<System.Diagnostics.ProcessModule>()
-                    .FirstOrDefault(m => m.ModuleName != null && m.ModuleName.StartsWith("TgVfsPlugin", StringComparison.OrdinalIgnoreCase));
-                    
-                if (processModule != null && !string.IsNullOrEmpty(processModule.FileName))
+                string modPath = Win32Api.GetCurrentModulePath();
+                if (!string.IsNullOrEmpty(modPath))
                 {
-                    basePath = System.IO.Path.GetDirectoryName(processModule.FileName) ?? basePath;
+                    basePath = System.IO.Path.GetDirectoryName(modPath) ?? basePath;
                 }
 
                 string arch = IntPtr.Size == 8 ? "x64" : "x86";
@@ -885,7 +888,12 @@ public static unsafe class WfxExports
             return Win32Api.FS_EXEC_OK;
         }
 
-        if (path.EndsWith("[⚙] Настройки") || path.EndsWith("[*] Настройки плагина"))
+        string execClean = NormalizeVfsPath(path);
+        if (execClean.Equals("[⚙] Настройки", StringComparison.OrdinalIgnoreCase) || 
+            path.EndsWith("[⚙] Настройки") || 
+            path.EndsWith("[⚙] Настройки\\") || 
+            path.EndsWith("[⚙] Настройки/") || 
+            path.EndsWith("[*] Настройки плагина"))
         {
             System.Threading.Tasks.Task.Run(() => 
             {

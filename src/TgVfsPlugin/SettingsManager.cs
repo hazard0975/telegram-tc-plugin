@@ -25,13 +25,10 @@ public static class SettingsManager
             {
                 try
                 {
-                    using var proc = System.Diagnostics.Process.GetCurrentProcess();
-                    var module = proc.Modules.Cast<System.Diagnostics.ProcessModule>()
-                        .FirstOrDefault(m => m.ModuleName != null && m.ModuleName.StartsWith("TgVfsPlugin", StringComparison.OrdinalIgnoreCase));
-
-                    if (module != null && !string.IsNullOrEmpty(module.FileName))
+                    string modPath = Win32Api.GetCurrentModulePath();
+                    if (!string.IsNullOrEmpty(modPath))
                     {
-                        _cachedPluginDir = Path.GetDirectoryName(module.FileName);
+                        _cachedPluginDir = Path.GetDirectoryName(modPath);
                     }
                 }
                 catch { }
