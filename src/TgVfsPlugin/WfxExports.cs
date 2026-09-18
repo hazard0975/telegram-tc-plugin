@@ -349,27 +349,6 @@ public static unsafe class WfxExports
         }
 
         string cleanPath = NormalizeVfsPath(dirPath);
-        if (cleanPath.Equals("[⚙] Настройки", StringComparison.OrdinalIgnoreCase))
-        {
-            Logger.Info("WFX", "CreateStateForPath: Intercepted Settings directory. Showing dialog and redirecting back.");
-            
-            // Запускаем показ настроек в отдельном потоке, чтобы не блокировать ТС
-            System.Threading.Tasks.Task.Run(() => 
-            {
-                ShowSettingsDialog();
-            });
-
-            // Направляем активную панель обратно в корень плагина, пока открыт диалог настроек
-            string pluginName = Win32Api.GetPluginVfsName();
-            string rootPath = @"\\\" + pluginName;
-            System.Threading.Tasks.Task.Run(() => 
-            {
-                System.Threading.Thread.Sleep(150);
-                Win32Api.ChangeActivePanelDir(rootPath);
-            });
-
-            return new FindState();
-        }
         string displayPath = string.IsNullOrEmpty(cleanPath) ? "\\" : $"\\{cleanPath}";
         Logger.Info("WFX", $"[DIR OPEN] Opened folder '{displayPath}'");
 
@@ -438,7 +417,7 @@ public static unsafe class WfxExports
                 state.Items.Add(new VfsDatabase.VfsItem 
                 { 
                     Name = "[⚙] Настройки", 
-                    IsDirectory = true, 
+                    IsDirectory = false, 
                     Size = 0,
                     Date = DateTime.Now 
                 });
@@ -847,7 +826,7 @@ public static unsafe class WfxExports
                 {
                     Logger.Error("WFX", "Create folder error", ex);
                 }
-            }).GetAwaiter().GetResult();
+            });
             
             return Win32Api.FS_EXEC_OK;
         }
@@ -899,7 +878,7 @@ public static unsafe class WfxExports
                 {
                     Logger.Error("WFX", "Delete folder error", ex);
                 }
-            }).GetAwaiter().GetResult();
+            });
 
             return Win32Api.FS_EXEC_OK;
         }
@@ -914,14 +893,13 @@ public static unsafe class WfxExports
             System.Threading.Tasks.Task.Run(() => 
             {
                 ShowSettingsDialog();
-            }).GetAwaiter().GetResult();
+            });
             
             return Win32Api.FS_EXEC_OK;
         }
 
         if (path.EndsWith("[ Login required.txt ]"))
         {
-            // Запускаем асинхронный логин в синхронном контексте без await (Task.Run)
             System.Threading.Tasks.Task.Run(() => 
             {
                 try
@@ -937,7 +915,7 @@ public static unsafe class WfxExports
                 {
                     Logger.Error("TG", "Login task failed", ex);
                 }
-            }).GetAwaiter().GetResult();
+            });
             
             return Win32Api.FS_EXEC_OK;
         }

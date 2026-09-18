@@ -469,17 +469,74 @@ public static class Win32Api
     [UnmanagedCallersOnly]
     private static void DummyMethod() { }
 
+    private static string? _cachedPluginVfsName = null;
+
     public static string GetPluginVfsName()
     {
+        if (_cachedPluginVfsName != null) return _cachedPluginVfsName;
+
+        try
+        {
+            IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
+            if (tcWindow != IntPtr.Zero)
+            {
+                string? foundName = null;
+                EnumChildWindows(tcWindow, (hWnd, lParam) =>
+                {
+                    StringBuilder clsSb = new StringBuilder(256);
+                    GetClassName(hWnd, clsSb, clsSb.Capacity);
+                    string clsName = clsSb.ToString();
+
+                    if (clsName.Contains("PathBox", StringComparison.OrdinalIgnoreCase) ||
+                        clsName.Contains("TMyPath", StringComparison.OrdinalIgnoreCase))
+                    {
+                        StringBuilder textSb = new StringBuilder(512);
+                        GetWindowText(hWnd, textSb, textSb.Capacity);
+                        string text = textSb.ToString().Trim();
+
+                        if (!string.IsNullOrEmpty(text) && (text.StartsWith("\\\\\\") || text.StartsWith("\\\\")))
+                        {
+                            string cleanText = text.TrimStart('\\').TrimStart('/');
+                            int firstSlash = cleanText.IndexOf('\\');
+                            if (firstSlash == -1) firstSlash = cleanText.IndexOf('/');
+
+                            string pluginPart = firstSlash >= 0 ? cleanText.Substring(0, firstSlash) : cleanText;
+
+                            if (pluginPart.Contains("tgvfs", StringComparison.OrdinalIgnoreCase) ||
+                                pluginPart.Contains("tg", StringComparison.OrdinalIgnoreCase))
+                            {
+                                foundName = pluginPart;
+                                return false; // stop enumeration
+                            }
+                        }
+                    }
+                    return true;
+                }, IntPtr.Zero);
+
+                if (!string.IsNullOrEmpty(foundName))
+                {
+                    _cachedPluginVfsName = foundName;
+                    return foundName;
+                }
+            }
+        }
+        catch { }
+
         try
         {
             string path = GetCurrentModulePath();
             if (!string.IsNullOrEmpty(path))
             {
-                return System.IO.Path.GetFileNameWithoutExtension(path);
+                string dllName = System.IO.Path.GetFileNameWithoutExtension(path);
+                if (dllName.Equals("TgVfsPlugin", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "tgvfsplugin";
+                }
+                return dllName;
             }
         }
         catch { }
+
         return "tgvfsplugin";
     }
 }
