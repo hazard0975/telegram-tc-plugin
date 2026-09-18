@@ -339,19 +339,24 @@ public static class Win32Api
             }
         }
 
-        Logger.Debug("WIN32", $"ChangeInactivePanelDir: Detected VFS side={(detectedByPathBox ? (isLeftVfs ? "Left" : "Right") : "ByFocus")}. Sending target directory '{inactivePath}' to {(isLeftPanelActive ? "Right" : "Left")} panel.");
+        bool targetOpposite = SettingsManager.PropertiesNavigationOppositePanel;
+        bool changeRightPanel = targetOpposite ? isLeftPanelActive : !isLeftPanelActive;
+
+        Logger.Debug("WIN32", $"ChangeInactivePanelDir: Detected VFS side={(detectedByPathBox ? (isLeftVfs ? "Left" : "Right") : "ByFocus")}. " +
+            $"Targeting {(targetOpposite ? "opposite" : "active")} panel. " +
+            $"Sending target directory '{inactivePath}' to {(changeRightPanel ? "Right" : "Left")} panel.");
 
         // В Total Commander формат команды смены директории через WM_COPYDATA ('CD'):
         // Поддержка Unicode (кириллицы и спецсимволов) с версии TC 7.50+: префикс UTF-8 BOM (0xEF, 0xBB, 0xBF) перед путем.
-        // Если VFS слева -> меняем правую: "\r" + BOM + path + "\0"
-        // Если VFS справа -> меняем левую: BOM + path + "\r\0"
+        // Если меняем правую панель: "\r" + BOM + path + "\0"
+        // Если меняем левую панель: BOM + path + "\r\0"
         byte[] bom = new byte[] { 0xEF, 0xBB, 0xBF };
         byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(inactivePath);
 
         byte[] payloadBytes;
         using (var ms = new System.IO.MemoryStream())
         {
-            if (isLeftPanelActive)
+            if (changeRightPanel)
             {
                 ms.WriteByte((byte)'\r');
                 ms.Write(bom, 0, bom.Length);
