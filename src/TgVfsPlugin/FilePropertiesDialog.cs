@@ -161,7 +161,7 @@ public static class FilePropertiesDialog
                     Text = "Копировать",
                     Left = 20,
                     Top = 355,
-                    Width = 110,
+                    Width = 100,
                     Height = 30
                 };
                 copyBtn.Click += (s, e) =>
@@ -198,14 +198,16 @@ public static class FilePropertiesDialog
                 };
 
                 Button? restoreBtn = null;
+                Button? navBtn = null;
+
                 if (file.InTrash == 1 && db != null)
                 {
                     restoreBtn = new Button()
                     {
                         Text = "↺ Восстановить",
-                        Left = 140,
+                        Left = 130,
                         Top = 355,
-                        Width = 150,
+                        Width = 130,
                         Height = 30,
                         BackColor = Color.FromArgb(230, 245, 230)
                     };
@@ -234,12 +236,56 @@ public static class FilePropertiesDialog
                         }
                     };
                     form.Controls.Add(restoreBtn);
+
+                    // Кнопка перехода к файлу или к папке из корзины в активный VFS
+                    navBtn = new Button()
+                    {
+                        Text = file.IsDir ? "К папке" : "К файлу",
+                        Left = 270,
+                        Top = 355,
+                        Width = 100,
+                        Height = 30
+                    };
+                    navBtn.Click += (s, e) =>
+                    {
+                        if (db != null && !db.ActiveFolderExists(file.MountId, file.Parent))
+                        {
+                            MessageBox.Show(form, "Исходное расположение больше не существует в активном хранилище.", "Ошибка навигации", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        }
+                        else
+                        {
+                            string targetVfsPath = "\\\\" + channelName + (string.IsNullOrEmpty(file.Parent) ? "" : "\\" + file.Parent);
+                            Win32Api.ChangeInactivePanelDir(targetVfsPath);
+                            form.Close();
+                        }
+                    };
+                    form.Controls.Add(navBtn);
+                }
+                else if (file.Uid != file.MountId) // не показываем на самом канале
+                {
+                    // Кнопка перехода к корзине для активного файла или папки
+                    navBtn = new Button()
+                    {
+                        Text = "Корзина",
+                        Left = 130,
+                        Top = 355,
+                        Width = 120,
+                        Height = 30
+                    };
+                    navBtn.Click += (s, e) =>
+                    {
+                        string targetFolder = file.IsDir ? relativePath : (file.Parent ?? "");
+                        string targetVfsPath = "\\\\[🗑] Корзина\\" + channelName + (string.IsNullOrEmpty(targetFolder) ? "" : "\\" + targetFolder);
+                        Win32Api.ChangeInactivePanelDir(targetVfsPath);
+                        form.Close();
+                    };
+                    form.Controls.Add(navBtn);
                 }
 
                 Button okBtn = new Button()
                 {
                     Text = "Закрыть",
-                    Left = 385,
+                    Left = 380,
                     Top = 355,
                     Width = 100,
                     Height = 30,
@@ -457,7 +503,23 @@ public static class FilePropertiesDialog
                     DialogResult = DialogResult.OK
                 };
 
+                Button navBtn = new Button()
+                {
+                    Text = "К каналу",
+                    Left = 140,
+                    Top = 255,
+                    Width = 110,
+                    Height = 30
+                };
+                navBtn.Click += (s, e) =>
+                {
+                    string targetVfsPath = "\\\\" + channelName;
+                    Win32Api.ChangeInactivePanelDir(targetVfsPath);
+                    form.Close();
+                };
+
                 form.Controls.Add(cleanBtn);
+                form.Controls.Add(navBtn);
                 form.Controls.Add(closeBtn);
                 form.CancelButton = closeBtn;
 
