@@ -18,43 +18,10 @@ public static unsafe class WfxExports
     private static Win32Api.ProgressProc? _progressProcDelegate;
     private static bool _isUnicode = true;
     private static string? _lastMirrorPath;
-    public const string TrashDirName = "[🗑] Корзина";
+    public const string TrashDirName = ".[🗑] Корзина";
     public static bool IsTrashFolder(string name) =>
         name.Equals(".[🗑] Корзина", StringComparison.OrdinalIgnoreCase) ||
         name.Equals("[🗑] Корзина", StringComparison.OrdinalIgnoreCase);
-
-    public static void ParseVfsPath(string cleanPath, out string channelName, out string subPath, out bool isInTrash)
-    {
-        channelName = "";
-        subPath = "";
-        isInTrash = false;
-
-        if (string.IsNullOrWhiteSpace(cleanPath)) return;
-
-        string[] parts = cleanPath.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0) return;
-
-        if (IsTrashFolder(parts[0]))
-        {
-            isInTrash = true;
-            if (parts.Length > 1)
-            {
-                channelName = parts[1];
-                if (parts.Length > 2)
-                {
-                    subPath = string.Join("\\", parts, 2, parts.Length - 2);
-                }
-            }
-        }
-        else
-        {
-            channelName = parts[0];
-            if (parts.Length > 1)
-            {
-                subPath = string.Join("\\", parts, 1, parts.Length - 1);
-            }
-        }
-    }
 
     // Класс для хранения состояния поиска
     private class FindState
@@ -309,7 +276,7 @@ public static unsafe class WfxExports
             if (parts.Length > 1)
             {
                 var firstMount = _db.GetMountByName(parts[0]);
-                if (firstMount == null && !IsTrashFolder(parts[0]))
+                if (firstMount == null)
                 {
                     var secondMount = _db.GetMountByName(parts[1]);
                     if (secondMount != null)
@@ -421,85 +388,92 @@ public static unsafe class WfxExports
                     Size = 0,
                     Date = DateTime.Now 
                 });
-                state.Items.Add(new VfsDatabase.VfsItem 
-                { 
-                    Name = TrashDirName, 
-                    IsDirectory = true, 
-                    Size = 0,
-                    Date = DateTime.Now 
-                });
                 state.Items.AddRange(_db.GetMounts());
-                Logger.Info("WFX", $"[DIR LIST] Root directory: Found {state.Items.Count} item(s) (Channels, Triggers & Trash)");
+                Logger.Info("WFX", $"[DIR LIST] Root directory: Found {state.Items.Count} item(s) (Channels & Triggers)");
             }
             else
             {
-                ParseVfsPath(cleanPath, out string channelTitle, out string parentSubPath, out bool isInTrash);
-
-                if (isInTrash)
+                // Внутри канала (наш путь начинается с названия канала, например "Work Chat")
+                string[] parts = cleanPath.Split('\\');
+                string channelTitle = parts[0];
+                string? parentSubPath = null;
+                if (parts.Length > 1)
                 {
-                    if (string.IsNullOrEmpty(channelTitle))
-                    {
-                        // Корень Корзины: выводим список всех доступных каналов
-                        state.Items.AddRange(_db.GetMounts());
-                        Logger.Info("WFX", $"[TRASH LIST] Trash Root: Found {state.Items.Count} channel folder(s)");
-                    }
-                    else
-                    {
-                        var mount = _db.GetMountByName(channelTitle);
-                        if (mount != null)
-                        {
-                            string? trashParent = string.IsNullOrEmpty(parentSubPath) ? null : parentSubPath;
-                            var trashFiles = _db.GetTrashFiles(mount.Id, trashParent);
-                            foreach (var tf in trashFiles)
-                            {
-                                string displayName = tf.IsDir ? tf.Name : VfsDatabase.GetVersionedFileName(tf.Name, tf.Ver);
-                                state.Items.Add(new VfsDatabase.VfsItem
-                                {
-                                    Name = displayName,
-                                    IsDirectory = tf.IsDir,
-                                    Size = tf.Size,
-                                    Date = tf.MTime
-                                });
-                            }
-                        }
+                    parentSubPath = string.Join("\\", parts, 1, parts.Length - 1);
+                }
+                
+                var mount = _db.GetMountByName(channelTitle);
 
-                        if (state.Items.Count == 0 && string.IsNullOrEmpty(parentSubPath))
+                // Проверяем, не находимся ли мы внутри виртуальной папки ".[🗑] Корзина"
+                if (parts.Length > 1 && IsTrashFolder(parts[1]))
+                {
+                    if (mount != null)
+                    {
+                        string? trashParent = parts.Length > 2 ? string.Join("\\", parts, 2, parts.Length - 2) : null;
+                        var trashFiles = _db.GetTrashFiles(mount.Id, trashParent);
+                        foreach (var tf in trashFiles)
                         {
+                            string displayName = tf.IsDir ? tf.Name : VfsDatabase.GetVersionedFileName(tf.Name, tf.Ver);
                             state.Items.Add(new VfsDatabase.VfsItem
                             {
-                                Name = "[ Корзина пуста ]",
-                                IsDirectory = false,
-                                Size = 0,
-                                Date = DateTime.Now
+                                Name = displayName,
+                                IsDirectory = tf.IsDir,
+                                Size = tf.Size,
+                                Date = tf.MTime
                             });
                         }
-                        Logger.Info("WFX", $"[TRASH LIST] Channel '{channelTitle}' Trash Subpath '{parentSubPath}': Found {state.Items.Count} item(s)");
                     }
+
+                    if (state.Items.Count == 0 && parts.Length == 2)
+                    {
+                        state.Items.Add(new VfsDatabase.VfsItem
+                        {
+                            Name = "[ Корзина пуста ]",
+                            IsDirectory = false,
+                            Size = 0,
+                            Date = DateTime.Now
+                        });
+                    }
+                    Logger.Info("WFX", $"[TRASH LIST] Folder '{displayPath}': Found {state.Items.Count} deleted item(s)");
                 }
                 else
                 {
-                    var mount = _db.GetMountByName(channelTitle);
                     if (mount != null && mount.Mode == 0 && !string.IsNullOrEmpty(mount.LocalPath))
                     {
                         string localPathToSet = mount.LocalPath;
-                        if (!string.IsNullOrEmpty(parentSubPath))
+                        if (parts.Length > 1)
                         {
-                            localPathToSet = System.IO.Path.Combine(mount.LocalPath, parentSubPath);
+                            string[] subParts = new string[parts.Length - 1];
+                            Array.Copy(parts, 1, subParts, 0, parts.Length - 1);
+                            localPathToSet = System.IO.Path.Combine(mount.LocalPath, System.IO.Path.Combine(subParts));
                         }
                         
                         if (!_isBatchOperation && !string.Equals(_lastMirrorPath, localPathToSet, StringComparison.OrdinalIgnoreCase))
                         {
                             _lastMirrorPath = localPathToSet;
                             Logger.Info("WFX", $"[MIRROR] Syncing target panel to local folder '{localPathToSet}'");
+                            // Cannot use async/await in unsafe context, use ContinueWith or thread pool
                             System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => {
                                 Win32Api.ChangeInactivePanelDir(localPathToSet);
                             });
                         }
                     }
                     
-                    var channelFiles = _db.GetFiles(channelTitle, string.IsNullOrEmpty(parentSubPath) ? null : parentSubPath);
+                    // В корне канала добавляем виртуальную папку корзины
+                    if (parts.Length == 1)
+                    {
+                        state.Items.Add(new VfsDatabase.VfsItem
+                        {
+                            Name = TrashDirName,
+                            IsDirectory = true,
+                            Size = 0,
+                            Date = DateTime.Now
+                        });
+                    }
+
+                    var channelFiles = _db.GetFiles(channelTitle, parentSubPath);
                     state.Items.AddRange(channelFiles);
-                    Logger.Info("WFX", $"[DIR LIST] Channel '{channelTitle}' Active Subpath '{parentSubPath}': Found {state.Items.Count} item(s)");
+                    Logger.Info("WFX", $"[DIR LIST] Folder '{displayPath}': Found {state.Items.Count} item(s) (Channel: '{channelTitle}')");
                 }
             }
         }
@@ -554,10 +528,12 @@ public static unsafe class WfxExports
             {
                 string basePath = AppContext.BaseDirectory;
                 
-                string modPath = Win32Api.GetCurrentModulePath();
-                if (!string.IsNullOrEmpty(modPath))
+                using var processModule = System.Diagnostics.Process.GetCurrentProcess().Modules.Cast<System.Diagnostics.ProcessModule>()
+                    .FirstOrDefault(m => m.ModuleName != null && m.ModuleName.StartsWith("TgVfsPlugin", StringComparison.OrdinalIgnoreCase));
+                    
+                if (processModule != null && !string.IsNullOrEmpty(processModule.FileName))
                 {
-                    basePath = System.IO.Path.GetDirectoryName(modPath) ?? basePath;
+                    basePath = System.IO.Path.GetDirectoryName(processModule.FileName) ?? basePath;
                 }
 
                 string arch = IntPtr.Size == 8 ? "x64" : "x86";
@@ -722,72 +698,59 @@ public static unsafe class WfxExports
             string[] parts = cleanVfs.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length > 0 && _db != null)
             {
-                ParseVfsPath(cleanVfs, out string channelName, out string subPath, out bool isInTrash);
-
-                if (isInTrash)
+                string mountName = parts[0];
+                var mount = _db.GetMountByName(mountName);
+                if (mount != null)
                 {
-                    if (string.IsNullOrEmpty(channelName))
+                    if (parts.Length == 1)
                     {
-                        return Win32Api.FS_EXEC_OK; 
+                        // Свойства самого тома/канала
+                        var mountAsFile = new VfsDatabase.FileRecord
+                        {
+                            Uid = mount.Id,
+                            MountId = mount.Id,
+                            IsDir = true,
+                            Name = mount.ChannelName,
+                            Parent = null,
+                            MTime = DateTime.UtcNow,
+                            Size = 0,
+                            TgMessageId = 0,
+                            InTrash = 0,
+                            Ver = 1
+                        };
+                        FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, "", mountAsFile, _db);
+                        return Win32Api.FS_EXEC_OK;
                     }
 
-                    var mount = _db.GetMountByName(channelName);
-                    if (mount != null)
+                    // Свойства корзины: \Channel\.[🗑] Корзина
+                    if (parts.Length == 2 && IsTrashFolder(parts[1]))
                     {
-                        if (string.IsNullOrEmpty(subPath))
-                        {
-                            // Свойства корзины конкретного канала: [🗑] Корзина\ChannelName
-                            FilePropertiesDialog.ShowTrashProperties(mount.ChannelName, mount.ChannelId, mount.Id, _db);
-                            return Win32Api.FS_EXEC_OK;
-                        }
+                        FilePropertiesDialog.ShowTrashProperties(mount.ChannelName, mount.ChannelId, mount.Id, _db);
+                        return Win32Api.FS_EXEC_OK;
+                    }
 
-                        // Свойства файла/папки внутри корзины: [🗑] Корзина\ChannelName\folder\file_v1.txt
-                        string[] subParts = subPath.Split('\\');
-                        string versionedName = subParts[^1];
-                        string? trashSubParent = subParts.Length > 1 ? string.Join("\\", subParts, 0, subParts.Length - 1) : null;
+                    // Свойства файла/папки внутри корзины: \Channel\.[🗑] Корзина\folder\file_v1.txt
+                    if (parts.Length > 2 && IsTrashFolder(parts[1]))
+                    {
+                        string versionedName = parts[^1];
+                        string? trashSubParent = parts.Length > 3 ? string.Join("\\", parts, 2, parts.Length - 3) : null;
                         var trashFile = _db.GetTrashFileByVersionedName(mount.Id, versionedName, trashSubParent);
                         if (trashFile != null)
                         {
-                            FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, subPath, trashFile, _db);
+                            FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, string.Join("\\", parts.Skip(1)), trashFile, _db);
                             return Win32Api.FS_EXEC_OK;
                         }
                     }
-                }
-                else
-                {
-                    var mount = _db.GetMountByName(channelName);
-                    if (mount != null)
+
+                    string fileName = parts[^1];
+                    string? parent = parts.Length > 2 ? string.Join("\\", parts.Skip(1).Take(parts.Length - 2)) : null;
+                    string relativePath = parts.Length > 1 ? string.Join("\\", parts.Skip(1)) : fileName;
+
+                    var fileRecord = _db.GetFile(mount.Id, fileName, parent);
+                    if (fileRecord != null)
                     {
-                        if (string.IsNullOrEmpty(subPath))
-                        {
-                            // Свойства самого тома/канала
-                            var mountAsFile = new VfsDatabase.FileRecord
-                            {
-                                Uid = mount.Id,
-                                MountId = mount.Id,
-                                IsDir = true,
-                                Name = mount.ChannelName,
-                                Parent = null,
-                                MTime = DateTime.UtcNow,
-                                Size = 0,
-                                TgMessageId = 0,
-                                InTrash = 0,
-                                Ver = 1
-                            };
-                            FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, "", mountAsFile, _db);
-                            return Win32Api.FS_EXEC_OK;
-                        }
-
-                        string[] subParts = subPath.Split('\\');
-                        string fileName = subParts[^1];
-                        string? parent = subParts.Length > 1 ? string.Join("\\", subParts, 0, subParts.Length - 1) : null;
-
-                        var fileRecord = _db.GetFile(mount.Id, fileName, parent);
-                        if (fileRecord != null)
-                        {
-                            FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, subPath, fileRecord, _db);
-                            return Win32Api.FS_EXEC_OK;
-                        }
+                        FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, relativePath, fileRecord, _db);
+                        return Win32Api.FS_EXEC_OK;
                     }
                 }
             }
@@ -826,7 +789,7 @@ public static unsafe class WfxExports
                 {
                     Logger.Error("WFX", "Create folder error", ex);
                 }
-            });
+            }).GetAwaiter().GetResult();
             
             return Win32Api.FS_EXEC_OK;
         }
@@ -878,28 +841,98 @@ public static unsafe class WfxExports
                 {
                     Logger.Error("WFX", "Delete folder error", ex);
                 }
-            });
+            }).GetAwaiter().GetResult();
 
             return Win32Api.FS_EXEC_OK;
         }
 
-        string execClean = NormalizeVfsPath(path);
-        if (execClean.Equals("[⚙] Настройки", StringComparison.OrdinalIgnoreCase) || 
-            path.EndsWith("[⚙] Настройки") || 
-            path.EndsWith("[⚙] Настройки\\") || 
-            path.EndsWith("[⚙] Настройки/") || 
-            path.EndsWith("[*] Настройки плагина"))
+        if (path.EndsWith("[⚙] Настройки") || path.EndsWith("[*] Настройки плагина"))
         {
             System.Threading.Tasks.Task.Run(() => 
             {
-                ShowSettingsDialog();
-            });
+                try
+                {
+                    string oldDir = SettingsManager.DataDirectory;
+                    var result = SettingsDialog.Show();
+                    if (result != null)
+                    {
+                        if (result.StorageLocationChanged)
+                        {
+                            Logger.Info("CFG", $"Storage location change requested. New mode: {result.SelectedStorageMode}, CustomPath: '{result.CustomPath}'");
+
+                            // 1. Закрываем и сбрасываем текущие ресурсы базы данных и TelegramClient
+                            try
+                            {
+                                _db?.Dispose();
+                            }
+                            catch (Exception dbEx)
+                            {
+                                Logger.Warn("DB", $"Error disposing DB: {dbEx.Message}");
+                            }
+                            finally
+                            {
+                                _db = null;
+                                // Очищаем пулы подключений SQLite, чтобы освободить дескрипторы файлов
+                                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                            }
+
+                            TelegramManager.ResetClient();
+
+                            string newDir = result.SelectedStorageMode switch
+                            {
+                                StorageMode.Portable => SettingsManager.PortableDirectory,
+                                StorageMode.Custom => result.CustomPath,
+                                _ => SettingsManager.DefaultAppDataDirectory
+                            };
+
+                            // 2. Если выбран перенос файлов - перемещаем файлы
+                            if (result.MigrateExistingFiles)
+                            {
+                                SettingsManager.MigrateDataFiles(oldDir, newDir);
+                            }
+
+                            // 3. Сохраняем новые настройки
+                            SettingsManager.SetStorageLocation(result.SelectedStorageMode, result.CustomPath);
+
+                            // 4. Переинициализируем базу данных по новому пути
+                            try
+                            {
+                                _db = new VfsDatabase();
+                                Logger.Info("DB", "VfsDatabase re-initialized at new location.");
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Error("DB", $"Failed to re-initialize DB: {ex.Message}");
+                            }
+
+                            // 5. Оповещаем и обновляем список папок в Total Commander
+                            Logger.Info("CFG", "Settings applied. Requesting panel refresh.");
+                            Win32Api.RefreshActivePanel();
+
+                            try
+                            {
+                                System.Windows.Forms.MessageBox.Show(
+                                    $"Настройки успешно применены!\n\nПапка данных:\n{newDir}",
+                                    "Telegram VFS",
+                                    System.Windows.Forms.MessageBoxButtons.OK,
+                                    System.Windows.Forms.MessageBoxIcon.Information);
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("CFG", "Settings dialog execution error", ex);
+                }
+            }).GetAwaiter().GetResult();
             
             return Win32Api.FS_EXEC_OK;
         }
 
         if (path.EndsWith("[ Login required.txt ]"))
         {
+            // Запускаем асинхронный логин в синхронном контексте без await (Task.Run)
             System.Threading.Tasks.Task.Run(() => 
             {
                 try
@@ -915,7 +948,7 @@ public static unsafe class WfxExports
                 {
                     Logger.Error("TG", "Login task failed", ex);
                 }
-            });
+            }).GetAwaiter().GetResult();
             
             return Win32Api.FS_EXEC_OK;
         }
@@ -923,84 +956,6 @@ public static unsafe class WfxExports
         // Для обычных файлов возвращаем FS_EXEC_YOURSELF (-1), чтобы Total Commander
         // скачал файл во временную директорию и запустил его ассоциированным приложением.
         return Win32Api.FS_EXEC_YOURSELF;
-    }
-
-    private static void ShowSettingsDialog()
-    {
-        try
-        {
-            string oldDir = SettingsManager.DataDirectory;
-            var result = SettingsDialog.Show();
-            if (result != null)
-            {
-                if (result.StorageLocationChanged)
-                {
-                    Logger.Info("CFG", $"Storage location change requested. New mode: {result.SelectedStorageMode}, CustomPath: '{result.CustomPath}'");
-
-                    // 1. Закрываем и сбрасываем текущие ресурсы базы данных и TelegramClient
-                    try
-                    {
-                        _db?.Dispose();
-                    }
-                    catch (Exception dbEx)
-                    {
-                        Logger.Warn("DB", $"Error disposing DB: {dbEx.Message}");
-                    }
-                    finally
-                    {
-                        _db = null;
-                        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-                    }
-
-                    TelegramManager.ResetClient();
-
-                    string newDir = result.SelectedStorageMode switch
-                    {
-                        StorageMode.Portable => SettingsManager.PortableDirectory,
-                        StorageMode.Custom => result.CustomPath,
-                        _ => SettingsManager.DefaultAppDataDirectory
-                    };
-
-                    // 2. Если выбран перенос файлов - перемещаем файлы
-                    if (result.MigrateExistingFiles)
-                    {
-                        SettingsManager.MigrateDataFiles(oldDir, newDir);
-                    }
-
-                    // 3. Сохраняем новые настройки
-                    SettingsManager.SetStorageLocation(result.SelectedStorageMode, result.CustomPath);
-
-                    // 4. Переинициализируем базу данных по новому пути
-                    try
-                    {
-                        _db = new VfsDatabase();
-                        Logger.Info("DB", "VfsDatabase re-initialized at new location.");
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error("DB", $"Failed to re-initialize DB: {ex.Message}");
-                    }
-
-                    // 5. Оповещаем и обновляем список папок в Total Commander
-                    Logger.Info("CFG", "Settings applied. Requesting panel refresh.");
-                    Win32Api.RefreshActivePanel();
-
-                    try
-                    {
-                        System.Windows.Forms.MessageBox.Show(
-                            $"Настройки успешно применены!\n\nПапка данных:\n{newDir}",
-                            "Telegram VFS",
-                            System.Windows.Forms.MessageBoxButtons.OK,
-                            System.Windows.Forms.MessageBoxIcon.Information);
-                    }
-                    catch { }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("CFG", "Settings dialog execution error in ShowSettingsDialog", ex);
-        }
     }
 
     private static int ReportProgress(string sourceName, string targetName, int percentDone)
@@ -1059,9 +1014,18 @@ public static unsafe class WfxExports
         }
 
         string cleanRemote = NormalizeVfsPath(remotePath);
-        ParseVfsPath(cleanRemote, out string channelName, out string subPath, out bool isInTrash);
+        int firstSlash = cleanRemote.IndexOfAny(new[] { '\\', '/' });
+        if (firstSlash <= 0)
+        {
+            Logger.Warn("WFX", $"FsPutFile: Cannot copy directly to root: '{remotePath}'");
+            return Win32Api.FS_FILE_NOTSUPPORTED;
+        }
 
-        if (isInTrash)
+        string channelName = cleanRemote.Substring(0, firstSlash);
+        string subPath = cleanRemote.Substring(firstSlash + 1).Replace('/', '\\');
+
+        string[] putSubParts = subPath.Split('\\');
+        if (putSubParts.Length > 0 && IsTrashFolder(putSubParts[0]))
         {
             Logger.Warn("WFX", $"[PUT FILE BLOCKED] Uploading to Trash is prohibited: '{remotePath}'");
             System.Windows.Forms.MessageBox.Show(
@@ -1069,12 +1033,6 @@ public static unsafe class WfxExports
                 "Операция заблокирована",
                 System.Windows.Forms.MessageBoxButtons.OK,
                 System.Windows.Forms.MessageBoxIcon.Warning);
-            return Win32Api.FS_FILE_NOTSUPPORTED;
-        }
-
-        if (string.IsNullOrEmpty(channelName))
-        {
-            Logger.Warn("WFX", $"FsPutFile: Cannot copy directly to root: '{remotePath}'");
             return Win32Api.FS_FILE_NOTSUPPORTED;
         }
 
@@ -1355,14 +1313,15 @@ public static unsafe class WfxExports
         }
 
         string cleanRemote = NormalizeVfsPath(remotePath);
-        ParseVfsPath(cleanRemote, out string channelFolderName, out string subPath, out bool isInTrash);
-
-        if (string.IsNullOrEmpty(channelFolderName))
+        int firstSlash = cleanRemote.IndexOfAny(new[] { '\\', '/' });
+        if (firstSlash <= 0)
         {
             Logger.Warn("WFX", $"FsGetFile: Invalid remote path: '{remotePath}'");
             return Win32Api.FS_FILE_NOTSUPPORTED;
         }
 
+        string channelFolderName = cleanRemote.Substring(0, firstSlash);
+        string subPath = cleanRemote.Substring(firstSlash + 1).Replace('/', '\\').TrimStart('\\');
         string fileName = Path.GetFileName(subPath);
 
         // Игнорируем служебные элементы
@@ -1385,9 +1344,11 @@ public static unsafe class WfxExports
 
         // Поиск файла в базе данных (с поддержкой корзины)
         VfsDatabase.FileRecord? fileRecord = null;
-        if (isInTrash)
+        string[] subParts = subPath.Split('\\');
+        if (subParts.Length > 1 && IsTrashFolder(subParts[0]))
         {
-            fileRecord = _db.GetTrashFileByVersionedName(mount.Id, fileName, parentSubPath);
+            string? trashSubParent = subParts.Length > 2 ? string.Join("\\", subParts, 1, subParts.Length - 2) : null;
+            fileRecord = _db.GetTrashFileByVersionedName(mount.Id, fileName, trashSubParent);
         }
         else
         {
@@ -1782,9 +1743,18 @@ public static unsafe class WfxExports
         string cleanPath = NormalizeVfsPath(dirPath);
         if (string.IsNullOrEmpty(cleanPath)) return 0;
 
-        ParseVfsPath(cleanPath, out string channelName, out string subPath, out bool isInTrash);
+        int firstSlash = cleanPath.IndexOfAny(new[] { '\\', '/' });
+        if (firstSlash <= 0)
+        {
+            // Нельзя создать канал через FsMkDir без диалога
+            return 0;
+        }
 
-        if (isInTrash)
+        string channelName = cleanPath.Substring(0, firstSlash);
+        string subPath = cleanPath.Substring(firstSlash + 1).Replace('/', '\\');
+
+        string[] mkdirSubParts = subPath.Split('\\');
+        if (mkdirSubParts.Length > 0 && IsTrashFolder(mkdirSubParts[0]))
         {
             Logger.Warn("WFX", $"[MKDIR BLOCKED] Creating directories in Trash is prohibited: '{dirPath}'");
             System.Windows.Forms.MessageBox.Show(
@@ -1793,12 +1763,6 @@ public static unsafe class WfxExports
                 System.Windows.Forms.MessageBoxButtons.OK,
                 System.Windows.Forms.MessageBoxIcon.Warning);
             return 0; // false
-        }
-
-        if (string.IsNullOrEmpty(channelName))
-        {
-            // Нельзя создать канал через FsMkDir без диалога
-            return 0;
         }
 
         var mount = _db.GetMountByName(channelName);
@@ -1851,52 +1815,56 @@ public static unsafe class WfxExports
             return 0; // false
         }
 
-        ParseVfsPath(cleanPath, out string channelName, out string subPath, out bool isInTrash);
-
-        if (string.IsNullOrEmpty(channelName))
+        int firstSlash = cleanPath.IndexOfAny(new[] { '\\', '/' });
+        if (firstSlash < 0)
         {
-            // Это корневая папка монтирования (канал) или корень корзины
+            // Это имя корневой папки монтирования (канала)
             return HandleRemoveDir(cleanPath);
         }
-
-        var mount = _db.GetMountByName(channelName);
-        if (mount != null)
+        else
         {
+            // Это элемент внутри канала (например "Work Chat\ai-tour-optimization\doc.pdf" или "Work Chat\subfolder")
+            string channelName = cleanPath.Substring(0, firstSlash);
+            string subPath = cleanPath.Substring(firstSlash + 1).Replace('/', '\\');
             string fileName = Path.GetFileName(subPath);
             string? parentSubPath = Path.GetDirectoryName(subPath);
             if (string.IsNullOrEmpty(parentSubPath)) parentSubPath = null;
 
-            if (isInTrash)
+            var mount = _db.GetMountByName(channelName);
+            if (mount != null)
             {
+                string[] subParts = subPath.Split('\\');
                 // Удаление элемента из корзины (удаление навсегда без дублирующего окна - пользователь уже подтвердил в Total Commander)
-                var trashFile = _db.GetTrashFileByVersionedName(mount.Id, fileName, parentSubPath);
-                if (trashFile != null)
+                if (subParts.Length > 1 && IsTrashFolder(subParts[0]))
                 {
-                    if (_isBatchOperation)
+                    string? trashSubParent = subParts.Length > 2 ? string.Join("\\", subParts, 1, subParts.Length - 2) : null;
+                    var trashFile = _db.GetTrashFileByVersionedName(mount.Id, fileName, trashSubParent);
+                    if (trashFile != null)
                     {
-                        lock (_trashDeleteLock)
+                        if (_isBatchOperation)
                         {
-                            _pendingTrashDeletions.Add(new PendingTrashItem
+                            lock (_trashDeleteLock)
                             {
-                                MountId = mount.Id,
-                                ChannelId = mount.ChannelId,
-                                Uid = trashFile.Uid,
-                                TgMessageId = trashFile.TgMessageId,
-                                FileName = fileName
-                            });
+                                _pendingTrashDeletions.Add(new PendingTrashItem
+                                {
+                                    MountId = mount.Id,
+                                    ChannelId = mount.ChannelId,
+                                    Uid = trashFile.Uid,
+                                    TgMessageId = trashFile.TgMessageId,
+                                    FileName = fileName
+                                });
+                            }
+                            return 1;
                         }
-                        return 1;
+                        else
+                        {
+                            PurgeTrashRecords(mount.Id, mount.ChannelId, new List<VfsDatabase.FileRecord> { trashFile });
+                            return 1;
+                        }
                     }
-                    else
-                    {
-                        PurgeTrashRecords(mount.Id, mount.ChannelId, new List<VfsDatabase.FileRecord> { trashFile });
-                        return 1;
-                    }
+                    return 1;
                 }
-                return 1;
-            }
-            else
-            {
+
                 var fileRecord = _db.GetFile(mount.Id, fileName, parent: parentSubPath);
                 if (fileRecord != null)
                 {
@@ -1957,21 +1925,52 @@ public static unsafe class WfxExports
             return 0;
         }
 
-        ParseVfsPath(cleanPath, out string channelName, out string subPath, out bool isInTrash);
-
-        if (string.IsNullOrEmpty(channelName))
+        int firstSlash = cleanPath.IndexOfAny(new[] { '\\', '/' });
+        if (firstSlash < 0)
         {
-            // Это корневой каталог корзины [🗑] Корзина или попытка удалить его
-            return 0; 
-        }
-
-        if (string.IsNullOrEmpty(subPath))
-        {
-            if (isInTrash)
+            // Это корневая папка монтирования (канал)
+            string channelName = cleanPath;
+            var mount = _db.GetMountByName(channelName);
+            if (mount != null)
             {
-                // Попытка удалить всю корзину конкретного канала, например [🗑] Корзина\Channel
-                var mount = _db.GetMountByName(channelName);
-                if (mount != null)
+                var dialogRes = System.Windows.Forms.MessageBox.Show(
+                    $"Вы действительно хотите удалить виртуальную папку '{channelName}'?\n\n" +
+                    $"⚠️ ВНИМАНИЕ: Это приведёт к удалению связанного канала и всех хранящихся в нём файлов в Telegram!",
+                    "Подтверждение удаления папки",
+                    System.Windows.Forms.MessageBoxButtons.YesNo,
+                    System.Windows.Forms.MessageBoxIcon.Warning,
+                    System.Windows.Forms.MessageBoxDefaultButton.Button2);
+
+                if (dialogRes == System.Windows.Forms.DialogResult.Yes)
+                {
+                    System.Threading.Tasks.Task.Run(() =>
+                    {
+                        if (mount.ChannelId != 0)
+                        {
+                            TelegramManager.DeleteChannelAsync(mount.ChannelId).GetAwaiter().GetResult();
+                        }
+                        _db.DeleteMount(mount.Id);
+                        Logger.Info("DB", $"[FOLDER DELETED] Mount/channel '{channelName}' deleted via FsRemoveDir.");
+                        Win32Api.RefreshActivePanel();
+                        TriggerCheckpoint(immediate: true);
+                    }).GetAwaiter().GetResult();
+
+                    return 1; // true (успех)
+                }
+                return 0; // пользователь отменил
+            }
+        }
+        else
+        {
+            // Это виртуальная подпапка внутри канала (например "Work Chat\ai-tour-optimization" или "Work Chat\[🗑] Корзина")
+            string channelName = cleanPath.Substring(0, firstSlash);
+            string subPath = cleanPath.Substring(firstSlash + 1).Replace('/', '\\');
+
+            var mount = _db.GetMountByName(channelName);
+            if (mount != null)
+            {
+                string[] subParts = subPath.Split('\\');
+                if (subParts.Length == 1 && IsTrashFolder(subParts[0]))
                 {
                     _db.GetTrashStats(mount.Id, out int filesCount, out int dirsCount, out long totalSize);
                     if (filesCount + dirsCount == 0)
@@ -1983,60 +1982,19 @@ public static unsafe class WfxExports
                     PurgeTrashRecords(mount.Id, mount.ChannelId, trashRecords);
                     return 1;
                 }
-            }
-            else
-            {
-                // Это корневая папка монтирования (активный канал)
-                var mount = _db.GetMountByName(channelName);
-                if (mount != null)
-                {
-                    var dialogRes = System.Windows.Forms.MessageBox.Show(
-                        $"Вы действительно хотите удалить виртуальную папку '{channelName}'?\n\n" +
-                        $"⚠️ ВНИМАНИЕ: Это приведёт к удалению связанного канала и всех хранящихся в нём файлов в Telegram!",
-                        "Подтверждение удаления папки",
-                        System.Windows.Forms.MessageBoxButtons.YesNo,
-                        System.Windows.Forms.MessageBoxIcon.Warning,
-                        System.Windows.Forms.MessageBoxDefaultButton.Button2);
-
-                    if (dialogRes == System.Windows.Forms.DialogResult.Yes)
-                    {
-                        System.Threading.Tasks.Task.Run(() =>
-                        {
-                            if (mount.ChannelId != 0)
-                            {
-                                TelegramManager.DeleteChannelAsync(mount.ChannelId).GetAwaiter().GetResult();
-                            }
-                            _db.DeleteMount(mount.Id);
-                            Logger.Info("DB", $"[FOLDER DELETED] Mount/channel '{channelName}' deleted via FsRemoveDir.");
-                            Win32Api.RefreshActivePanel();
-                            TriggerCheckpoint(immediate: true);
-                        }).GetAwaiter().GetResult();
-
-                        return 1; // true (успех)
-                    }
-                    return 0; // пользователь отменил
-                }
-            }
-        }
-        else
-        {
-            var mount = _db.GetMountByName(channelName);
-            if (mount != null)
-            {
-                if (isInTrash)
+                else if (subParts.Length > 1 && IsTrashFolder(subParts[0]))
                 {
                     // Удаление подпапки ВНУТРИ корзины навсегда
-                    var trashRecords = _db.GetTrashSubTreeFileRecords(mount.Id, subPath);
+                    string folderUnderTrash = string.Join("\\", subParts.Skip(1));
+                    var trashRecords = _db.GetTrashSubTreeFileRecords(mount.Id, folderUnderTrash);
                     PurgeTrashRecords(mount.Id, mount.ChannelId, trashRecords);
                     return 1;
                 }
-                else
-                {
-                    _db.MoveDirectoryToTrash(mount.Id, subPath);
-                    Logger.Info("DB", $"[FOLDER DELETED / TRASH] Virtual directory '{subPath}' in channel '{channelName}' moved to trash.");
-                    TriggerCheckpoint(immediate: true);
-                    return 1; // true
-                }
+
+                _db.MoveDirectoryToTrash(mount.Id, subPath);
+                Logger.Info("DB", $"[FOLDER DELETED / TRASH] Virtual directory '{subPath}' in channel '{channelName}' moved to trash.");
+                TriggerCheckpoint(immediate: true);
+                return 1; // true
             }
         }
 
@@ -2075,14 +2033,20 @@ public static unsafe class WfxExports
         if (string.IsNullOrEmpty(cleanOld) || string.IsNullOrEmpty(cleanNew))
             return Win32Api.FS_FILE_NOTFOUND;
 
-        ParseVfsPath(cleanOld, out string oldChannel, out string oldSub, out bool oldIsInTrash);
-        ParseVfsPath(cleanNew, out string newChannel, out string newSub, out bool newIsInTrash);
+        int oldFirstSlash = cleanOld.IndexOfAny(new[] { '\\', '/' });
+        int newFirstSlash = cleanNew.IndexOfAny(new[] { '\\', '/' });
 
-        if (string.IsNullOrEmpty(oldChannel) || string.IsNullOrEmpty(newChannel))
+        if (oldFirstSlash <= 0 || newFirstSlash <= 0)
         {
             // Переименование/копирование корневого канала не поддерживается через FsRenMovFile
             return Win32Api.FS_FILE_NOTFOUND;
         }
+
+        string oldChannel = cleanOld.Substring(0, oldFirstSlash);
+        string oldSub = cleanOld.Substring(oldFirstSlash + 1).Replace('/', '\\');
+
+        string newChannel = cleanNew.Substring(0, newFirstSlash);
+        string newSub = cleanNew.Substring(newFirstSlash + 1).Replace('/', '\\');
 
         var oldMount = _db.GetMountByName(oldChannel);
         var newMount = _db.GetMountByName(newChannel);
@@ -2098,10 +2062,14 @@ public static unsafe class WfxExports
         string? newParent = newLastSlash >= 0 ? newSub.Substring(0, newLastSlash) : null;
 
         // Проверяем запись источника (с поддержкой элементов из Корзины)
+        string[] oldSubParts = oldSub.Split('\\');
+        bool oldIsInTrash = oldSubParts.Length > 0 && IsTrashFolder(oldSubParts[0]);
+
         VfsDatabase.FileRecord? sourceRecord = null;
         if (oldIsInTrash)
         {
-            sourceRecord = _db.GetTrashFileByVersionedName(oldMount.Id, oldItemName, oldParent);
+            string? trashSubParent = oldSubParts.Length > 2 ? string.Join("\\", oldSubParts, 1, oldSubParts.Length - 2) : null;
+            sourceRecord = _db.GetTrashFileByVersionedName(oldMount.Id, oldItemName, trashSubParent);
         }
         else
         {
@@ -2112,6 +2080,10 @@ public static unsafe class WfxExports
         {
             return Win32Api.FS_FILE_NOTFOUND;
         }
+
+        // Если объект находится в корзине, а назначение — обычная директория (восстановление через F5/F6)
+        string[] newSubParts = newSub.Split('\\');
+        bool newIsInTrash = newSubParts.Length > 0 && IsTrashFolder(newSubParts[0]);
 
         if (newIsInTrash)
         {

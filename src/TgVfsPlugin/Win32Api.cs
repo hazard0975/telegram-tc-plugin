@@ -18,14 +18,6 @@ public static class Win32Api
     [DllImport("kernel32.dll")]
     public static extern void SetLastError(uint dwErrCode);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern uint GetModuleFileName(IntPtr hModule, StringBuilder lpFilename, int nSize);
-
-    public const uint GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS = 0x00000004;
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern bool GetModuleHandleEx(uint dwFlags, IntPtr lpModuleName, out IntPtr phModule);
-
     public const uint ERROR_NO_MORE_FILES = 18;
 
     // WFX Plugin Return Codes
@@ -243,22 +235,12 @@ public static class Win32Api
         }
     }
 
-    public static void ChangePanelDir(string targetPath, bool targetOpposite)
+    public static void ChangeInactivePanelDir(string inactivePath)
     {
         IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
         if (tcWindow == IntPtr.Zero) return;
 
-        // Если не требуется переходить на противоположную панель, меняем текущую активную панель напрямую!
-        // В Total Commander для смены каталога активной панели передается просто путь (без '\r').
-        // TC сам гарантированно знает, какая панель сейчас активна, даже если открыто модальное окно.
-        if (!targetOpposite)
-        {
-            Logger.Debug("WIN32", $"ChangePanelDir: Navigating ACTIVE panel directly to '{targetPath}'");
-            SendTcCdCommand(tcWindow, targetPath, changeRightPanel: false, isBothOrActiveOnly: true);
-            return;
-        }
-
-        // Для перехода на противоположную панель определяем, где сейчас открыт плагин (слева или справа)
+        // Определяем, на какой стороне (слева или справа) открыт VFS-плагин
         bool isLeftVfs = false;
         bool isRightVfs = false;
         bool detectedByPathBox = false;
@@ -276,9 +258,7 @@ public static class Win32Api
                     string clsName = clsSb.ToString();
 
                     if (clsName.Contains("PathBox", StringComparison.OrdinalIgnoreCase) ||
-                        clsName.Contains("TMyPath", StringComparison.OrdinalIgnoreCase) ||
-                        clsName.Contains("TPathPanel", StringComparison.OrdinalIgnoreCase) ||
-                        clsName.Contains("TPanel", StringComparison.OrdinalIgnoreCase))
+                        clsName.Contains("TMyPath", StringComparison.OrdinalIgnoreCase))
                     {
                         StringBuilder textSb = new StringBuilder(512);
                         GetWindowText(hWnd, textSb, textSb.Capacity);
@@ -291,13 +271,10 @@ public static class Win32Api
                                 int boxCenterX = boxRect.Left + (boxRect.Right - boxRect.Left) / 2;
                                 bool isLeftBox = boxCenterX < tcMidX;
 
-                                string vfsName = GetPluginVfsName();
                                 bool isPluginPath = text.StartsWith("\\\\", StringComparison.Ordinal) ||
                                                    text.StartsWith("/", StringComparison.Ordinal) ||
-                                                   text.Contains(vfsName, StringComparison.OrdinalIgnoreCase) ||
                                                    text.Contains("tgvfs", StringComparison.OrdinalIgnoreCase) ||
-                                                   text.Contains("Telegram", StringComparison.OrdinalIgnoreCase) ||
-                                                   text.Contains("Корзина", StringComparison.OrdinalIgnoreCase);
+                                                   text.Contains("Telegram", StringComparison.OrdinalIgnoreCase);
 
                                 if (isLeftBox && isPluginPath)
                                 {
@@ -324,8 +301,8 @@ public static class Win32Api
         bool isLeftPanelActive = true;
         if (detectedByPathBox)
         {
-            // Если плагин открыт в Левой панели -> плагин слева, противоположная панель — Правая
-            // Если плагин открыт в Правой панели -> плагин справа, противоположная панель — Левая
+            // Если плагин открыт в Левой панели -> целевая неактивная панель Правая (isLeftPanelActive = true)
+            // Если плагин открыт в Правой панели -> целевая неактивная панель Левая (isLeftPanelActive = false)
             if (isLeftVfs && !isRightVfs)
             {
                 isLeftPanelActive = true;
@@ -362,41 +339,20 @@ public static class Win32Api
             }
         }
 
-        // Если VFS слева, переходим на противоположную правую (changeRightPanel = true).
-        // Если VFS справа, переходим на противоположную левую (changeRightPanel = false).
-        bool changeRightPanel = isLeftPanelActive;
+        Logger.Debug("WIN32", $"ChangeInactivePanelDir: Detected VFS side={(detectedByPathBox ? (isLeftVfs ? "Left" : "Right") : "ByFocus")}. Sending target directory '{inactivePath}' to {(isLeftPanelActive ? "Right" : "Left")} panel.");
 
-        Logger.Debug("WIN32", $"ChangePanelDir: Detected VFS side={(detectedByPathBox ? (isLeftVfs ? "Left" : "Right") : "ByFocus")}. " +
-            $"Targeting opposite panel. " +
-            $"Sending target directory '{targetPath}' to {(changeRightPanel ? "Right" : "Left")} panel.");
-
-        SendTcCdCommand(tcWindow, targetPath, changeRightPanel: changeRightPanel, isBothOrActiveOnly: false);
-    }
-
-    private static void SendTcCdCommand(IntPtr tcWindow, string targetPath, bool changeRightPanel, bool isBothOrActiveOnly)
-    {
         // В Total Commander формат команды смены директории через WM_COPYDATA ('CD'):
-        // Поддержка Unicode (кириллицы и спецсимволов) с версии TC 7.50+: префикс UTF-8 BOM (0xEF, 0xBB, 0xBF).
-        // По спецификации Total Commander Unicode в CD-сообщениях:
-        // - Для активной панели: BOM + path + '\0'
-        // - Для правой панели: BOM + '\r' + BOM + path + '\0' (наличие BOM в начале гарантирует распознавание
-        //   всего сообщения как UTF-8, а BOM перед путем правой панели декодирует путь по спецификации TC).
-        // - Для левой панели: BOM + path + '\r' + '\0'
+        // Поддержка Unicode (кириллицы и спецсимволов) с версии TC 7.50+: префикс UTF-8 BOM (0xEF, 0xBB, 0xBF) перед путем.
+        // Если VFS слева -> меняем правую: "\r" + BOM + path + "\0"
+        // Если VFS справа -> меняем левую: BOM + path + "\r\0"
         byte[] bom = new byte[] { 0xEF, 0xBB, 0xBF };
-        byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(targetPath);
+        byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(inactivePath);
 
         byte[] payloadBytes;
         using (var ms = new System.IO.MemoryStream())
         {
-            if (isBothOrActiveOnly)
+            if (isLeftPanelActive)
             {
-                ms.Write(bom, 0, bom.Length);
-                ms.Write(pathBytes, 0, pathBytes.Length);
-                ms.WriteByte(0);
-            }
-            else if (changeRightPanel)
-            {
-                ms.Write(bom, 0, bom.Length);
                 ms.WriteByte((byte)'\r');
                 ms.Write(bom, 0, bom.Length);
                 ms.Write(pathBytes, 0, pathBytes.Length);
@@ -428,17 +384,6 @@ public static class Win32Api
         {
             Marshal.FreeHGlobal(ptr);
         }
-    }
-
-    public static void ChangeInactivePanelDir(string inactivePath)
-    {
-        bool targetOpposite = SettingsManager.PropertiesNavigationOppositePanel;
-        ChangePanelDir(inactivePath, targetOpposite);
-    }
-
-    public static void ChangeActivePanelDir(string activePath)
-    {
-        ChangePanelDir(activePath, false); // targetOpposite = false означает активную панель!
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -476,99 +421,6 @@ public static class Win32Api
         public uint dwReserved1;
         public fixed char cFileName[MAX_PATH];
         public fixed char cAlternateFileName[14];
-    }
-
-    public static unsafe string GetCurrentModulePath()
-    {
-        try
-        {
-            delegate* unmanaged<void> pMethod = &DummyMethod;
-            IntPtr ptr = (IntPtr)pMethod;
-            if (GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, ptr, out IntPtr hModule))
-            {
-                StringBuilder sb = new StringBuilder(MAX_PATH * 2);
-                uint len = GetModuleFileName(hModule, sb, sb.Capacity);
-                if (len > 0)
-                {
-                    return sb.ToString();
-                }
-            }
-        }
-        catch { }
-        return AppContext.BaseDirectory;
-    }
-
-    [UnmanagedCallersOnly]
-    private static void DummyMethod() { }
-
-    private static string? _cachedPluginVfsName = null;
-
-    public static string GetPluginVfsName()
-    {
-        if (_cachedPluginVfsName != null) return _cachedPluginVfsName;
-
-        try
-        {
-            IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
-            if (tcWindow != IntPtr.Zero)
-            {
-                string? foundName = null;
-                EnumChildWindows(tcWindow, (hWnd, lParam) =>
-                {
-                    StringBuilder clsSb = new StringBuilder(256);
-                    GetClassName(hWnd, clsSb, clsSb.Capacity);
-                    string clsName = clsSb.ToString();
-
-                    if (clsName.Contains("PathBox", StringComparison.OrdinalIgnoreCase) ||
-                        clsName.Contains("TMyPath", StringComparison.OrdinalIgnoreCase) ||
-                        clsName.Contains("TPathPanel", StringComparison.OrdinalIgnoreCase) ||
-                        clsName.Contains("TPanel", StringComparison.OrdinalIgnoreCase))
-                    {
-                        StringBuilder textSb = new StringBuilder(512);
-                        GetWindowText(hWnd, textSb, textSb.Capacity);
-                        string text = textSb.ToString().Trim();
-
-                        if (!string.IsNullOrEmpty(text) && (text.StartsWith("\\\\\\") || text.StartsWith("\\\\")))
-                        {
-                            string cleanText = text.TrimStart('\\').TrimStart('/');
-                            int firstSlash = cleanText.IndexOf('\\');
-                            if (firstSlash == -1) firstSlash = cleanText.IndexOf('/');
-
-                            string pluginPart = firstSlash >= 0 ? cleanText.Substring(0, firstSlash) : cleanText;
-
-                            if (pluginPart.Contains("tgvfs", StringComparison.OrdinalIgnoreCase) ||
-                                pluginPart.Contains("tg", StringComparison.OrdinalIgnoreCase) ||
-                                pluginPart.Contains("telegram", StringComparison.OrdinalIgnoreCase))
-                            {
-                                foundName = pluginPart;
-                                return false; // stop enumeration
-                            }
-                        }
-                    }
-                    return true;
-                }, IntPtr.Zero);
-
-                if (!string.IsNullOrEmpty(foundName))
-                {
-                    _cachedPluginVfsName = foundName;
-                    return foundName;
-                }
-            }
-        }
-        catch { }
-
-        try
-        {
-            string path = GetCurrentModulePath();
-            if (!string.IsNullOrEmpty(path))
-            {
-                string dllName = System.IO.Path.GetFileNameWithoutExtension(path);
-                return dllName;
-            }
-        }
-        catch { }
-
-        return "TgVfsPlugin";
     }
 }
 

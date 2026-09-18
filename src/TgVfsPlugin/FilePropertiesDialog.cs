@@ -159,9 +159,9 @@ public static class FilePropertiesDialog
                 Button copyBtn = new Button()
                 {
                     Text = "Копировать",
-                    Left = 10,
+                    Left = 20,
                     Top = 355,
-                    Width = 115,
+                    Width = 110,
                     Height = 30
                 };
                 copyBtn.Click += (s, e) =>
@@ -198,16 +198,14 @@ public static class FilePropertiesDialog
                 };
 
                 Button? restoreBtn = null;
-                Button? navBtn = null;
-
                 if (file.InTrash == 1 && db != null)
                 {
                     restoreBtn = new Button()
                     {
-                        Text = "Восстановить",
-                        Left = 135,
+                        Text = "↺ Восстановить",
+                        Left = 140,
                         Top = 355,
-                        Width = 120,
+                        Width = 150,
                         Height = 30,
                         BackColor = Color.FromArgb(230, 245, 230)
                     };
@@ -236,129 +234,6 @@ public static class FilePropertiesDialog
                         }
                     };
                     form.Controls.Add(restoreBtn);
-
-                    // Кнопка перехода к родительской папке из корзины в активный VFS
-                    navBtn = new Button()
-                    {
-                        Text = "К папке",
-                        Left = 265,
-                        Top = 355,
-                        Width = 110,
-                        Height = 30
-                    };
-                    navBtn.Click += (s, e) =>
-                    {
-                        string targetParent = file.Parent ?? "";
-                        string? foundActiveFolder = null;
-                        
-                        if (db != null)
-                        {
-                            string currentFolder = targetParent.Trim('\\', '/').Replace('/', '\\');
-                            while (!string.IsNullOrEmpty(currentFolder))
-                            {
-                                if (db.ActiveFolderExists(file.MountId, currentFolder))
-                                {
-                                    foundActiveFolder = currentFolder;
-                                    break;
-                                }
-                                
-                                int idx = currentFolder.LastIndexOf('\\');
-                                if (idx > 0)
-                                {
-                                    currentFolder = currentFolder.Substring(0, idx);
-                                }
-                                else
-                                {
-                                    currentFolder = "";
-                                }
-                            }
-                            
-                            if (foundActiveFolder == null)
-                            {
-                                foundActiveFolder = ""; // Корень канала всегда существует
-                            }
-                        }
-
-                        string pluginName = Win32Api.GetPluginVfsName();
-                        if (db != null && foundActiveFolder != targetParent)
-                        {
-                            MessageBox.Show(form, 
-                                "Исходная папка больше не существует в активном хранилище. Вас перенаправит в ближайшую существующую родительскую папку.", 
-                                "Перенаправление", 
-                                MessageBoxButtons.OK, 
-                                MessageBoxIcon.Information);
-                        }
-                        
-                        string targetVfsPath = @"\\\" + pluginName + @"\" + channelName + (string.IsNullOrEmpty(foundActiveFolder) ? "" : @"\" + foundActiveFolder);
-                        Win32Api.ChangeInactivePanelDir(targetVfsPath);
-                        form.Close();
-                    };
-                    form.Controls.Add(navBtn);
-                }
-                else if (file.Uid != file.MountId) // не показываем на самом канале
-                {
-                    // Кнопка перехода к корзине для активного файла или папки
-                    navBtn = new Button()
-                    {
-                        Text = "Корзина",
-                        Left = 135,
-                        Top = 355,
-                        Width = 120,
-                        Height = 30
-                    };
-                    navBtn.Click += (s, e) =>
-                    {
-                        string pluginName = Win32Api.GetPluginVfsName();
-                        string targetFolder = file.IsDir ? relativePath : (file.Parent ?? "");
-                        string? foundFolder = null;
-                        
-                        if (db != null)
-                        {
-                            string currentFolder = targetFolder.Trim('\\', '/').Replace('/', '\\');
-                            while (!string.IsNullOrEmpty(currentFolder))
-                            {
-                                var trashItems = db.GetTrashFiles(file.MountId, currentFolder);
-                                if (trashItems.Count > 0)
-                                {
-                                    foundFolder = currentFolder;
-                                    break;
-                                }
-                                
-                                int idx = currentFolder.LastIndexOf('\\');
-                                if (idx > 0)
-                                {
-                                    currentFolder = currentFolder.Substring(0, idx);
-                                }
-                                else
-                                {
-                                    currentFolder = "";
-                                }
-                            }
-                            
-                            if (foundFolder == null)
-                            {
-                                var rootTrashItems = db.GetTrashFiles(file.MountId, null);
-                                if (rootTrashItems.Count > 0)
-                                {
-                                    foundFolder = ""; // Корень корзины канала
-                                }
-                            }
-                        }
-
-                        if (db != null && foundFolder == null)
-                        {
-                            MessageBox.Show(form, "В корзине этого канала нет удаленных файлов.", "Корзина пуста", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                            string targetVfsPath = @"\\\" + pluginName + @"\[🗑] Корзина\" + channelName;
-                            Win32Api.ChangeInactivePanelDir(targetVfsPath);
-                        }
-                        else
-                        {
-                            string targetVfsPath = @"\\\" + pluginName + @"\[🗑] Корзина\" + channelName + (string.IsNullOrEmpty(foundFolder) ? "" : @"\" + foundFolder);
-                            Win32Api.ChangeInactivePanelDir(targetVfsPath);
-                        }
-                        form.Close();
-                    };
-                    form.Controls.Add(navBtn);
                 }
 
                 Button okBtn = new Button()
@@ -366,7 +241,7 @@ public static class FilePropertiesDialog
                     Text = "Закрыть",
                     Left = 385,
                     Top = 355,
-                    Width = 110,
+                    Width = 100,
                     Height = 30,
                     DialogResult = DialogResult.OK
                 };
@@ -392,6 +267,7 @@ public static class FilePropertiesDialog
 
         t.SetApartmentState(System.Threading.ApartmentState.STA);
         t.Start();
+        t.Join();
     }
 
     public static void ShowTrashProperties(string channelName, long channelId, string mountId, VfsDatabase db)
@@ -581,24 +457,7 @@ public static class FilePropertiesDialog
                     DialogResult = DialogResult.OK
                 };
 
-                Button navBtn = new Button()
-                {
-                    Text = "К каналу",
-                    Left = 140,
-                    Top = 255,
-                    Width = 110,
-                    Height = 30
-                };
-                navBtn.Click += (s, e) =>
-                {
-                    string pluginName = Win32Api.GetPluginVfsName();
-                    string targetVfsPath = @"\\\" + pluginName + @"\" + channelName;
-                    Win32Api.ChangeInactivePanelDir(targetVfsPath);
-                    form.Close();
-                };
-
                 form.Controls.Add(cleanBtn);
-                form.Controls.Add(navBtn);
                 form.Controls.Add(closeBtn);
                 form.CancelButton = closeBtn;
 
@@ -612,6 +471,7 @@ public static class FilePropertiesDialog
 
         t.SetApartmentState(System.Threading.ApartmentState.STA);
         t.Start();
+        t.Join();
     }
 
     public static string FormatSize(long bytes)

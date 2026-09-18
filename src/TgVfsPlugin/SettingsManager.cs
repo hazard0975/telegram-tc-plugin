@@ -25,10 +25,13 @@ public static class SettingsManager
             {
                 try
                 {
-                    string modPath = Win32Api.GetCurrentModulePath();
-                    if (!string.IsNullOrEmpty(modPath))
+                    using var proc = System.Diagnostics.Process.GetCurrentProcess();
+                    var module = proc.Modules.Cast<System.Diagnostics.ProcessModule>()
+                        .FirstOrDefault(m => m.ModuleName != null && m.ModuleName.StartsWith("TgVfsPlugin", StringComparison.OrdinalIgnoreCase));
+
+                    if (module != null && !string.IsNullOrEmpty(module.FileName))
                     {
-                        _cachedPluginDir = Path.GetDirectoryName(modPath);
+                        _cachedPluginDir = Path.GetDirectoryName(module.FileName);
                     }
                 }
                 catch { }
@@ -52,23 +55,6 @@ public static class SettingsManager
     public static string PortableSettingsFile => Path.Combine(PortableDirectory, "settings.ini");
 
     public static StorageMode CurrentStorageMode => _storageMode;
-
-    public static bool PropertiesNavigationOppositePanel
-    {
-        get
-        {
-            var val = GetSetting("properties_navigation_opposite_panel");
-            if (bool.TryParse(val, out bool result))
-            {
-                return result;
-            }
-            return true; // по умолчанию включено
-        }
-        set
-        {
-            SaveSetting("properties_navigation_opposite_panel", value.ToString());
-        }
-    }
 
     /// <summary>
     /// Текущая активная директория для данных (база SQLite, сессия, логи, настройки)

@@ -208,21 +208,6 @@ public class VfsDatabase : IDisposable
         public int Ver { get; set; } = 1;
     }
 
-    public bool ActiveFolderExists(string mountId, string? path)
-    {
-        if (string.IsNullOrEmpty(path)) return true; // Корень канала существует всегда
-        
-        string cleanPath = path.Trim('\\', '/').Replace('/', '\\');
-        if (string.IsNullOrEmpty(cleanPath)) return true;
-
-        int lastSlash = cleanPath.LastIndexOf('\\');
-        string name = lastSlash >= 0 ? cleanPath.Substring(lastSlash + 1) : cleanPath;
-        string? parent = lastSlash >= 0 ? cleanPath.Substring(0, lastSlash) : null;
-
-        var file = GetFile(mountId, name, parent);
-        return file != null && file.IsDir;
-    }
-
     public FileRecord? GetFile(string mountId, string fileName, string? parent = null)
     {
         var cmd = _connection.CreateCommand();
