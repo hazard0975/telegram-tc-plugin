@@ -204,7 +204,7 @@ public static class FilePropertiesDialog
                 {
                     restoreBtn = new Button()
                     {
-                        Text = "↺ Восстановить",
+                        Text = "Восстановить",
                         Left = 135,
                         Top = 355,
                         Width = 120,
