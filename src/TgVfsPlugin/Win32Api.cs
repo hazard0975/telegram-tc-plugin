@@ -21,6 +21,11 @@ public static class Win32Api
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern uint GetModuleFileName(IntPtr hModule, StringBuilder lpFilename, int nSize);
 
+    public const uint GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS = 0x00000004;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool GetModuleHandleEx(uint dwFlags, IntPtr lpModuleName, out IntPtr phModule);
+
     public const uint ERROR_NO_MORE_FILES = 18;
 
     // WFX Plugin Return Codes
@@ -431,21 +436,28 @@ public static class Win32Api
         public fixed char cAlternateFileName[14];
     }
 
-    public static string GetCurrentModulePath()
+    public static unsafe string GetCurrentModulePath()
     {
         try
         {
-            IntPtr hModule = Marshal.GetHINSTANCE(typeof(Win32Api).Module);
-            StringBuilder sb = new StringBuilder(MAX_PATH * 2);
-            uint len = GetModuleFileName(hModule, sb, sb.Capacity);
-            if (len > 0)
+            delegate* unmanaged<void> pMethod = &DummyMethod;
+            IntPtr ptr = (IntPtr)pMethod;
+            if (GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, ptr, out IntPtr hModule))
             {
-                return sb.ToString();
+                StringBuilder sb = new StringBuilder(MAX_PATH * 2);
+                uint len = GetModuleFileName(hModule, sb, sb.Capacity);
+                if (len > 0)
+                {
+                    return sb.ToString();
+                }
             }
         }
         catch { }
         return AppContext.BaseDirectory;
     }
+
+    [UnmanagedCallersOnly]
+    private static void DummyMethod() { }
 
     public static string GetPluginVfsName()
     {
