@@ -349,11 +349,6 @@ public static unsafe class WfxExports
         }
 
         string cleanPath = NormalizeVfsPath(dirPath);
-        if (cleanPath.Equals("[⚙] Настройки", StringComparison.OrdinalIgnoreCase))
-        {
-            Logger.Info("WFX", "CreateStateForPath: Intercepted Settings directory. Returning empty state.");
-            return new FindState();
-        }
         string displayPath = string.IsNullOrEmpty(cleanPath) ? "\\" : $"\\{cleanPath}";
         Logger.Info("WFX", $"[DIR OPEN] Opened folder '{displayPath}'");
 
@@ -380,7 +375,7 @@ public static unsafe class WfxExports
                 var loginState = new FindState();
                 loginState.Items.Add(new VfsDatabase.VfsItem 
                 { 
-                    Name = "[ Login required.txt ]", 
+                    Name = "[ Login required ]", 
                     IsDirectory = false, 
                     Size = 100, 
                     Date = DateTime.Now 
@@ -422,7 +417,7 @@ public static unsafe class WfxExports
                 state.Items.Add(new VfsDatabase.VfsItem 
                 { 
                     Name = "[⚙] Настройки", 
-                    IsDirectory = true, 
+                    IsDirectory = false, 
                     Size = 0,
                     Date = DateTime.Now 
                 });
