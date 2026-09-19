@@ -240,7 +240,7 @@ public static class FilePropertiesDialog
                     // Кнопка перехода к файлу или к папке из корзины в активный VFS
                     navBtn = new Button()
                     {
-                        Text = file.IsDir ? "К папке" : "К файлу",
+                        Text = "К папке",
                         Left = 270,
                         Top = 355,
                         Width = 100,
