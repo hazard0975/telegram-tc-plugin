@@ -361,25 +361,67 @@ public static class Win32Api
         }
     }
 
-    public static void NavigateToVfsPath(string targetPath)
+    public static bool IsActivePanelLeft()
+    {
+        try
+        {
+            IntPtr tcWindow = GetTcMainWindow();
+            if (tcWindow != IntPtr.Zero)
+            {
+                uint threadId = GetWindowThreadProcessId(tcWindow, IntPtr.Zero);
+                if (threadId != 0)
+                {
+                    GUITHREADINFO gui = new GUITHREADINFO();
+                    gui.cbSize = Marshal.SizeOf<GUITHREADINFO>();
+                    if (GetGUIThreadInfo(threadId, ref gui) && gui.hwndFocus != IntPtr.Zero)
+                    {
+                        if (GetWindowRect(tcWindow, out RECT tcRect) && GetWindowRect(gui.hwndFocus, out RECT focusRect))
+                        {
+                            int tcMidX = tcRect.Left + (tcRect.Right - tcRect.Left) / 2;
+                            int focusCenterX = focusRect.Left + (focusRect.Right - focusRect.Left) / 2;
+                            return focusCenterX < tcMidX;
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
+
+        return GetActivePanelPrefix().StartsWith("[L]");
+    }
+
+    public static void NavigateToVfsPath(string targetPath, bool? targetLeftPanel = null)
     {
         IntPtr tcWindow = GetTcMainWindow();
         if (tcWindow == IntPtr.Zero) return;
 
-        Logger.Debug("WIN32", $"NavigateToVfsPath: Sending target directory '{targetPath}' to active panel.");
+        bool isLeft = targetLeftPanel ?? IsActivePanelLeft();
+
+        Logger.Debug("WIN32", $"NavigateToVfsPath: Sending target directory '{targetPath}' to {(isLeft ? "Left" : "Right")} panel.");
 
         // В Total Commander формат команды смены директории через WM_COPYDATA ('CD'):
-        // Поддержка Unicode (кириллицы и спецсимволов) с версии TC 7.50+: префикс UTF-8 BOM (0xEF, 0xBB, 0xBF) перед путем.
-        // Для смены директории в активной панели путь передается без '\r': BOM + path + '\0'
+        // Левая панель: [BOM] LeftPath \r \0
+        // Правая панель: \r [BOM] RightPath \0
         byte[] bom = new byte[] { 0xEF, 0xBB, 0xBF };
         byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(targetPath);
 
         byte[] payloadBytes;
         using (var ms = new System.IO.MemoryStream())
         {
-            ms.Write(bom, 0, bom.Length);
-            ms.Write(pathBytes, 0, pathBytes.Length);
-            ms.WriteByte(0);
+            if (isLeft)
+            {
+                ms.Write(bom, 0, bom.Length);
+                ms.Write(pathBytes, 0, pathBytes.Length);
+                ms.WriteByte((byte)'\r');
+                ms.WriteByte(0);
+            }
+            else
+            {
+                ms.WriteByte((byte)'\r');
+                ms.Write(bom, 0, bom.Length);
+                ms.Write(pathBytes, 0, pathBytes.Length);
+                ms.WriteByte(0);
+            }
             payloadBytes = ms.ToArray();
         }
         

@@ -9,6 +9,7 @@ public static class FilePropertiesDialog
 {
     public static void Show(string channelName, long channelId, string relativePath, VfsDatabase.FileRecord file, VfsDatabase? db = null)
     {
+        bool isLeftPanel = Win32Api.IsActivePanelLeft();
         FormExtensions.RunInSta(() =>
         {
             try
@@ -255,8 +256,10 @@ public static class FilePropertiesDialog
                         {
                             string pluginName = Win32Api.GetPluginVfsName();
                             string targetVfsPath = @"\\\" + pluginName + @"\" + channelName + (string.IsNullOrEmpty(file.Parent) ? "" : @"\" + file.Parent);
-                            Win32Api.NavigateToVfsPath(targetVfsPath);
                             form.Close();
+                            System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => {
+                                Win32Api.NavigateToVfsPath(targetVfsPath, isLeftPanel);
+                            });
                         }
                     };
                     form.Controls.Add(navBtn);
@@ -278,8 +281,10 @@ public static class FilePropertiesDialog
                         string targetFolder = file.IsDir ? relativePath : (file.Parent ?? "");
                         string deepestFolder = db != null ? db.GetDeepestTrashFolder(file.MountId, targetFolder) : targetFolder;
                         string targetVfsPath = @"\\\" + pluginName + @"\[🗑] Корзина\" + channelName + (string.IsNullOrEmpty(deepestFolder) ? "" : @"\" + deepestFolder);
-                        Win32Api.NavigateToVfsPath(targetVfsPath);
                         form.Close();
+                        System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => {
+                            Win32Api.NavigateToVfsPath(targetVfsPath, isLeftPanel);
+                        });
                     };
                     form.Controls.Add(navBtn);
                 }
@@ -316,6 +321,7 @@ public static class FilePropertiesDialog
 
     public static void ShowTrashProperties(string channelName, long channelId, string mountId, VfsDatabase db)
     {
+        bool isLeftPanel = Win32Api.IsActivePanelLeft();
         FormExtensions.RunInSta(() =>
         {
             try
@@ -512,8 +518,10 @@ public static class FilePropertiesDialog
                 {
                     string pluginName = Win32Api.GetPluginVfsName();
                     string targetVfsPath = @"\\\" + pluginName + @"\" + channelName;
-                    Win32Api.NavigateToVfsPath(targetVfsPath);
                     form.Close();
+                    System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => {
+                        Win32Api.NavigateToVfsPath(targetVfsPath, isLeftPanel);
+                    });
                 };
 
                 form.Controls.Add(cleanBtn);
