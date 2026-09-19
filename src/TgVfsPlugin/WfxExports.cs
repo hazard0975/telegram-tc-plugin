@@ -422,7 +422,7 @@ public static unsafe class WfxExports
                 state.Items.Add(new VfsDatabase.VfsItem 
                 { 
                     Name = "[⚙] Настройки", 
-                    IsDirectory = true, 
+                    IsDirectory = false, 
                     Size = 0,
                     Date = DateTime.Now 
                 });
