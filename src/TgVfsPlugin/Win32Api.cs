@@ -127,9 +127,72 @@ public static class Win32Api
     public const uint WM_COPYDATA = 0x004A;
     public const uint WM_USER = 0x0400;
 
+    public const uint GA_PARENT = 1;
+    public const uint GA_ROOT = 2;
+    public const uint GA_ROOTOWNER = 3;
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindow(IntPtr hWnd);
+
+    /// <summary>
+    /// Возвращает дескриптор главного окна Total Commander текущего процесса.
+    /// Поддерживает 32-bit ("TTOTAL_CMD") и 64-bit ("TTOTAL_CMD.UnicodeClass"),
+    /// а также исключает захват чужих экземпляров Total Commander при мульти-запуске.
+    /// </summary>
+    public static IntPtr GetTcMainWindow(IntPtr explicitHandle = default)
+    {
+        try
+        {
+            if (explicitHandle != IntPtr.Zero && IsWindow(explicitHandle))
+            {
+                IntPtr root = GetAncestor(explicitHandle, GA_ROOTOWNER);
+                if (root != IntPtr.Zero && IsWindow(root)) return root;
+                root = GetAncestor(explicitHandle, GA_ROOT);
+                if (root != IntPtr.Zero && IsWindow(root)) return root;
+                return explicitHandle;
+            }
+
+            uint currentPid = (uint)Environment.ProcessId;
+            IntPtr foundHwnd = IntPtr.Zero;
+
+            EnumWindows((hwnd, lParam) =>
+            {
+                GetWindowThreadProcessId(hwnd, out uint pid);
+                if (pid == currentPid)
+                {
+                    var sb = new StringBuilder(256);
+                    GetClassName(hwnd, sb, sb.Capacity);
+                    string className = sb.ToString();
+
+                    if (className == "TTOTAL_CMD" || className == "TTOTAL_CMD.UnicodeClass")
+                    {
+                        foundHwnd = hwnd;
+                        return false; // Окно найдено, останавливаем перечисление
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+
+            if (foundHwnd != IntPtr.Zero) return foundHwnd;
+
+            // Fallback если EnumWindows не нашел по PID
+            IntPtr fallback = FindWindow("TTOTAL_CMD", null!);
+            if (fallback != IntPtr.Zero) return fallback;
+
+            return FindWindow("TTOTAL_CMD.UnicodeClass", null!);
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
+
     public static void RefreshActivePanel()
     {
-        IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
+        IntPtr tcWindow = GetTcMainWindow();
         if (tcWindow != IntPtr.Zero)
         {
             // Run on a background thread with a small delay so FsExecuteFile returns first
@@ -189,7 +252,7 @@ public static class Win32Api
     {
         try
         {
-            IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
+            IntPtr tcWindow = GetTcMainWindow();
             if (tcWindow == IntPtr.Zero) return false;
 
             GetWindowThreadProcessId(tcWindow, out uint tcPid);
@@ -245,7 +308,7 @@ public static class Win32Api
 
     public static void ChangeInactivePanelDir(string inactivePath)
     {
-        IntPtr tcWindow = FindWindow("TTOTAL_CMD", null!);
+        IntPtr tcWindow = GetTcMainWindow();
         if (tcWindow == IntPtr.Zero) return;
 
         // Определяем, на какой стороне (слева или справа) открыт VFS-плагин
@@ -514,9 +577,9 @@ public class Win32Window : IWin32Window
         Handle = handle;
     }
 
-    public static IWin32Window? GetTcOwner()
+    public static IWin32Window? GetTcOwner(IntPtr explicitHandle = default)
     {
-        IntPtr hwnd = Win32Api.FindWindow("TTOTAL_CMD", null!);
+        IntPtr hwnd = Win32Api.GetTcMainWindow(explicitHandle);
         return hwnd != IntPtr.Zero ? new Win32Window(hwnd) : null;
     }
 }
@@ -527,9 +590,9 @@ public static class FormExtensions
     /// Отображает модальный WinForms-диалог относительно Total Commander без межпоточных
     /// блокировок и задержек синхронизации фокуса ввода.
     /// </summary>
-    public static System.Windows.Forms.DialogResult ShowModalTc(this System.Windows.Forms.Form form)
+    public static System.Windows.Forms.DialogResult ShowModalTc(this System.Windows.Forms.Form form, IntPtr ownerHandle = default)
     {
-        IntPtr tcHwnd = Win32Api.FindWindow("TTOTAL_CMD", null!);
+        IntPtr tcHwnd = Win32Api.GetTcMainWindow(ownerHandle);
         try
         {
             if (tcHwnd != IntPtr.Zero)

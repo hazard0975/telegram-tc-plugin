@@ -965,7 +965,7 @@ public static unsafe class WfxExports
             return Win32Api.FS_EXEC_OK;
         }
 
-        if (path.EndsWith("[ Login required.txt ]"))
+        if (path.EndsWith("[ Login required ]") || path.EndsWith("[ Login required.txt ]"))
         {
             // Запускаем асинхронный логин в синхронном контексте без await (Task.Run)
             System.Threading.Tasks.Task.Run(() => 
