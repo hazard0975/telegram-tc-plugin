@@ -593,6 +593,8 @@ public static class FormExtensions
     public static System.Windows.Forms.DialogResult ShowModalTc(this System.Windows.Forms.Form form, IntPtr ownerHandle = default)
     {
         IntPtr tcHwnd = Win32Api.GetTcMainWindow(ownerHandle);
+        IWin32Window? owner = tcHwnd != IntPtr.Zero ? new Win32Window(tcHwnd) : null;
+
         try
         {
             if (tcHwnd != IntPtr.Zero)
@@ -611,7 +613,20 @@ public static class FormExtensions
                 catch { }
             };
 
-            return form.ShowDialog();
+            form.FormClosing += (s, e) =>
+            {
+                try
+                {
+                    if (tcHwnd != IntPtr.Zero)
+                    {
+                        Win32Api.EnableWindow(tcHwnd, true);
+                        Win32Api.SetForegroundWindow(tcHwnd);
+                    }
+                }
+                catch { }
+            };
+
+            return owner != null ? form.ShowDialog(owner) : form.ShowDialog();
         }
         finally
         {
