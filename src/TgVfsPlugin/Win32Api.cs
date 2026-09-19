@@ -436,6 +436,38 @@ public static class Win32Api
         public fixed char cAlternateFileName[14];
     }
 
+    [DllImport("user32.dll")]
+    public static extern bool EnableWindow(IntPtr hWnd, bool bEnable);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetActiveWindow(IntPtr hWnd);
+
+    private static bool _visualStylesInitialized = false;
+    private static readonly object _stylesLock = new();
+
+    public static void EnsureVisualStyles()
+    {
+        if (!_visualStylesInitialized)
+        {
+            lock (_stylesLock)
+            {
+                if (!_visualStylesInitialized)
+                {
+                    try
+                    {
+                        System.Windows.Forms.Application.EnableVisualStyles();
+                        System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
+                    }
+                    catch { }
+                    _visualStylesInitialized = true;
+                }
+            }
+        }
+    }
+
     public static unsafe string GetCurrentModulePath()
     {
         try
@@ -486,5 +518,45 @@ public class Win32Window : IWin32Window
     {
         IntPtr hwnd = Win32Api.FindWindow("TTOTAL_CMD", null!);
         return hwnd != IntPtr.Zero ? new Win32Window(hwnd) : null;
+    }
+}
+
+public static class FormExtensions
+{
+    /// <summary>
+    /// Отображает модальный WinForms-диалог относительно Total Commander без межпоточных
+    /// блокировок и задержек синхронизации фокуса ввода.
+    /// </summary>
+    public static System.Windows.Forms.DialogResult ShowModalTc(this System.Windows.Forms.Form form)
+    {
+        IntPtr tcHwnd = Win32Api.FindWindow("TTOTAL_CMD", null!);
+        try
+        {
+            if (tcHwnd != IntPtr.Zero)
+            {
+                Win32Api.EnableWindow(tcHwnd, false);
+            }
+
+            form.Shown += (s, e) =>
+            {
+                try
+                {
+                    form.Activate();
+                    form.BringToFront();
+                    Win32Api.SetForegroundWindow(form.Handle);
+                }
+                catch { }
+            };
+
+            return form.ShowDialog();
+        }
+        finally
+        {
+            if (tcHwnd != IntPtr.Zero)
+            {
+                Win32Api.EnableWindow(tcHwnd, true);
+                Win32Api.SetForegroundWindow(tcHwnd);
+            }
+        }
     }
 }

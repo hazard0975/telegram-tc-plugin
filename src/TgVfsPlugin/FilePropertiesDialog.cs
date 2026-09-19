@@ -13,8 +13,7 @@ public static class FilePropertiesDialog
         {
             try
             {
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
+                Win32Api.EnsureVisualStyles();
 
                 using Form form = new Form()
                 {
@@ -305,7 +304,7 @@ public static class FilePropertiesDialog
                     else okBtn.Focus();
                 };
 
-                form.ShowDialog(Win32Window.GetTcOwner());
+                form.ShowModalTc();
             }
             catch (Exception ex)
             {
@@ -324,8 +323,7 @@ public static class FilePropertiesDialog
         {
             try
             {
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
+                Win32Api.EnsureVisualStyles();
 
                 db.GetTrashStats(mountId, out int filesCount, out int dirsCount, out long totalTrashSize);
                 int totalItems = filesCount + dirsCount;
@@ -526,7 +524,7 @@ public static class FilePropertiesDialog
                 form.Controls.Add(closeBtn);
                 form.CancelButton = closeBtn;
 
-                form.ShowDialog(Win32Window.GetTcOwner());
+                form.ShowModalTc();
             }
             catch (Exception ex)
             {

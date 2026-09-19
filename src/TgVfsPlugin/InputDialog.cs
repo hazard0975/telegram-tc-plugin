@@ -17,8 +17,7 @@ public static class InputDialog
             try
             {
                 Logger.Debug("UI", "Initializing WinForms dialog...");
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
+                Win32Api.EnsureVisualStyles();
 
                 using Form promptForm = new Form()
                 {
@@ -51,8 +50,14 @@ public static class InputDialog
                 promptForm.AcceptButton = confirmation;
                 promptForm.CancelButton = cancel;
 
+                promptForm.Shown += (s, e) =>
+                {
+                    inputBox.Focus();
+                    inputBox.SelectAll();
+                };
+
                 Logger.Info("UI", $"Showing input dialog: '{title}'");
-                if (promptForm.ShowDialog(Win32Window.GetTcOwner()) == DialogResult.OK)
+                if (promptForm.ShowModalTc() == DialogResult.OK)
                 {
                     result = inputBox.Text;
                     Logger.Info("UI", $"Input dialog '{title}' submitted (OK).");

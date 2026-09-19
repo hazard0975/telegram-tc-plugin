@@ -586,6 +586,8 @@ public static unsafe class WfxExports
                 AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
             }
 
+            Win32Api.EnsureVisualStyles();
+
             // Инициализируем базу данных при запуске плагина
             if (_db == null)
             {
@@ -799,86 +801,80 @@ public static unsafe class WfxExports
 
         if (path.EndsWith("[📁+] Создать папку") || path.EndsWith("[+] Создать папку"))
         {
-            System.Threading.Tasks.Task.Run(() => 
+            try
             {
-                try
+                var result = CreateFolderDialog.Show();
+                if (result != null)
                 {
-                    var result = CreateFolderDialog.Show();
-                    if (result != null)
-                    {
-                        string cname = "[TC] " + result.Name;
-                        long cid = TelegramManager.CreateChannelAsync(cname, "TelegramVFS channel").GetAwaiter().GetResult();
-                        
-                        _db!.AddMount(new VfsDatabase.MountInfo {
-                            Id = "tg-fldr-" + Guid.NewGuid().ToString("N").Substring(0, 8),
-                            ChannelId = cid,
-                            ChannelName = result.Name, // сохраняем без префикса для удобства
-                            Mode = result.Mode,
-                            LocalPath = result.LocalPath
-                        });
-                        
-                        Logger.Info("WFX", $"[FOLDER CREATED] Channel/folder '{result.Name}' created successfully.");
-                        Win32Api.RefreshActivePanel();
-                        TriggerCheckpoint(immediate: true);
-                    }
+                    string cname = "[TC] " + result.Name;
+                    long cid = System.Threading.Tasks.Task.Run(() => TelegramManager.CreateChannelAsync(cname, "TelegramVFS channel")).GetAwaiter().GetResult();
+                    
+                    _db!.AddMount(new VfsDatabase.MountInfo {
+                        Id = "tg-fldr-" + Guid.NewGuid().ToString("N").Substring(0, 8),
+                        ChannelId = cid,
+                        ChannelName = result.Name, // сохраняем без префикса для удобства
+                        Mode = result.Mode,
+                        LocalPath = result.LocalPath
+                    });
+                    
+                    Logger.Info("WFX", $"[FOLDER CREATED] Channel/folder '{result.Name}' created successfully.");
+                    Win32Api.RefreshActivePanel();
+                    TriggerCheckpoint(immediate: true);
                 }
-                catch (Exception ex)
-                {
-                    Logger.Error("WFX", "Create folder error", ex);
-                }
-            }).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("WFX", "Create folder error", ex);
+            }
             
             return Win32Api.FS_EXEC_OK;
         }
 
         if (path.EndsWith("[❌] Удалить папку") || path.EndsWith("[-] Удалить папку"))
         {
-            System.Threading.Tasks.Task.Run(() => 
+            try
             {
-                try
+                var mounts = _db?.GetMounts() ?? new List<VfsDatabase.VfsItem>();
+                var folderNames = mounts.Select(m => m.Name).ToList();
+                string? selectedFolder = DeleteFolderDialog.Show(folderNames);
+                if (!string.IsNullOrEmpty(selectedFolder))
                 {
-                    var mounts = _db?.GetMounts() ?? new List<VfsDatabase.VfsItem>();
-                    var folderNames = mounts.Select(m => m.Name).ToList();
-                    string? selectedFolder = DeleteFolderDialog.Show(folderNames);
-                    if (!string.IsNullOrEmpty(selectedFolder))
+                    var mount = _db?.GetMountByName(selectedFolder);
+                    if (mount != null)
                     {
-                        var mount = _db?.GetMountByName(selectedFolder);
-                        if (mount != null)
+                        var confirm = System.Windows.Forms.MessageBox.Show(
+                            $"Вы действительно хотите удалить виртуальную папку '{selectedFolder}'?\n\n" +
+                            $"⚠️ ВНИМАНИЕ: Это приведёт к удалению связанного канала и всех хранящихся в нём файлов в Telegram!",
+                            "Подтверждение удаления папки",
+                            System.Windows.Forms.MessageBoxButtons.YesNo,
+                            System.Windows.Forms.MessageBoxIcon.Warning,
+                            System.Windows.Forms.MessageBoxDefaultButton.Button2);
+
+                        if (confirm == System.Windows.Forms.DialogResult.Yes)
                         {
-                            var confirm = System.Windows.Forms.MessageBox.Show(
-                                $"Вы действительно хотите удалить виртуальную папку '{selectedFolder}'?\n\n" +
-                                $"⚠️ ВНИМАНИЕ: Это приведёт к удалению связанного канала и всех хранящихся в нём файлов в Telegram!",
-                                "Подтверждение удаления папки",
-                                System.Windows.Forms.MessageBoxButtons.YesNo,
-                                System.Windows.Forms.MessageBoxIcon.Warning,
-                                System.Windows.Forms.MessageBoxDefaultButton.Button2);
-
-                            if (confirm == System.Windows.Forms.DialogResult.Yes)
+                            if (mount.ChannelId != 0)
                             {
-                                if (mount.ChannelId != 0)
-                                {
-                                    TelegramManager.DeleteChannelAsync(mount.ChannelId).GetAwaiter().GetResult();
-                                }
-
-                                _db?.DeleteMount(mount.Id);
-                                Logger.Info("WFX", $"[FOLDER DELETED] Folder '{selectedFolder}' and Telegram channel {mount.ChannelId} deleted.");
-
-                                Win32Api.RefreshActivePanel();
-
-                                System.Windows.Forms.MessageBox.Show(
-                                    $"Папка '{selectedFolder}' и её канал в Telegram успешно удалены.",
-                                    "Удаление завершено",
-                                    System.Windows.Forms.MessageBoxButtons.OK,
-                                    System.Windows.Forms.MessageBoxIcon.Information);
+                                System.Threading.Tasks.Task.Run(() => TelegramManager.DeleteChannelAsync(mount.ChannelId)).GetAwaiter().GetResult();
                             }
+
+                            _db?.DeleteMount(mount.Id);
+                            Logger.Info("WFX", $"[FOLDER DELETED] Folder '{selectedFolder}' and Telegram channel {mount.ChannelId} deleted.");
+
+                            Win32Api.RefreshActivePanel();
+
+                            System.Windows.Forms.MessageBox.Show(
+                                $"Папка '{selectedFolder}' и её канал в Telegram успешно удалены.",
+                                "Удаление завершено",
+                                System.Windows.Forms.MessageBoxButtons.OK,
+                                System.Windows.Forms.MessageBoxIcon.Information);
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    Logger.Error("WFX", "Delete folder error", ex);
-                }
-            }).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("WFX", "Delete folder error", ex);
+            }
 
             return Win32Api.FS_EXEC_OK;
         }
@@ -890,84 +886,81 @@ public static unsafe class WfxExports
             path.EndsWith("[⚙] Настройки/") || 
             path.EndsWith("[*] Настройки плагина"))
         {
-            System.Threading.Tasks.Task.Run(() => 
+            try
             {
-                try
+                string oldDir = SettingsManager.DataDirectory;
+                var result = SettingsDialog.Show();
+                if (result != null)
                 {
-                    string oldDir = SettingsManager.DataDirectory;
-                    var result = SettingsDialog.Show();
-                    if (result != null)
+                    if (result.StorageLocationChanged)
                     {
-                        if (result.StorageLocationChanged)
+                        Logger.Info("CFG", $"Storage location change requested. New mode: {result.SelectedStorageMode}, CustomPath: '{result.CustomPath}'");
+
+                        // 1. Закрываем и сбрасываем текущие ресурсы базы данных и TelegramClient
+                        try
                         {
-                            Logger.Info("CFG", $"Storage location change requested. New mode: {result.SelectedStorageMode}, CustomPath: '{result.CustomPath}'");
-
-                            // 1. Закрываем и сбрасываем текущие ресурсы базы данных и TelegramClient
-                            try
-                            {
-                                _db?.Dispose();
-                            }
-                            catch (Exception dbEx)
-                            {
-                                Logger.Warn("DB", $"Error disposing DB: {dbEx.Message}");
-                            }
-                            finally
-                            {
-                                _db = null;
-                                // Очищаем пулы подключений SQLite, чтобы освободить дескрипторы файлов
-                                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-                            }
-
-                            TelegramManager.ResetClient();
-
-                            string newDir = result.SelectedStorageMode switch
-                            {
-                                StorageMode.Portable => SettingsManager.PortableDirectory,
-                                StorageMode.Custom => result.CustomPath,
-                                _ => SettingsManager.DefaultAppDataDirectory
-                            };
-
-                            // 2. Если выбран перенос файлов - перемещаем файлы
-                            if (result.MigrateExistingFiles)
-                            {
-                                SettingsManager.MigrateDataFiles(oldDir, newDir);
-                            }
-
-                            // 3. Сохраняем новые настройки
-                            SettingsManager.SetStorageLocation(result.SelectedStorageMode, result.CustomPath);
-
-                            // 4. Переинициализируем базу данных по новому пути
-                            try
-                            {
-                                _db = new VfsDatabase();
-                                Logger.Info("DB", "VfsDatabase re-initialized at new location.");
-                            }
-                            catch (Exception ex)
-                            {
-                                Logger.Error("DB", $"Failed to re-initialize DB: {ex.Message}");
-                            }
-
-                            // 5. Оповещаем и обновляем список папок в Total Commander
-                            Logger.Info("CFG", "Settings applied. Requesting panel refresh.");
-                            Win32Api.RefreshActivePanel();
-
-                            try
-                            {
-                                System.Windows.Forms.MessageBox.Show(
-                                    $"Настройки успешно применены!\n\nПапка данных:\n{newDir}",
-                                    "Telegram VFS",
-                                    System.Windows.Forms.MessageBoxButtons.OK,
-                                    System.Windows.Forms.MessageBoxIcon.Information);
-                            }
-                            catch { }
+                            _db?.Dispose();
                         }
+                        catch (Exception dbEx)
+                        {
+                            Logger.Warn("DB", $"Error disposing DB: {dbEx.Message}");
+                        }
+                        finally
+                        {
+                            _db = null;
+                            // Очищаем пулы подключений SQLite, чтобы освободить дескрипторы файлов
+                            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                        }
+
+                        TelegramManager.ResetClient();
+
+                        string newDir = result.SelectedStorageMode switch
+                        {
+                            StorageMode.Portable => SettingsManager.PortableDirectory,
+                            StorageMode.Custom => result.CustomPath,
+                            _ => SettingsManager.DefaultAppDataDirectory
+                        };
+
+                        // 2. Если выбран перенос файлов - перемещаем файлы
+                        if (result.MigrateExistingFiles)
+                        {
+                            SettingsManager.MigrateDataFiles(oldDir, newDir);
+                        }
+
+                        // 3. Сохраняем новые настройки
+                        SettingsManager.SetStorageLocation(result.SelectedStorageMode, result.CustomPath);
+
+                        // 4. Переинициализируем базу данных по новому пути
+                        try
+                        {
+                            _db = new VfsDatabase();
+                            Logger.Info("DB", "VfsDatabase re-initialized at new location.");
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Error("DB", $"Failed to re-initialize DB: {ex.Message}");
+                        }
+
+                        // 5. Оповещаем и обновляем список папок в Total Commander
+                        Logger.Info("CFG", "Settings applied. Requesting panel refresh.");
+                        Win32Api.RefreshActivePanel();
+
+                        try
+                        {
+                            System.Windows.Forms.MessageBox.Show(
+                                $"Настройки успешно применены!\n\nПапка данных:\n{newDir}",
+                                "Telegram VFS",
+                                System.Windows.Forms.MessageBoxButtons.OK,
+                                System.Windows.Forms.MessageBoxIcon.Information);
+                        }
+                        catch { }
                     }
                 }
-                catch (Exception ex)
-                {
-                    Logger.Error("CFG", "Settings dialog execution error", ex);
-                }
-            }).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("CFG", "Settings dialog execution error", ex);
+            }
             
             return Win32Api.FS_EXEC_OK;
         }

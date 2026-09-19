@@ -24,8 +24,7 @@ public static class SettingsDialog
             try
             {
                 Logger.Info("UI", "Opening SettingsDialog...");
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
+                Win32Api.EnsureVisualStyles();
 
                 using Form form = new Form()
                 {
@@ -195,7 +194,7 @@ public static class SettingsDialog
                 form.AcceptButton = okBtn;
                 form.CancelButton = cancelBtn;
 
-                if (form.ShowDialog(Win32Window.GetTcOwner()) == DialogResult.OK)
+                if (form.ShowModalTc() == DialogResult.OK)
                 {
                     SettingsManager.PropertiesNavigationOppositePanel = oppositePanelCheck.Checked;
                     StorageMode newMode = StorageMode.DefaultAppData;

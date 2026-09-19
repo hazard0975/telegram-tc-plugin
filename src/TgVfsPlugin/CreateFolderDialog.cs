@@ -22,8 +22,7 @@ public static class CreateFolderDialog
             try
             {
                 Logger.Info("UI", "Initializing CreateFolderDialog...");
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
+                Win32Api.EnsureVisualStyles();
 
                 using Form form = new Form()
                 {
@@ -66,7 +65,12 @@ public static class CreateFolderDialog
                 form.AcceptButton = okBtn;
                 form.CancelButton = cancelBtn;
 
-                if (form.ShowDialog(Win32Window.GetTcOwner()) == DialogResult.OK)
+                form.Shown += (s, e) =>
+                {
+                    nameBox.Focus();
+                };
+
+                if (form.ShowModalTc() == DialogResult.OK)
                 {
                     if (string.IsNullOrWhiteSpace(nameBox.Text)) {
                         MessageBox.Show("Введите название папки", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);

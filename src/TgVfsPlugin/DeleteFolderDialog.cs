@@ -23,8 +23,7 @@ public static class DeleteFolderDialog
             try
             {
                 Logger.Info("UI", "Initializing DeleteFolderDialog...");
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
+                Win32Api.EnsureVisualStyles();
 
                 using Form form = new Form()
                 {
@@ -90,7 +89,12 @@ public static class DeleteFolderDialog
                 form.AcceptButton = deleteBtn;
                 form.CancelButton = cancelBtn;
 
-                if (form.ShowDialog(Win32Window.GetTcOwner()) == DialogResult.OK && combo.SelectedItem != null)
+                form.Shown += (s, e) =>
+                {
+                    combo.Focus();
+                };
+
+                if (form.ShowModalTc() == DialogResult.OK && combo.SelectedItem != null)
                 {
                     selectedFolder = combo.SelectedItem.ToString();
                 }
