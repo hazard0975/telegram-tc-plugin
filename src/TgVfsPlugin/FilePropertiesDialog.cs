@@ -255,7 +255,7 @@ public static class FilePropertiesDialog
                         {
                             string pluginName = Win32Api.GetPluginVfsName();
                             string targetVfsPath = @"\\\" + pluginName + @"\" + channelName + (string.IsNullOrEmpty(file.Parent) ? "" : @"\" + file.Parent);
-                            Win32Api.ChangeInactivePanelDir(targetVfsPath);
+                            Win32Api.NavigateToVfsPath(targetVfsPath);
                             form.Close();
                         }
                     };
@@ -278,7 +278,7 @@ public static class FilePropertiesDialog
                         string targetFolder = file.IsDir ? relativePath : (file.Parent ?? "");
                         string deepestFolder = db != null ? db.GetDeepestTrashFolder(file.MountId, targetFolder) : targetFolder;
                         string targetVfsPath = @"\\\" + pluginName + @"\[🗑] Корзина\" + channelName + (string.IsNullOrEmpty(deepestFolder) ? "" : @"\" + deepestFolder);
-                        Win32Api.ChangeInactivePanelDir(targetVfsPath);
+                        Win32Api.NavigateToVfsPath(targetVfsPath);
                         form.Close();
                     };
                     form.Controls.Add(navBtn);
@@ -512,7 +512,7 @@ public static class FilePropertiesDialog
                 {
                     string pluginName = Win32Api.GetPluginVfsName();
                     string targetVfsPath = @"\\\" + pluginName + @"\" + channelName;
-                    Win32Api.ChangeInactivePanelDir(targetVfsPath);
+                    Win32Api.NavigateToVfsPath(targetVfsPath);
                     form.Close();
                 };
 

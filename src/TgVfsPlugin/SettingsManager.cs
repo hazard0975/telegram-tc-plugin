@@ -53,23 +53,6 @@ public static class SettingsManager
 
     public static StorageMode CurrentStorageMode => _storageMode;
 
-    public static bool PropertiesNavigationOppositePanel
-    {
-        get
-        {
-            var val = GetSetting("properties_navigation_opposite_panel");
-            if (bool.TryParse(val, out bool result))
-            {
-                return result;
-            }
-            return true; // по умолчанию включено
-        }
-        set
-        {
-            SaveSetting("properties_navigation_opposite_panel", value.ToString());
-        }
-    }
-
     /// <summary>
     /// Текущая активная директория для данных (база SQLite, сессия, логи, настройки)
     /// </summary>

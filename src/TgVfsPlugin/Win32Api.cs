@@ -361,6 +361,46 @@ public static class Win32Api
         }
     }
 
+    public static void NavigateToVfsPath(string targetPath)
+    {
+        IntPtr tcWindow = GetTcMainWindow();
+        if (tcWindow == IntPtr.Zero) return;
+
+        Logger.Debug("WIN32", $"NavigateToVfsPath: Sending target directory '{targetPath}' to active panel.");
+
+        // В Total Commander формат команды смены директории через WM_COPYDATA ('CD'):
+        // Поддержка Unicode (кириллицы и спецсимволов) с версии TC 7.50+: префикс UTF-8 BOM (0xEF, 0xBB, 0xBF) перед путем.
+        // Для смены директории в активной панели путь передается без '\r': BOM + path + '\0'
+        byte[] bom = new byte[] { 0xEF, 0xBB, 0xBF };
+        byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(targetPath);
+
+        byte[] payloadBytes;
+        using (var ms = new System.IO.MemoryStream())
+        {
+            ms.Write(bom, 0, bom.Length);
+            ms.Write(pathBytes, 0, pathBytes.Length);
+            ms.WriteByte(0);
+            payloadBytes = ms.ToArray();
+        }
+        
+        IntPtr ptr = Marshal.AllocHGlobal(payloadBytes.Length);
+        try
+        {
+            Marshal.Copy(payloadBytes, 0, ptr, payloadBytes.Length);
+
+            COPYDATASTRUCT cds = new COPYDATASTRUCT();
+            cds.dwData = new IntPtr('C' + ('D' << 8));
+            cds.cbData = payloadBytes.Length; 
+            cds.lpData = ptr;
+
+            SendMessage(tcWindow, WM_COPYDATA, IntPtr.Zero, ref cds);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
+    }
+
     public static void ChangeInactivePanelDir(string inactivePath)
     {
         IntPtr tcWindow = GetTcMainWindow();
@@ -427,8 +467,6 @@ public static class Win32Api
         bool isLeftPanelActive = true;
         if (detectedByPathBox)
         {
-            // Если плагин открыт в Левой панели -> целевая неактивная панель Правая (isLeftPanelActive = true)
-            // Если плагин открыт в Правой панели -> целевая неактивная панель Левая (isLeftPanelActive = false)
             if (isLeftVfs && !isRightVfs)
             {
                 isLeftPanelActive = true;
@@ -440,7 +478,6 @@ public static class Win32Api
         }
         else
         {
-            // Резервное определение по фокусу ввода GUI
             try
             {
                 uint threadId = GetWindowThreadProcessId(tcWindow, IntPtr.Zero);
@@ -465,17 +502,11 @@ public static class Win32Api
             }
         }
 
-        bool targetOpposite = SettingsManager.PropertiesNavigationOppositePanel;
-        bool changeRightPanel = targetOpposite ? isLeftPanelActive : !isLeftPanelActive;
+        bool changeRightPanel = isLeftPanelActive;
 
         Logger.Debug("WIN32", $"ChangeInactivePanelDir: Detected VFS side={(detectedByPathBox ? (isLeftVfs ? "Left" : "Right") : "ByFocus")}. " +
-            $"Targeting {(targetOpposite ? "opposite" : "active")} panel. " +
             $"Sending target directory '{inactivePath}' to {(changeRightPanel ? "Right" : "Left")} panel.");
 
-        // В Total Commander формат команды смены директории через WM_COPYDATA ('CD'):
-        // Поддержка Unicode (кириллицы и спецсимволов) с версии TC 7.50+: префикс UTF-8 BOM (0xEF, 0xBB, 0xBF) перед путем.
-        // Если меняем правую панель: "\r" + BOM + path + "\0"
-        // Если меняем левую панель: BOM + path + "\r\0"
         byte[] bom = new byte[] { 0xEF, 0xBB, 0xBF };
         byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(inactivePath);
 

@@ -29,7 +29,7 @@ public static class SettingsDialog
                 using Form form = new Form()
                 {
                     Width = 540,
-                    Height = 400,
+                    Height = 360,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Настройки Telegram VFS",
                     StartPosition = FormStartPosition.CenterScreen,
@@ -173,21 +173,10 @@ public static class SettingsDialog
                 storageGroup.Controls.Add(browseBtn);
                 storageGroup.Controls.Add(migrateCheck);
 
-                CheckBox oppositePanelCheck = new CheckBox()
-                {
-                    Text = "Быстрый переход из свойств: открывать на противоположной панели",
-                    Left = 20,
-                    Top = 272,
-                    Width = 490,
-                    Height = 22,
-                    Checked = SettingsManager.PropertiesNavigationOppositePanel
-                };
-
-                Button okBtn = new Button() { Text = "Сохранить", Left = 265, Width = 115, Height = 30, Top = 310, DialogResult = DialogResult.OK };
-                Button cancelBtn = new Button() { Text = "Отмена", Left = 390, Width = 115, Height = 30, Top = 310, DialogResult = DialogResult.Cancel };
+                Button okBtn = new Button() { Text = "Сохранить", Left = 265, Width = 115, Height = 30, Top = 275, DialogResult = DialogResult.OK };
+                Button cancelBtn = new Button() { Text = "Отмена", Left = 390, Width = 115, Height = 30, Top = 275, DialogResult = DialogResult.Cancel };
 
                 form.Controls.Add(storageGroup);
-                form.Controls.Add(oppositePanelCheck);
                 form.Controls.Add(okBtn);
                 form.Controls.Add(cancelBtn);
 
@@ -196,7 +185,6 @@ public static class SettingsDialog
 
                 if (form.ShowModalTc() == DialogResult.OK)
                 {
-                    SettingsManager.PropertiesNavigationOppositePanel = oppositePanelCheck.Checked;
                     StorageMode newMode = StorageMode.DefaultAppData;
                     string newPath = "";
 
