@@ -103,7 +103,18 @@ public static class Logger
         {
             string formattedLevel = level.PadRight(5);
             string formattedTag = tag.PadRight(5);
-            string line = $"[{DateTime.Now:HH:mm:ss.fff}] [{formattedLevel}] [{formattedTag}] {message}\n";
+            
+            string panelPrefix = "";
+            if (tag == "WFX" || tag == "DB" || tag == "TG" || tag == "WIN32" || tag == "CFG")
+            {
+                panelPrefix = Win32Api.GetActivePanelPrefix();
+                if (!string.IsNullOrEmpty(panelPrefix) && (message.StartsWith("[L] ") || message.StartsWith("[R] ")))
+                {
+                    panelPrefix = "";
+                }
+            }
+
+            string line = $"[{DateTime.Now:HH:mm:ss.fff}] [{formattedLevel}] [{formattedTag}] {panelPrefix}{message}\n";
 
             lock (_lock)
             {

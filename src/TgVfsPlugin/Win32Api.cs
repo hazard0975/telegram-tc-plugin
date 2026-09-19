@@ -202,6 +202,61 @@ public static class Win32Api
         }
     }
 
+    private static IntPtr _cachedTcWindow = IntPtr.Zero;
+    private static string _cachedPanelPrefix = "[L] ";
+    private static long _lastPanelCheckTick = 0;
+
+    /// <summary>
+    /// Возвращает префикс активной панели Total Commander: "[L] " для левой, "[R] " для правой.
+    /// Результат кэшируется на 100 мс для исключения накладных расходов при частых операциях.
+    /// </summary>
+    public static string GetActivePanelPrefix()
+    {
+        long now = Environment.TickCount64;
+        if (now - _lastPanelCheckTick < 100 && !string.IsNullOrEmpty(_cachedPanelPrefix))
+        {
+            return _cachedPanelPrefix;
+        }
+
+        try
+        {
+            IntPtr tcWindow = _cachedTcWindow;
+            if (tcWindow == IntPtr.Zero || !IsWindow(tcWindow))
+            {
+                tcWindow = GetTcMainWindow();
+                if (tcWindow != IntPtr.Zero)
+                {
+                    _cachedTcWindow = tcWindow;
+                }
+            }
+
+            if (tcWindow != IntPtr.Zero)
+            {
+                uint threadId = GetWindowThreadProcessId(tcWindow, IntPtr.Zero);
+                if (threadId != 0)
+                {
+                    GUITHREADINFO gui = new GUITHREADINFO();
+                    gui.cbSize = Marshal.SizeOf<GUITHREADINFO>();
+                    if (GetGUIThreadInfo(threadId, ref gui) && gui.hwndFocus != IntPtr.Zero)
+                    {
+                        if (GetWindowRect(tcWindow, out RECT tcRect) && GetWindowRect(gui.hwndFocus, out RECT focusRect))
+                        {
+                            int tcMidX = tcRect.Left + (tcRect.Right - tcRect.Left) / 2;
+                            int focusCenterX = focusRect.Left + (focusRect.Right - focusRect.Left) / 2;
+                            _cachedPanelPrefix = focusCenterX < tcMidX ? "[L] " : "[R] ";
+                            _lastPanelCheckTick = now;
+                            return _cachedPanelPrefix;
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
+
+        _lastPanelCheckTick = now;
+        return _cachedPanelPrefix;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT
     {
