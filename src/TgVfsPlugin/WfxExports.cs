@@ -2473,6 +2473,253 @@ public static unsafe class WfxExports
         _db.RenameMoveDirectory(oldMount.Id, cleanOldSub, newItemName, newParent, newMount.Id);
     }
 
+    #region WFX Content Plugin API (Custom Columns & Tooltips)
+
+    private static readonly (string Name, int Type)[] SupportedFields = new[]
+    {
+        ("Version", Win32Api.FT_NUMERIC_32),
+        ("VersionName", Win32Api.FT_STRINGW),
+        ("FileName", Win32Api.FT_STRINGW),
+        ("TgMessageId", Win32Api.FT_NUMERIC_32)
+    };
+
+    private static void CopyStringToPtrW(string src, char* dest, int maxLen)
+    {
+        if (dest == null || maxLen <= 0) return;
+        int maxChars = maxLen / sizeof(char);
+        if (maxChars <= 0) return;
+        int copyLen = Math.Min(src.Length, maxChars - 1);
+        for (int i = 0; i < copyLen; i++)
+        {
+            dest[i] = src[i];
+        }
+        dest[copyLen] = '\0';
+    }
+
+    private static void CopyStringToPtrA(string src, byte* dest, int maxLen)
+    {
+        if (dest == null || maxLen <= 0) return;
+        byte[] bytes = System.Text.Encoding.Default.GetBytes(src);
+        int copyLen = Math.Min(bytes.Length, maxLen - 1);
+        for (int i = 0; i < copyLen; i++)
+        {
+            dest[i] = bytes[i];
+        }
+        dest[copyLen] = 0;
+    }
+
+    private static int WriteStringFieldValue(string text, void* fieldValue, int maxLen, bool isUnicode)
+    {
+        if (fieldValue == null || maxLen <= 0) return Win32Api.FT_FILEERROR;
+
+        if (isUnicode)
+        {
+            CopyStringToPtrW(text, (char*)fieldValue, maxLen);
+            return Win32Api.FT_STRINGW;
+        }
+        else
+        {
+            CopyStringToPtrA(text, (byte*)fieldValue, maxLen);
+            return Win32Api.FT_STRING;
+        }
+    }
+
+    private static int HandleContentGetValue(string rawPath, int fieldIndex, int unitIndex, void* fieldValue, int maxLen, int flags, bool isUnicode)
+    {
+        if (_db == null || string.IsNullOrWhiteSpace(rawPath))
+        {
+            return Win32Api.FT_FILEERROR;
+        }
+
+        string cleanPath = NormalizeVfsPath(rawPath);
+        if (string.IsNullOrEmpty(cleanPath))
+        {
+            return Win32Api.FT_FIELDEMPTY;
+        }
+
+        ParseVfsPath(cleanPath, out string channelName, out string subPath, out bool isInTrash);
+
+        if (string.IsNullOrEmpty(channelName))
+        {
+            return Win32Api.FT_FIELDEMPTY;
+        }
+
+        var mount = _db.GetMountByName(channelName);
+        if (mount == null)
+        {
+            return Win32Api.FT_FILEERROR;
+        }
+
+        if (string.IsNullOrEmpty(subPath))
+        {
+            // Корневая папка канала
+            if (fieldIndex == 2) // FileName
+            {
+                return WriteStringFieldValue(mount.ChannelName, fieldValue, maxLen, isUnicode);
+            }
+            return Win32Api.FT_FIELDEMPTY;
+        }
+
+        int lastSlash = subPath.LastIndexOf('\\');
+        string itemName = lastSlash >= 0 ? subPath.Substring(lastSlash + 1) : subPath;
+        string? parentSubPath = lastSlash >= 0 ? subPath.Substring(0, lastSlash) : null;
+
+        VfsDatabase.FileRecord? record = null;
+        if (isInTrash)
+        {
+            record = _db.GetTrashFileByVersionedName(mount.Id, itemName, parentSubPath);
+        }
+        else
+        {
+            record = _db.GetFile(mount.Id, itemName, parentSubPath);
+        }
+
+        if (record == null)
+        {
+            // Проверка на виртуальную директорию
+            if (_db.ActiveFolderExists(mount.Id, subPath))
+            {
+                if (fieldIndex == 2) // FileName
+                {
+                    return WriteStringFieldValue(itemName, fieldValue, maxLen, isUnicode);
+                }
+                return Win32Api.FT_FIELDEMPTY;
+            }
+            return Win32Api.FT_FILEERROR;
+        }
+
+        if (record.IsDir)
+        {
+            if (fieldIndex == 2) // FileName
+            {
+                return WriteStringFieldValue(record.Name, fieldValue, maxLen, isUnicode);
+            }
+            return Win32Api.FT_FIELDEMPTY;
+        }
+
+        // Запрос метаданных файла
+        switch (fieldIndex)
+        {
+            case 0: // Version (числовой)
+                if (maxLen >= sizeof(int))
+                {
+                    *(int*)fieldValue = record.Ver;
+                    return Win32Api.FT_NUMERIC_32;
+                }
+                return Win32Api.FT_FILEERROR;
+
+            case 1: // VersionName ("v1", "v2"...)
+                return WriteStringFieldValue($"v{record.Ver}", fieldValue, maxLen, isUnicode);
+
+            case 2: // FileName (оригинальное имя)
+                return WriteStringFieldValue(record.Name, fieldValue, maxLen, isUnicode);
+
+            case 3: // TgMessageId
+                if (maxLen >= sizeof(int))
+                {
+                    *(int*)fieldValue = record.TgMessageId;
+                    return Win32Api.FT_NUMERIC_32;
+                }
+                return Win32Api.FT_FILEERROR;
+
+            default:
+                return Win32Api.FT_NOSUCHFIELD;
+        }
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "FsContentGetSupportedField", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsContentGetSupportedField(int fieldIndex, byte* fieldName, byte* units, int maxLen)
+    {
+        if (fieldIndex < 0 || fieldIndex >= SupportedFields.Length)
+        {
+            return Win32Api.FT_NOMOREFIELDS;
+        }
+
+        var field = SupportedFields[fieldIndex];
+        CopyStringToPtrA(field.Name, fieldName, maxLen);
+        if (units != null && maxLen > 0) units[0] = 0;
+
+        int type = field.Type == Win32Api.FT_STRINGW ? Win32Api.FT_STRING : field.Type;
+        return type;
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "FsContentGetSupportedFieldW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsContentGetSupportedFieldW(int fieldIndex, char* fieldName, char* units, int maxLen)
+    {
+        if (fieldIndex < 0 || fieldIndex >= SupportedFields.Length)
+        {
+            return Win32Api.FT_NOMOREFIELDS;
+        }
+
+        var field = SupportedFields[fieldIndex];
+        CopyStringToPtrW(field.Name, fieldName, maxLen);
+        if (units != null && maxLen > 0) units[0] = '\0';
+
+        return field.Type;
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "FsContentGetSupportedFieldFlags", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsContentGetSupportedFieldFlags(int fieldIndex)
+    {
+        if (fieldIndex < 0 || fieldIndex >= SupportedFields.Length)
+        {
+            return 0;
+        }
+        return Win32Api.CONTFLAGS_OPTIONAL;
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "FsContentGetDefaultSortOrder", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsContentGetDefaultSortOrder(int fieldIndex)
+    {
+        return 1; // По возрастанию (1..N)
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "FsContentGetValue", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsContentGetValue(byte* fileName, int fieldIndex, int unitIndex, void* fieldValue, int maxLen, int flags)
+    {
+        string path = Marshal.PtrToStringAnsi((IntPtr)fileName) ?? "";
+        return HandleContentGetValue(path, fieldIndex, unitIndex, fieldValue, maxLen, flags, isUnicode: false);
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "FsContentGetValueW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsContentGetValueW(char* fileName, int fieldIndex, int unitIndex, void* fieldValue, int maxLen, int flags)
+    {
+        string path = Marshal.PtrToStringUni((IntPtr)fileName) ?? "";
+        return HandleContentGetValue(path, fieldIndex, unitIndex, fieldValue, maxLen, flags, isUnicode: true);
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "FsContentGetDefaultView", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsContentGetDefaultView(byte* viewContents, byte* viewHeaders, byte* viewWidths, byte* viewOptions, int maxLen)
+    {
+        string contents = "[=tgvfsplugin.VersionName]\\n[=tc.size]\\n[=tc.writedate]";
+        string headers = "Версия\\nРазмер\\nДата";
+        string widths = "50,30,60";
+        string options = "-1|0";
+
+        CopyStringToPtrA(contents, viewContents, maxLen);
+        CopyStringToPtrA(headers, viewHeaders, maxLen);
+        CopyStringToPtrA(widths, viewWidths, maxLen);
+        CopyStringToPtrA(options, viewOptions, maxLen);
+        return 1;
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "FsContentGetDefaultViewW", CallConvs = [typeof(CallConvStdcall)])]
+    public static int FsContentGetDefaultViewW(char* viewContents, char* viewHeaders, char* viewWidths, char* viewOptions, int maxLen)
+    {
+        string contents = "[=tgvfsplugin.VersionName]\\n[=tc.size]\\n[=tc.writedate]";
+        string headers = "Версия\\nРазмер\\nДата";
+        string widths = "50,30,60";
+        string options = "-1|0";
+
+        CopyStringToPtrW(contents, viewContents, maxLen);
+        CopyStringToPtrW(headers, viewHeaders, maxLen);
+        CopyStringToPtrW(widths, viewWidths, maxLen);
+        CopyStringToPtrW(options, viewOptions, maxLen);
+        return 1;
+    }
+
+    #endregion
+
     // Вызывается Total Commander при выгрузке плагина или закрытии программы
     [UnmanagedCallersOnly(EntryPoint = "FsContentPluginUnload", CallConvs = [typeof(CallConvStdcall)])]
     public static void FsContentPluginUnload()

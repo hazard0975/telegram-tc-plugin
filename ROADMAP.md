@@ -61,8 +61,11 @@
 
 ## Этап 6: Режимы, Ограничения и Полировка
 - [x] Структурированное логирование с уровнями (INFO/WARN/ERROR/DEBUG) и функциональными тегами (WFX/TG/DB/CFG/UI/WIN32) с потокобезопасной ротацией.
+- [x] Реализация WFX Content Plugin API (`FsContentGetSupportedField`, `FsContentGetValue`, `FsContentGetDefaultView`) для отображения версий и имен файлов в пользовательских всплывающих подсказках (Tooltips) и настраиваемых колонках Total Commander (Custom Columns).
 
 - [ ] Полноценная логика двусторонней синхронизации для режима "Зеркало" (отслеживание изменений в локальной папке).
 - [ ] Обработка лимитов размера файлов Telegram (разбиение или блокировка: 2 ГБ для обычных / 4 ГБ для Premium).
 - [ ] (Опционально) Шифрование файлов перед отправкой для режима "Контейнер".
-> **Промежуточный результат:** Полностью переработана подсистема логирования (`Logger.cs`). Все события и файловые операции плагина (`FsPutFile`, `FsGetFile`, `FsDeleteFile`, `FsRenMovFile`, `FsMkDir`, `TelegramManager`, `VfsDatabase`, `SettingsManager`, UI) переведены на единый структурированный формат с уровнями, тегами категорий, понятными сообщениями цепочки событий, форматированием байтов и полным выводом исключений.
+> **Промежуточный результат:** 
+> 1. Полностью переработана подсистема логирования (`Logger.cs`). Все события и файловые операции плагина (`FsPutFile`, `FsGetFile`, `FsDeleteFile`, `FsRenMovFile`, `FsMkDir`, `TelegramManager`, `VfsDatabase`, `SettingsManager`, UI) переведены на единый структурированный формат с уровнями, тегами категорий, понятными сообщениями цепочки событий, форматированием байтов и полным выводом исключений.
+> 2. Внедрен полный стек WFX Content Plugin API (`FsContentGetSupportedField`, `FsContentGetSupportedFieldW`, `FsContentGetSupportedFieldFlags`, `FsContentGetDefaultSortOrder`, `FsContentGetValue`, `FsContentGetValueW`, `FsContentGetDefaultView`, `FsContentGetDefaultViewW`). Плагин предоставляет поля `Version` (число), `VersionName` (`v1`, `v2`), `FileName` (оригинальное имя) и `TgMessageId`. Запросы разрешаются мгновенно из локального SQLite кэша без сетевых запросов к Telegram. Total Commander может использовать эти поля как в настраиваемых всплывающих подсказках (tooltips), так и в пользовательских наборах колонок (Custom Columns View).

@@ -56,6 +56,40 @@ public static class Win32Api
     public const int BG_UPLOAD = 2;
     public const int BG_ASK_USER = 4;
 
+    // Content Plugin (WFX / WDX) Field Types
+    public const int FT_NOMOREFIELDS = 0;
+    public const int FT_NUMERIC_32 = 1;
+    public const int FT_NUMERIC_64 = 2;
+    public const int FT_NUMERIC_FLOATING = 3;
+    public const int FT_DATE = 4;
+    public const int FT_TIME = 5;
+    public const int FT_BOOLEAN = 6;
+    public const int FT_MULTIPLECHOICE = 7;
+    public const int FT_STRING = 8;
+    public const int FT_FULLTEXT = 9;
+    public const int FT_DATETIME = 10;
+    public const int FT_STRINGW = 11;
+
+    // Content Plugin Return Codes
+    public const int FT_NOSUCHFIELD = -1;
+    public const int FT_FILEERROR = -2;
+    public const int FT_FIELDEMPTY = -3;
+    public const int FT_ONDEMAND = -4;
+    public const int FT_NOTSUPPORTED = -5;
+    public const int FT_SETCANCEL = -6;
+    public const int FT_DELAYED = 0;
+
+    // Content Field Flags
+    public const int CONTFLAGS_EDIT = 1;
+    public const int CONTFLAGS_SUBSTSIZE = 2;
+    public const int CONTFLAGS_OPTIONAL = 4;
+    public const int CONTFLAGS_PASSTHROUGH_SIZE_FLOAT = 8;
+    public const int CONTFLAGS_SUBSTDATETIME = 16;
+    public const int CONTFLAGS_SUBSTDATE = 32;
+    public const int CONTFLAGS_SUBSTTIME = 64;
+    public const int CONTFLAGS_SUBSTATTRIBUTES = 128;
+    public const int CONTFLAGS_SUBSTONLYTHIS = 256;
+
     // FsStatusInfo constants
     public const int FS_STATUS_START = 0;
     public const int FS_STATUS_END = 1;
