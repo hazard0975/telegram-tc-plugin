@@ -18,7 +18,7 @@ public static class DeleteFolderDialog
 
         string? selectedFolder = null;
 
-        var t = new System.Threading.Thread(() =>
+        FormExtensions.RunInSta(() =>
         {
             try
             {
@@ -104,10 +104,6 @@ public static class DeleteFolderDialog
                 Logger.Error("UI", "DeleteFolderDialog Error", ex);
             }
         });
-
-        t.SetApartmentState(System.Threading.ApartmentState.STA);
-        t.Start();
-        t.Join();
 
         return selectedFolder;
     }

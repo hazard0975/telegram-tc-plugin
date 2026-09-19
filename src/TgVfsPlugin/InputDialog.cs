@@ -10,9 +10,7 @@ public static class InputDialog
     {
         string? result = null;
 
-        // В Native AOT и плагинах TC потоки могут быть MTA или без цикла сообщений.
-        // Поэтому для WinForms-окон надежнее всего создавать выделенный STA-поток.
-        var t = new System.Threading.Thread(() =>
+        FormExtensions.RunInSta(() =>
         {
             try
             {
@@ -72,10 +70,6 @@ public static class InputDialog
                 Logger.Error("UI", $"Input dialog error ('{title}')", ex);
             }
         });
-
-        t.SetApartmentState(System.Threading.ApartmentState.STA);
-        t.Start();
-        t.Join(); // Ждем завершения ввода
 
         return result;
     }

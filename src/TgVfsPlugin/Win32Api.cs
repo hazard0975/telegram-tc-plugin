@@ -603,75 +603,52 @@ public class Win32Window : IWin32Window
 public static class FormExtensions
 {
     /// <summary>
+    /// Выполняет действие в STA-потоке. Если текущий поток уже STA (главный UI-поток Total Commander),
+    /// действие выполняется прямо в нем без накладных расходов и межпоточных блокировок.
+    /// </summary>
+    public static void RunInSta(Action action)
+    {
+        if (System.Threading.Thread.CurrentThread.GetApartmentState() == System.Threading.ApartmentState.STA)
+        {
+            action();
+        }
+        else
+        {
+            var t = new System.Threading.Thread(() => action());
+            t.SetApartmentState(System.Threading.ApartmentState.STA);
+            t.Start();
+            t.Join();
+        }
+    }
+
+    /// <summary>
     /// Отображает модальный WinForms-диалог относительно Total Commander без межпоточных
     /// блокировок, зависаний мышиного захвата и задержек синхронизации фокуса ввода.
     /// </summary>
     public static System.Windows.Forms.DialogResult ShowModalTc(this System.Windows.Forms.Form form, IntPtr ownerHandle = default)
     {
         IntPtr tcHwnd = Win32Api.GetTcMainWindow(ownerHandle);
+        IWin32Window? owner = tcHwnd != IntPtr.Zero ? new Win32Window(tcHwnd) : null;
 
-        try
+        if (tcHwnd != IntPtr.Zero && Win32Api.GetWindowRect(tcHwnd, out var rcTc))
         {
-            if (tcHwnd != IntPtr.Zero)
-            {
-                Win32Api.EnableWindow(tcHwnd, false);
-            }
-
-            // Связываем окно через нативный Win32 GWL_HWNDPARENT.
-            // Это гарантирует корректный Z-order и возврат фокуса в Total Commander без мигания Chrome,
-            // но избавляет от 2-секундного межпоточного тайм-аута WinForms ShowDialog(owner).
-            form.HandleCreated += (s, e) =>
-            {
-                try
-                {
-                    if (tcHwnd != IntPtr.Zero)
-                    {
-                        Win32Api.SetWindowLongPtr(form.Handle, Win32Api.GWL_HWNDPARENT, tcHwnd);
-                    }
-                }
-                catch { }
-            };
-
-            form.Shown += (s, e) =>
-            {
-                try
-                {
-                    if (tcHwnd != IntPtr.Zero)
-                    {
-                        Win32Api.SetWindowLongPtr(form.Handle, Win32Api.GWL_HWNDPARENT, tcHwnd);
-                    }
-
-                    Win32Api.ReleaseCapture();
-                    form.Activate();
-                    form.BringToFront();
-                    Win32Api.SetForegroundWindow(form.Handle);
-                    Win32Api.SetActiveWindow(form.Handle);
-                }
-                catch { }
-            };
-
-            form.FormClosing += (s, e) =>
-            {
-                try
-                {
-                    if (tcHwnd != IntPtr.Zero)
-                    {
-                        Win32Api.EnableWindow(tcHwnd, true);
-                        Win32Api.SetForegroundWindow(tcHwnd);
-                    }
-                }
-                catch { }
-            };
-
-            return form.ShowDialog();
+            form.StartPosition = FormStartPosition.Manual;
+            int x = rcTc.Left + (rcTc.Right - rcTc.Left - form.Width) / 2;
+            int y = rcTc.Top + (rcTc.Bottom - rcTc.Top - form.Height) / 2;
+            form.Location = new System.Drawing.Point(Math.Max(rcTc.Left, x), Math.Max(rcTc.Top, y));
         }
-        finally
+
+        form.Shown += (s, e) =>
         {
-            if (tcHwnd != IntPtr.Zero)
+            try
             {
-                Win32Api.EnableWindow(tcHwnd, true);
-                Win32Api.SetForegroundWindow(tcHwnd);
+                form.Activate();
+                form.BringToFront();
+                Win32Api.SetForegroundWindow(form.Handle);
             }
-        }
+            catch { }
+        };
+
+        return owner != null ? form.ShowDialog(owner) : form.ShowDialog();
     }
 }

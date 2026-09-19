@@ -17,7 +17,7 @@ public static class CreateFolderDialog
     {
         CreateFolderResult? result = null;
 
-        var t = new System.Threading.Thread(() =>
+        FormExtensions.RunInSta(() =>
         {
             try
             {
@@ -90,10 +90,6 @@ public static class CreateFolderDialog
                 Logger.Error("UI", "CreateFolderDialog Error", ex);
             }
         });
-
-        t.SetApartmentState(System.Threading.ApartmentState.STA);
-        t.Start();
-        t.Join();
 
         return result;
     }

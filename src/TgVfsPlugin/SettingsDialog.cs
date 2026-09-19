@@ -19,7 +19,7 @@ public static class SettingsDialog
     {
         SettingsDialogResult? result = null;
 
-        var t = new System.Threading.Thread(() =>
+        FormExtensions.RunInSta(() =>
         {
             try
             {
@@ -239,10 +239,6 @@ public static class SettingsDialog
                 Logger.Error("UI", "SettingsDialog Error", ex);
             }
         });
-
-        t.SetApartmentState(System.Threading.ApartmentState.STA);
-        t.Start();
-        t.Join();
 
         return result;
     }

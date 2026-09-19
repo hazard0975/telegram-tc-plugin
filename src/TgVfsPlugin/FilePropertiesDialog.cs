@@ -9,7 +9,7 @@ public static class FilePropertiesDialog
 {
     public static void Show(string channelName, long channelId, string relativePath, VfsDatabase.FileRecord file, VfsDatabase? db = null)
     {
-        var t = new System.Threading.Thread(() =>
+        FormExtensions.RunInSta(() =>
         {
             try
             {
@@ -311,15 +311,11 @@ public static class FilePropertiesDialog
                 Logger.Error("UI", "FilePropertiesDialog exception", ex);
             }
         });
-
-        t.SetApartmentState(System.Threading.ApartmentState.STA);
-        t.Start();
-        t.Join();
     }
 
     public static void ShowTrashProperties(string channelName, long channelId, string mountId, VfsDatabase db)
     {
-        var t = new System.Threading.Thread(() =>
+        FormExtensions.RunInSta(() =>
         {
             try
             {
@@ -531,10 +527,6 @@ public static class FilePropertiesDialog
                 Logger.Error("UI", "ShowTrashProperties exception", ex);
             }
         });
-
-        t.SetApartmentState(System.Threading.ApartmentState.STA);
-        t.Start();
-        t.Join();
     }
 
     public static string FormatSize(long bytes)
