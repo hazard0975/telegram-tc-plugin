@@ -508,6 +508,22 @@ public static class Win32Api
     [DllImport("user32.dll")]
     public static extern IntPtr SetActiveWindow(IntPtr hWnd);
 
+    [DllImport("user32.dll")]
+    public static extern bool ReleaseCapture();
+
+    public const int GWL_HWNDPARENT = -8;
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+    private static extern IntPtr SetWindowLong32(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
+    private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
+    {
+        return IntPtr.Size == 8 ? SetWindowLongPtr64(hWnd, nIndex, dwNewLong) : SetWindowLong32(hWnd, nIndex, dwNewLong);
+    }
+
     private static bool _visualStylesInitialized = false;
     private static readonly object _stylesLock = new();
 
@@ -588,12 +604,11 @@ public static class FormExtensions
 {
     /// <summary>
     /// Отображает модальный WinForms-диалог относительно Total Commander без межпоточных
-    /// блокировок и задержек синхронизации фокуса ввода.
+    /// блокировок, зависаний мышиного захвата и задержек синхронизации фокуса ввода.
     /// </summary>
     public static System.Windows.Forms.DialogResult ShowModalTc(this System.Windows.Forms.Form form, IntPtr ownerHandle = default)
     {
         IntPtr tcHwnd = Win32Api.GetTcMainWindow(ownerHandle);
-        IWin32Window? owner = tcHwnd != IntPtr.Zero ? new Win32Window(tcHwnd) : null;
 
         try
         {
@@ -602,13 +617,35 @@ public static class FormExtensions
                 Win32Api.EnableWindow(tcHwnd, false);
             }
 
+            // Связываем окно через нативный Win32 GWL_HWNDPARENT.
+            // Это гарантирует корректный Z-order и возврат фокуса в Total Commander без мигания Chrome,
+            // но избавляет от 2-секундного межпоточного тайм-аута WinForms ShowDialog(owner).
+            form.HandleCreated += (s, e) =>
+            {
+                try
+                {
+                    if (tcHwnd != IntPtr.Zero)
+                    {
+                        Win32Api.SetWindowLongPtr(form.Handle, Win32Api.GWL_HWNDPARENT, tcHwnd);
+                    }
+                }
+                catch { }
+            };
+
             form.Shown += (s, e) =>
             {
                 try
                 {
+                    if (tcHwnd != IntPtr.Zero)
+                    {
+                        Win32Api.SetWindowLongPtr(form.Handle, Win32Api.GWL_HWNDPARENT, tcHwnd);
+                    }
+
+                    Win32Api.ReleaseCapture();
                     form.Activate();
                     form.BringToFront();
                     Win32Api.SetForegroundWindow(form.Handle);
+                    Win32Api.SetActiveWindow(form.Handle);
                 }
                 catch { }
             };
@@ -626,7 +663,7 @@ public static class FormExtensions
                 catch { }
             };
 
-            return owner != null ? form.ShowDialog(owner) : form.ShowDialog();
+            return form.ShowDialog();
         }
         finally
         {
