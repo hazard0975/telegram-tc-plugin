@@ -223,6 +223,49 @@ public class VfsDatabase : IDisposable
         return file != null && file.IsDir;
     }
 
+    public bool TrashFolderHasItems(string mountId, string? path)
+    {
+        string cleanPath = string.IsNullOrEmpty(path) ? "" : path.Trim('\\', '/').Replace('/', '\\');
+        if (string.IsNullOrEmpty(cleanPath))
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "SELECT 1 FROM files WHERE mount_id = @mid AND in_trash = 1 LIMIT 1";
+            cmd.Parameters.AddWithValue("@mid", mountId);
+            return cmd.ExecuteScalar() != null;
+        }
+
+        using var cmdSub = _connection.CreateCommand();
+        cmdSub.CommandText = @"
+            SELECT 1 FROM files 
+            WHERE mount_id = @mid AND in_trash = 1 
+              AND (parent = @exactPath COLLATE NOCASE OR parent LIKE @prefixPath COLLATE NOCASE)
+            LIMIT 1";
+        cmdSub.Parameters.AddWithValue("@mid", mountId);
+        cmdSub.Parameters.AddWithValue("@exactPath", cleanPath);
+        cmdSub.Parameters.AddWithValue("@prefixPath", cleanPath + "\\%");
+        return cmdSub.ExecuteScalar() != null;
+    }
+
+    public string GetDeepestTrashFolder(string mountId, string? targetSubPath)
+    {
+        string cleanPath = string.IsNullOrEmpty(targetSubPath) ? "" : targetSubPath.Trim('\\', '/').Replace('/', '\\');
+        if (string.IsNullOrEmpty(cleanPath)) return "";
+
+        string current = cleanPath;
+        while (!string.IsNullOrEmpty(current))
+        {
+            if (TrashFolderHasItems(mountId, current))
+            {
+                return current;
+            }
+
+            int lastSlash = current.LastIndexOf('\\');
+            current = lastSlash >= 0 ? current.Substring(0, lastSlash) : "";
+        }
+
+        return "";
+    }
+
     public FileRecord? GetFile(string mountId, string fileName, string? parent = null)
     {
         var cmd = _connection.CreateCommand();

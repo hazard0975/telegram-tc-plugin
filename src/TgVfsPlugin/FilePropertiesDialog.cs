@@ -276,7 +276,8 @@ public static class FilePropertiesDialog
                     {
                         string pluginName = Win32Api.GetPluginVfsName();
                         string targetFolder = file.IsDir ? relativePath : (file.Parent ?? "");
-                        string targetVfsPath = @"\\\" + pluginName + @"\[🗑] Корзина\" + channelName + (string.IsNullOrEmpty(targetFolder) ? "" : @"\" + targetFolder);
+                        string deepestFolder = db != null ? db.GetDeepestTrashFolder(file.MountId, targetFolder) : targetFolder;
+                        string targetVfsPath = @"\\\" + pluginName + @"\[🗑] Корзина\" + channelName + (string.IsNullOrEmpty(deepestFolder) ? "" : @"\" + deepestFolder);
                         Win32Api.ChangeInactivePanelDir(targetVfsPath);
                         form.Close();
                     };
