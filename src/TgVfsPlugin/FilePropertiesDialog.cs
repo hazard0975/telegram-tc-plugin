@@ -161,7 +161,7 @@ public static class FilePropertiesDialog
                     Text = "Копировать",
                     Left = 20,
                     Top = 355,
-                    Width = 100,
+                    Width = 115,
                     Height = 30
                 };
                 copyBtn.Click += (s, e) =>
@@ -204,7 +204,7 @@ public static class FilePropertiesDialog
                 {
                     restoreBtn = new Button()
                     {
-                        Text = "↺ Восстановить",
+                        Text = "Восстановить",
                         Left = 130,
                         Top = 355,
                         Width = 130,
