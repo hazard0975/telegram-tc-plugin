@@ -2692,7 +2692,7 @@ public static unsafe class WfxExports
     {
         string contents = "[=<fs>.VersionName]\\n[=tc.size]\\n[=tc.writedate]";
         string headers = "Версия\\nРазмер\\nДата";
-        string widths = "150,40,60,80,120";
+        string widths = "280,25,15,-40,-60";
         string options = "-1|0";
 
         CopyStringToPtrA(contents, viewContents, maxLen);
@@ -2707,7 +2707,7 @@ public static unsafe class WfxExports
     {
         string contents = "[=<fs>.VersionName]\\n[=tc.size]\\n[=tc.writedate]";
         string headers = "Версия\\nРазмер\\nДата";
-        string widths = "150,40,60,80,120";
+        string widths = "280,25,15,-40,-60";
         string options = "-1|0";
 
         CopyStringToPtrW(contents, viewContents, maxLen);
