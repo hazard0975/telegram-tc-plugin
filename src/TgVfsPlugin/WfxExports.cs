@@ -1285,7 +1285,8 @@ public static unsafe class WfxExports
                 Size = fileInfo.Length,
                 TgMessageId = messageId,
                 InTrash = 0,
-                Ver = ver
+                Ver = ver,
+                SourcePath = Path.GetFullPath(localPath)
             });
 
             Logger.Info("DB", $"[DB WRITE] File '{fileName}' successfully recorded in DB.");
@@ -2480,7 +2481,8 @@ public static unsafe class WfxExports
         ("Version", Win32Api.FT_NUMERIC_32),
         ("VersionName", Win32Api.FT_STRINGW),
         ("FileName", Win32Api.FT_STRINGW),
-        ("TgMessageId", Win32Api.FT_NUMERIC_32)
+        ("TgMessageId", Win32Api.FT_NUMERIC_32),
+        ("SourcePath", Win32Api.FT_STRINGW)
     };
 
     private static void CopyStringToPtrW(string src, char* dest, int maxLen)
@@ -2620,6 +2622,13 @@ public static unsafe class WfxExports
                     return Win32Api.FT_NUMERIC_32;
                 }
                 return Win32Api.FT_FILEERROR;
+
+            case 4: // SourcePath
+                if (string.IsNullOrEmpty(record.SourcePath))
+                {
+                    return Win32Api.FT_FIELDEMPTY;
+                }
+                return WriteStringFieldValue(record.SourcePath, fieldValue, maxLen, isUnicode);
 
             default:
                 return Win32Api.FT_NOSUCHFIELD;

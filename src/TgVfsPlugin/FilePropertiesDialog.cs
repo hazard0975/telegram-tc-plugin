@@ -19,7 +19,7 @@ public static class FilePropertiesDialog
                 using Form form = new Form()
                 {
                     Width = 520,
-                    Height = 450,
+                    Height = 490,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = $"Свойства: {file.Name}",
                     StartPosition = FormStartPosition.CenterScreen,
@@ -72,7 +72,7 @@ public static class FilePropertiesDialog
                     Left = 20,
                     Top = 75,
                     Width = 465,
-                    Height = 265,
+                    Height = 305,
                     Text = file.IsDir ? "Параметры папки" : "Параметры Telegram VFS"
                 };
 
@@ -148,6 +148,10 @@ public static class FilePropertiesDialog
                 {
                     AddRow("ID сообщения TG:", msgIdReport);
                     AddRow("Ревизия / Версия:", versionReport);
+                    if (!string.IsNullOrEmpty(file.SourcePath))
+                    {
+                        AddRow("Источник на ПК:", file.SourcePath);
+                    }
                 }
 
                 AddRow("Статус файла:", statusStr);
@@ -160,8 +164,8 @@ public static class FilePropertiesDialog
                 {
                     Text = "Копировать",
                     Left = 20,
-                    Top = 355,
-                    Width = 115,
+                    Top = 395,
+                    Width = 110,
                     Height = 30
                 };
                 copyBtn.Click += (s, e) =>
@@ -184,6 +188,7 @@ public static class FilePropertiesDialog
                         $"Дата изменения: {dateStr}\r\n" +
                         $"ID сообщения TG: {msgIdReport}\r\n" +
                         $"Версия: {versionReport}\r\n" +
+                        $"Источник на ПК: {(file.SourcePath ?? "нет")}\r\n" +
                         $"Статус: {statusStr}\r\n" +
                         $"UID: {file.Uid}";
                     try
@@ -199,15 +204,55 @@ public static class FilePropertiesDialog
 
                 Button? restoreBtn = null;
                 Button? navBtn = null;
+                Button? openLocBtn = null;
+
+                if (!file.IsDir && !string.IsNullOrEmpty(file.SourcePath))
+                {
+                    openLocBtn = new Button()
+                    {
+                        Text = "Найти на ПК",
+                        Left = 135,
+                        Top = 395,
+                        Width = 110,
+                        Height = 30
+                    };
+                    openLocBtn.Click += (s, e) =>
+                    {
+                        try
+                        {
+                            if (File.Exists(file.SourcePath))
+                            {
+                                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{file.SourcePath}\"");
+                            }
+                            else
+                            {
+                                string dir = Path.GetDirectoryName(file.SourcePath) ?? "";
+                                if (Directory.Exists(dir))
+                                {
+                                    System.Diagnostics.Process.Start("explorer.exe", $"\"{dir}\"");
+                                }
+                                else
+                                {
+                                    MessageBox.Show(form, $"Файл или папка не найдены на ПК:\n{file.SourcePath}", "Источник не найден", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show(form, $"Ошибка: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    };
+                    form.Controls.Add(openLocBtn);
+                }
 
                 if (file.InTrash == 1 && db != null)
                 {
                     restoreBtn = new Button()
                     {
                         Text = "Восстановить",
-                        Left = 130,
-                        Top = 355,
-                        Width = 130,
+                        Left = openLocBtn != null ? 250 : 135,
+                        Top = 395,
+                        Width = 120,
                         Height = 30,
                         BackColor = Color.FromArgb(230, 245, 230)
                     };
@@ -241,9 +286,9 @@ public static class FilePropertiesDialog
                     navBtn = new Button()
                     {
                         Text = "К папке",
-                        Left = 270,
-                        Top = 355,
-                        Width = 100,
+                        Left = openLocBtn != null ? 375 : 260,
+                        Top = 395,
+                        Width = 90,
                         Height = 30
                     };
                     navBtn.Click += (s, e) =>
@@ -268,9 +313,9 @@ public static class FilePropertiesDialog
                     navBtn = new Button()
                     {
                         Text = "Корзина",
-                        Left = 130,
-                        Top = 355,
-                        Width = 120,
+                        Left = openLocBtn != null ? 250 : 135,
+                        Top = 395,
+                        Width = 105,
                         Height = 30
                     };
                     navBtn.Click += (s, e) =>
@@ -285,11 +330,30 @@ public static class FilePropertiesDialog
                     form.Controls.Add(navBtn);
                 }
 
+                if (file.IsDir && file.InTrash != 1 && db != null)
+                {
+                    Button syncBtn = new Button()
+                    {
+                        Text = "Smart Sync",
+                        Left = file.Uid == file.MountId ? 140 : 250,
+                        Top = 395,
+                        Width = 115,
+                        Height = 30,
+                        BackColor = Color.FromArgb(235, 245, 255)
+                    };
+                    syncBtn.Click += (s, e) =>
+                    {
+                        string targetFolder = file.Uid == file.MountId ? "" : relativePath;
+                        SmartSyncDialog.Show(channelName, channelId, file.MountId, targetFolder, db);
+                    };
+                    form.Controls.Add(syncBtn);
+                }
+
                 Button okBtn = new Button()
                 {
                     Text = "Закрыть",
                     Left = 380,
-                    Top = 355,
+                    Top = 395,
                     Width = 100,
                     Height = 30,
                     DialogResult = DialogResult.OK

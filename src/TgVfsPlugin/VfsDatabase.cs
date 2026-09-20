@@ -59,6 +59,7 @@ public class VfsDatabase : IDisposable
                 tg_message_id INTEGER,
                 in_trash INTEGER DEFAULT 0,
                 ver INTEGER,
+                source_path TEXT,
                 FOREIGN KEY(mount_id) REFERENCES mounts(id)
             );
 
@@ -72,6 +73,18 @@ public class VfsDatabase : IDisposable
             using var alterCmd = _connection.CreateCommand();
             alterCmd.CommandText = "ALTER TABLE files ADD COLUMN in_trash INTEGER DEFAULT 0;";
             alterCmd.ExecuteNonQuery();
+        }
+        catch
+        {
+            // Колонка уже существует
+        }
+
+        // Миграция: если таблица files уже была создана ранее без колонки source_path
+        try
+        {
+            using var alterCmd2 = _connection.CreateCommand();
+            alterCmd2.CommandText = "ALTER TABLE files ADD COLUMN source_path TEXT;";
+            alterCmd2.ExecuteNonQuery();
         }
         catch
         {
@@ -206,6 +219,7 @@ public class VfsDatabase : IDisposable
         public int TgMessageId { get; set; }
         public int InTrash { get; set; }
         public int Ver { get; set; } = 1;
+        public string? SourcePath { get; set; }
     }
 
     public bool ActiveFolderExists(string mountId, string? path)
@@ -274,7 +288,7 @@ public class VfsDatabase : IDisposable
         if (string.IsNullOrEmpty(cleanParent))
         {
             cmd.CommandText = @"
-                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver, source_path
                 FROM files
                 WHERE mount_id = @mid AND name = @name COLLATE NOCASE AND (parent IS NULL OR parent = '' OR parent = 'false') AND (in_trash IS NULL OR in_trash = 0)
                 ORDER BY ver DESC, mtime DESC
@@ -284,7 +298,7 @@ public class VfsDatabase : IDisposable
         else
         {
             cmd.CommandText = @"
-                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver, source_path
                 FROM files
                 WHERE mount_id = @mid AND name = @name COLLATE NOCASE AND parent = @parent COLLATE NOCASE AND (in_trash IS NULL OR in_trash = 0)
                 ORDER BY ver DESC, mtime DESC
@@ -310,7 +324,8 @@ public class VfsDatabase : IDisposable
                 Size = reader.GetInt64(6),
                 TgMessageId = reader.GetInt32(7),
                 InTrash = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
-                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9)
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9),
+                SourcePath = reader.IsDBNull(10) ? null : reader.GetString(10)
             };
         }
         return null;
@@ -615,7 +630,7 @@ public class VfsDatabase : IDisposable
     {
         var cmd = _connection.CreateCommand();
         cmd.CommandText = @"
-            SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver
+            SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver, source_path
             FROM files
             WHERE uid = @uid
             LIMIT 1
@@ -635,7 +650,8 @@ public class VfsDatabase : IDisposable
                 Size = reader.GetInt64(6),
                 TgMessageId = reader.GetInt32(7),
                 InTrash = reader.GetInt32(8),
-                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9)
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9),
+                SourcePath = reader.IsDBNull(10) ? null : reader.GetString(10)
             };
         }
         return null;
@@ -1058,8 +1074,8 @@ public class VfsDatabase : IDisposable
     {
         var cmd = _connection.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO files (uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver)
-            VALUES (@uid, @mid, @isdir, @name, @parent, @mtime, @size, @msgid, @trash, @ver)
+            INSERT INTO files (uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver, source_path)
+            VALUES (@uid, @mid, @isdir, @name, @parent, @mtime, @size, @msgid, @trash, @ver, @sp)
         ";
         cmd.Parameters.AddWithValue("@uid", file.Uid);
         cmd.Parameters.AddWithValue("@mid", file.MountId);
@@ -1071,6 +1087,7 @@ public class VfsDatabase : IDisposable
         cmd.Parameters.AddWithValue("@msgid", file.TgMessageId);
         cmd.Parameters.AddWithValue("@trash", file.InTrash);
         cmd.Parameters.AddWithValue("@ver", file.Ver);
+        cmd.Parameters.AddWithValue("@sp", (object?)file.SourcePath ?? DBNull.Value);
         cmd.ExecuteNonQuery();
     }
 
@@ -1266,6 +1283,64 @@ public class VfsDatabase : IDisposable
         {
             Logger.Error("DB", $"Failed executing WAL checkpoint (truncate={truncate})", ex);
         }
+    }
+
+    public List<FileRecord> GetFilesWithSourcePathRecursive(string mountId, string? rootFolder)
+    {
+        var list = new List<FileRecord>();
+        string cleanFolder = string.IsNullOrEmpty(rootFolder) ? "" : rootFolder.Trim('\\', '/').Replace('/', '\\');
+
+        using var cmd = _connection.CreateCommand();
+        if (string.IsNullOrEmpty(cleanFolder))
+        {
+            cmd.CommandText = @"
+                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver, source_path
+                FROM files
+                WHERE mount_id = @mid AND isdir = 0 AND (in_trash IS NULL OR in_trash = 0) AND source_path IS NOT NULL AND source_path != ''
+                ORDER BY name ASC";
+            cmd.Parameters.AddWithValue("@mid", mountId);
+        }
+        else
+        {
+            cmd.CommandText = @"
+                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver, source_path
+                FROM files
+                WHERE mount_id = @mid AND isdir = 0 AND (in_trash IS NULL OR in_trash = 0) AND source_path IS NOT NULL AND source_path != ''
+                  AND (parent = @exactPath COLLATE NOCASE OR parent LIKE @prefixPath COLLATE NOCASE)
+                ORDER BY name ASC";
+            cmd.Parameters.AddWithValue("@mid", mountId);
+            cmd.Parameters.AddWithValue("@exactPath", cleanFolder);
+            cmd.Parameters.AddWithValue("@prefixPath", cleanFolder + "\\%");
+        }
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new FileRecord
+            {
+                Uid = reader.GetString(0),
+                MountId = reader.GetString(1),
+                IsDir = reader.GetInt32(2) == 1,
+                Name = reader.GetString(3),
+                Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
+                MTime = ReadDateTime(reader, 5),
+                Size = reader.GetInt64(6),
+                TgMessageId = reader.GetInt32(7),
+                InTrash = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9),
+                SourcePath = reader.IsDBNull(10) ? null : reader.GetString(10)
+            });
+        }
+        return list;
+    }
+
+    public void UpdateFileSourcePath(string uid, string? sourcePath)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "UPDATE files SET source_path = @sp WHERE uid = @uid";
+        cmd.Parameters.AddWithValue("@sp", (object?)sourcePath ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@uid", uid);
+        cmd.ExecuteNonQuery();
     }
 
     public void Dispose()
