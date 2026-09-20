@@ -2691,8 +2691,8 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsContentGetDefaultView", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsContentGetDefaultView(byte* viewContents, byte* viewHeaders, byte* viewWidths, byte* viewOptions, int maxLen)
     {
-        string contents = "[=<fs>.VersionName]\n[=tc.size]\n[=tc.writedate]";
-        string headers = "Версия\nРазмер\nДата";
+        string contents = "[=<fs>.VersionName]|[=tc.size]|[=tc.writedate]";
+        string headers = "Версия|Размер|Дата";
         string widths = "45,30,60";
         string options = "-1|0";
 
@@ -2706,8 +2706,8 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsContentGetDefaultViewW", CallConvs = [typeof(CallConvStdcall)])]
     public static int FsContentGetDefaultViewW(char* viewContents, char* viewHeaders, char* viewWidths, char* viewOptions, int maxLen)
     {
-        string contents = "[=<fs>.VersionName]\n[=tc.size]\n[=tc.writedate]";
-        string headers = "Версия\nРазмер\nДата";
+        string contents = "[=<fs>.VersionName]|[=tc.size]|[=tc.writedate]";
+        string headers = "Версия|Размер|Дата";
         string widths = "45,30,60";
         string options = "-1|0";
 
