@@ -597,25 +597,42 @@ public class VfsDatabase : IDisposable
         totalSize = 0;
 
         string normalizedDir = dirSubPath.Replace('/', '\\').Trim('\\');
-        string prefixPattern = string.IsNullOrEmpty(normalizedDir) 
-            ? "%" 
-            : normalizedDir + "\\%";
 
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
-            SELECT 
-                COUNT(CASE WHEN isdir = 0 THEN 1 END),
-                COUNT(CASE WHEN isdir = 1 THEN 1 END),
-                COALESCE(SUM(size), 0)
-            FROM files
-            WHERE mount_id = @mid 
-              AND (parent = @dir OR parent LIKE @prefix)
-              AND in_trash = @trash
-        ";
-        cmd.Parameters.AddWithValue("@mid", mountId);
-        cmd.Parameters.AddWithValue("@dir", normalizedDir);
-        cmd.Parameters.AddWithValue("@prefix", prefixPattern);
-        cmd.Parameters.AddWithValue("@trash", inTrash ? 1 : 0);
+        if (string.IsNullOrEmpty(normalizedDir))
+        {
+            // Свойства всего канала/монтирования (корень): считаем все файлы и папки тома
+            cmd.CommandText = @"
+                SELECT 
+                    COUNT(CASE WHEN isdir = 0 THEN 1 END),
+                    COUNT(CASE WHEN isdir = 1 THEN 1 END),
+                    COALESCE(SUM(size), 0)
+                FROM files
+                WHERE mount_id = @mid 
+                  AND in_trash = @trash
+            ";
+            cmd.Parameters.AddWithValue("@mid", mountId);
+            cmd.Parameters.AddWithValue("@trash", inTrash ? 1 : 0);
+        }
+        else
+        {
+            // Свойства конкретной подпапки: считаем только элементы внутри неё
+            string prefixPattern = normalizedDir + "\\%";
+            cmd.CommandText = @"
+                SELECT 
+                    COUNT(CASE WHEN isdir = 0 THEN 1 END),
+                    COUNT(CASE WHEN isdir = 1 THEN 1 END),
+                    COALESCE(SUM(size), 0)
+                FROM files
+                WHERE mount_id = @mid 
+                  AND (parent = @dir OR parent LIKE @prefix)
+                  AND in_trash = @trash
+            ";
+            cmd.Parameters.AddWithValue("@mid", mountId);
+            cmd.Parameters.AddWithValue("@dir", normalizedDir);
+            cmd.Parameters.AddWithValue("@prefix", prefixPattern);
+            cmd.Parameters.AddWithValue("@trash", inTrash ? 1 : 0);
+        }
 
         using var reader = cmd.ExecuteReader();
         if (reader.Read())

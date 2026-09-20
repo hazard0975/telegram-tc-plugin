@@ -39,18 +39,20 @@ public static class FilePropertiesDialog
                     BackColor = Color.FromArgb(245, 247, 250)
                 };
 
+                bool isMountRoot = file.Uid == file.MountId || string.IsNullOrEmpty(relativePath);
+
                 Label titleLabel = new Label()
                 {
                     Left = 20,
                     Top = 12,
                     Width = 460,
                     Height = 22,
-                    Text = file.IsDir ? $"Папка: {file.Name}" : $"Файл: {file.Name}",
+                    Text = isMountRoot ? $"Канал: {channelName}" : (file.IsDir ? $"Папка: {file.Name}" : $"Файл: {file.Name}"),
                     Font = new Font("Segoe UI", 11, FontStyle.Bold),
                     AutoEllipsis = true
                 };
 
-                string fullVirtualPath = string.IsNullOrEmpty(relativePath) ? $"\\{channelName}\\{file.Name}" : $"\\{channelName}\\{relativePath}";
+                string fullVirtualPath = isMountRoot ? $"\\{channelName}" : (string.IsNullOrEmpty(relativePath) ? $"\\{channelName}\\{file.Name}" : $"\\{channelName}\\{relativePath}");
                 Label pathSubLabel = new Label()
                 {
                     Left = 20,
@@ -73,7 +75,7 @@ public static class FilePropertiesDialog
                     Top = 75,
                     Width = 465,
                     Height = 305,
-                    Text = file.IsDir ? "Параметры папки" : "Параметры Telegram VFS"
+                    Text = isMountRoot ? "Параметры канала" : (file.IsDir ? "Параметры папки" : "Параметры Telegram VFS")
                 };
 
                 int curTop = 25;
@@ -113,7 +115,7 @@ public static class FilePropertiesDialog
                 long dirTotalSize = 0;
                 if (file.IsDir && db != null)
                 {
-                    string dirSubPath = string.IsNullOrEmpty(file.Parent) ? file.Name : $"{file.Parent}\\{file.Name}";
+                    string dirSubPath = isMountRoot ? "" : (string.IsNullOrEmpty(file.Parent) ? file.Name : $"{file.Parent}\\{file.Name}");
                     db.GetDirectoryStats(file.MountId, dirSubPath, file.InTrash == 1, out dirFilesCount, out dirDirsCount, out dirTotalSize);
                 }
 
