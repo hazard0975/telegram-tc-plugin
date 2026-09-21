@@ -36,10 +36,18 @@ public static class SmartSyncDialog
             {
                 Win32Api.EnsureVisualStyles();
 
+                int initWidth = 980;
+                int initHeight = 600;
+                bool initMaximized = false;
+
+                if (int.TryParse(SettingsManager.GetSetting("smartsync_width"), out int savedW) && savedW >= 840) initWidth = savedW;
+                if (int.TryParse(SettingsManager.GetSetting("smartsync_height"), out int savedH) && savedH >= 520) initHeight = savedH;
+                if (int.TryParse(SettingsManager.GetSetting("smartsync_maximized"), out int savedMax) && savedMax == 1) initMaximized = true;
+
                 using Form form = new Form()
                 {
-                    Width = 980,
-                    Height = 600,
+                    Width = initWidth,
+                    Height = initHeight,
                     MinimumSize = new Size(840, 520),
                     FormBorderStyle = FormBorderStyle.Sizable,
                     Text = $"Умная синхронизация (Smart Sync) — \\{channelName}\\{(string.IsNullOrEmpty(folderPath) ? "" : folderPath)}",
@@ -49,6 +57,11 @@ public static class SmartSyncDialog
                     TopMost = false,
                     Font = new Font("Segoe UI", 9)
                 };
+
+                if (initMaximized)
+                {
+                    form.WindowState = FormWindowState.Maximized;
+                }
 
                 // Шапка
                 Panel headerPanel = new Panel()
@@ -181,10 +194,20 @@ public static class SmartSyncDialog
                 typeof(Control).GetProperty("DoubleBuffered", BindingFlags.NonPublic | BindingFlags.Instance)?
                     .SetValue(listView, true, null);
 
-                listView.Columns.Add("Путь в VFS", 460);
-                listView.Columns.Add("Статус", 120);
-                listView.Columns.Add("Направление", 150);
-                listView.Columns.Add("Оригинал на ПК", 580);
+                int colVfsWidth = 460;
+                int colStatusWidth = 120;
+                int colDirectionWidth = 150;
+                int colSourceWidth = 580;
+
+                if (int.TryParse(SettingsManager.GetSetting("smartsync_col_vfs"), out int cv) && cv >= 50) colVfsWidth = cv;
+                if (int.TryParse(SettingsManager.GetSetting("smartsync_col_status"), out int cst) && cst >= 50) colStatusWidth = cst;
+                if (int.TryParse(SettingsManager.GetSetting("smartsync_col_direction"), out int cd) && cd >= 50) colDirectionWidth = cd;
+                if (int.TryParse(SettingsManager.GetSetting("smartsync_col_source"), out int csrc) && csrc >= 50) colSourceWidth = csrc;
+
+                listView.Columns.Add("Путь в VFS", colVfsWidth);
+                listView.Columns.Add("Статус", colStatusWidth);
+                listView.Columns.Add("Направление", colDirectionWidth);
+                listView.Columns.Add("Оригинал на ПК", colSourceWidth);
 
                 foreach (var item in items)
                 {
@@ -404,6 +427,40 @@ public static class SmartSyncDialog
                 form.Controls.Add(syncBtn);
                 form.Controls.Add(closeBtn);
                 form.CancelButton = closeBtn;
+
+                form.FormClosing += (s, e) =>
+                {
+                    try
+                    {
+                        // Сохраняем ширины колонок
+                        if (listView.Columns.Count >= 4)
+                        {
+                            SettingsManager.SaveSetting("smartsync_col_vfs", listView.Columns[0].Width.ToString());
+                            SettingsManager.SaveSetting("smartsync_col_status", listView.Columns[1].Width.ToString());
+                            SettingsManager.SaveSetting("smartsync_col_direction", listView.Columns[2].Width.ToString());
+                            SettingsManager.SaveSetting("smartsync_col_source", listView.Columns[3].Width.ToString());
+                        }
+
+                        // Сохраняем состояние окна (развернуто или нормальное) и размеры
+                        if (form.WindowState == FormWindowState.Maximized)
+                        {
+                            SettingsManager.SaveSetting("smartsync_maximized", "1");
+                            // RestoreBounds сохраняет обычный размер до разворачивания
+                            SettingsManager.SaveSetting("smartsync_width", form.RestoreBounds.Width.ToString());
+                            SettingsManager.SaveSetting("smartsync_height", form.RestoreBounds.Height.ToString());
+                        }
+                        else if (form.WindowState == FormWindowState.Normal)
+                        {
+                            SettingsManager.SaveSetting("smartsync_maximized", "0");
+                            SettingsManager.SaveSetting("smartsync_width", form.Width.ToString());
+                            SettingsManager.SaveSetting("smartsync_height", form.Height.ToString());
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn("UI", $"Failed to save SmartSyncDialog geometry: {ex.Message}");
+                    }
+                };
 
                 form.ShowModalTc();
             }
