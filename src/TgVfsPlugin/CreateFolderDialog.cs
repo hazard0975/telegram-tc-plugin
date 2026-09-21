@@ -29,8 +29,8 @@ public static class CreateFolderDialog
                 using Form form = new Form()
                 {
                     Width = 490,
-                    Height = 310,
-                    MinimumSize = new Size(490, 310),
+                    Height = 295,
+                    MinimumSize = new Size(490, 295),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Создать папку (Канал)",
                     StartPosition = FormStartPosition.CenterScreen,
@@ -41,23 +41,23 @@ public static class CreateFolderDialog
                 };
 
                 int margin = 20;
-                int contentWidth = form.ClientSize.Width - margin * 2; // точно 434px при ширине 490
-
-                // 1. Название папки
-                Label nameLabel = new Label() { Left = margin, Top = 16, Height = 18, Width = contentWidth, Text = "Название папки:" };
-                TextBox nameBox = new TextBox() { Left = margin, Top = 38, Width = contentWidth };
-
-                // 2. Локальный путь для зеркала + кнопка Обзор...
-                Label pathLabel = new Label() { Left = margin, Top = 70, Height = 18, Width = contentWidth, Text = "Локальный путь (только для Зеркала):" };
-                
+                int contentWidth = 434;
                 int browseBtnWidth = 85;
                 int spacing = 8;
+
+                // 1. Название папки
+                Label nameLabel = new Label() { Left = margin, Top = 20, Height = 18, Width = contentWidth, Text = "Название папки:" };
+                TextBox nameBox = new TextBox() { Left = margin, Top = 42, Width = contentWidth };
+
+                // 2. Локальный путь для зеркала + кнопка Обзор...
+                Label pathLabel = new Label() { Left = margin, Top = 74, Height = 18, Width = contentWidth, Text = "Локальный путь (только для Зеркала):" };
+                
                 int pathBoxWidth = contentWidth - browseBtnWidth - spacing;
                 
                 TextBox pathBox = new TextBox() 
                 { 
                     Left = margin, 
-                    Top = 92, 
+                    Top = 96, 
                     Width = pathBoxWidth, 
                     ReadOnly = true,
                     BackColor = SystemColors.Window
@@ -66,13 +66,13 @@ public static class CreateFolderDialog
                 // Высота и положение кнопки строго выравниваются по Textbox (Right = nameBox.Right)
                 Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать локальную папку для создания Зеркала", toolTip, browseBtnWidth, 23);
                 browseBtn.Left = margin + pathBoxWidth + spacing;
-                browseBtn.Top = 91;
+                browseBtn.Top = 95;
                 browseBtn.Height = pathBox.Height + 2;
 
-                // 3. Режим работы (смещен вниз)
-                Label modeLabel = new Label() { Left = margin, Top = 126, Height = 18, Width = contentWidth, Text = "Режим работы папки:" };
-                RadioButton modeMirror = new RadioButton() { Left = margin, Top = 148, Width = contentWidth, Text = "Зеркало (Бэкап локальной папки)", Checked = true };
-                RadioButton modeContainer = new RadioButton() { Left = margin, Top = 174, Width = contentWidth, Text = "Контейнер (Обычная виртуальная папка)" };
+                // 3. Режим работы (сбалансированные отступы)
+                Label modeLabel = new Label() { Left = margin, Top = 130, Height = 18, Width = contentWidth, Text = "Режим работы папки:" };
+                RadioButton modeMirror = new RadioButton() { Left = margin, Top = 152, Width = contentWidth, Text = "Зеркало (Бэкап локальной папки)", Checked = true };
+                RadioButton modeContainer = new RadioButton() { Left = margin, Top = 176, Width = contentWidth, Text = "Контейнер (Обычная виртуальная папка)" };
 
                 // Реакция на смену режима
                 void UpdateModeState()
