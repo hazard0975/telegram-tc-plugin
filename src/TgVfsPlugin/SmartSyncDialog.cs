@@ -48,6 +48,8 @@ public static class SmartSyncDialog
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_height"), out int savedH) && savedH >= 520) initHeight = savedH;
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_maximized"), out int savedMax) && savedMax == 1) initMaximized = true;
 
+                int margin = 20;
+
                 using Form form = new Form()
                 {
                     ClientSize = new Size(initWidth, initHeight),
@@ -76,22 +78,24 @@ public static class SmartSyncDialog
 
                 Label titleLabel = new Label()
                 {
-                    Left = 20,
+                    Left = margin,
                     Top = 10,
                     Width = 800,
                     Height = 22,
                     Text = "Сравнение версий с локальными оригиналами на ПК",
-                    Font = UiTheme.HeaderTitleFont
+                    Font = UiTheme.HeaderTitleFont,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 Label subLabel = new Label()
                 {
-                    Left = 20,
+                    Left = margin,
                     Top = 35,
                     Width = 800,
                     Height = 20,
                     ForeColor = UiTheme.LabelForeColor,
-                    Text = "Отслеживание актуальности файлов виртуальной подборки и оригинальных файлов на дисках ПК"
+                    Text = "Отслеживание актуальности файлов виртуальной подборки и оригинальных файлов на дисках ПК",
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 headerPanel.Controls.Add(titleLabel);
@@ -99,12 +103,7 @@ public static class SmartSyncDialog
                 form.Controls.Add(headerPanel);
 
                 // Нижняя панель для кнопок управления
-                Panel bottomPanel = new Panel()
-                {
-                    Dock = DockStyle.Bottom,
-                    Height = 52,
-                    BackColor = Color.FromArgb(245, 247, 250)
-                };
+                Panel bottomPanel = UiTheme.CreateBottomPanel(52);
                 form.Controls.Add(bottomPanel);
 
                 // Сканирование элементов из БД
@@ -463,7 +462,7 @@ public static class SmartSyncDialog
 
                 // Кнопки управления в нижней панели по нативному стандарту Windows/TC
                 Button selectUpdatesBtn = UiTheme.CreateButton("Выбрать разные", "Отметить галочками все файлы, у которых не совпадает версия на ПК и в Telegram", toolTip, 130);
-                selectUpdatesBtn.Left = 20;
+                selectUpdatesBtn.Left = margin;
                 selectUpdatesBtn.Top = 11;
                 selectUpdatesBtn.Anchor = AnchorStyles.Top | AnchorStyles.Left;
                 selectUpdatesBtn.Click += (s, e) =>
@@ -487,7 +486,7 @@ public static class SmartSyncDialog
                 };
 
                 Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно синхронизации", toolTip, 85, dialogResult: DialogResult.Cancel);
-                closeBtn.Left = form.ClientSize.Width - 20 - closeBtn.Width;
+                closeBtn.Left = form.ClientSize.Width - margin - closeBtn.Width;
                 closeBtn.Top = 11;
                 closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 

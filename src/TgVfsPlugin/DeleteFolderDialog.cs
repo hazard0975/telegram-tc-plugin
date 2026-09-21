@@ -26,35 +26,40 @@ public static class DeleteFolderDialog
                 Win32Api.EnsureVisualStyles();
                 using ToolTip toolTip = UiTheme.CreateToolTip();
 
+                int margin = 20;
+                int topMargin = 16;
+                int clientWidth = 474;
+                int contentWidth = clientWidth - margin * 2; // 434px
+
                 using Form form = new Form()
                 {
-                    Width = 490,
-                    Height = 205,
-                    MinimumSize = new Size(490, 205),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Удалить виртуальную папку",
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
                     TopMost = false,
-                    Font = UiTheme.DefaultFont
+                    Font = UiTheme.DefaultFont,
+                    AutoScaleMode = AutoScaleMode.None
                 };
 
                 Label label = new Label()
                 {
                     Text = "Выберите виртуальную папку для удаления:",
-                    Left = 20,
-                    Top = 20,
-                    Width = 430,
-                    Height = 20
+                    Left = margin,
+                    Top = topMargin,
+                    Width = contentWidth,
+                    Height = 18,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 ComboBox combo = new ComboBox()
                 {
-                    Left = 20,
-                    Top = 45,
-                    Width = 430,
-                    DropDownStyle = ComboBoxStyle.DropDownList
+                    Left = margin,
+                    Top = 38,
+                    Width = contentWidth,
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 foreach (var folder in folderNames)
@@ -63,13 +68,21 @@ public static class DeleteFolderDialog
                 }
                 combo.SelectedIndex = 0;
 
+                int bottomPanelHeight = 52;
+                int contentBottom = combo.Bottom + topMargin;
+                int clientHeight = contentBottom + bottomPanelHeight;
+
+                form.ClientSize = new Size(clientWidth, clientHeight);
+                form.MinimumSize = form.Size;
+                form.MaximumSize = form.Size;
+
                 Panel bottomPanel = UiTheme.CreateBottomPanel(52);
                 form.Controls.Add(bottomPanel);
 
                 Button deleteBtn = UiTheme.CreateButton("Удалить", "Удалить выбранную виртуальную папку", toolTip, 85, dialogResult: DialogResult.OK);
                 Button cancelBtn = UiTheme.CreateButton("Отмена", "Отменить удаление", toolTip, 85, dialogResult: DialogResult.Cancel);
 
-                deleteBtn.Left = form.ClientSize.Width - 20 - deleteBtn.Width;
+                deleteBtn.Left = form.ClientSize.Width - margin - deleteBtn.Width;
                 deleteBtn.Top = 11;
                 deleteBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 

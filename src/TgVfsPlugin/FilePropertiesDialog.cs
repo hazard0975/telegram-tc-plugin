@@ -17,18 +17,21 @@ public static class FilePropertiesDialog
                 Win32Api.EnsureVisualStyles();
                 using ToolTip toolTip = UiTheme.CreateToolTip();
 
+                int margin = 20;
+                int topMargin = 16;
+                int clientWidth = 514;
+                int contentWidth = clientWidth - margin * 2; // 474px
+
                 using Form form = new Form()
                 {
-                    Width = 530,
-                    Height = 490,
-                    MinimumSize = new Size(530, 490),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = $"Свойства: {file.Name}",
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
                     TopMost = false,
-                    Font = UiTheme.DefaultFont
+                    Font = UiTheme.DefaultFont,
+                    AutoScaleMode = AutoScaleMode.None
                 };
 
                 // Иконка и заголовок
@@ -36,34 +39,37 @@ public static class FilePropertiesDialog
                 {
                     Left = 0,
                     Top = 0,
-                    Width = 530,
+                    Width = clientWidth,
                     Height = 60,
-                    BackColor = UiTheme.HeaderBgColor
+                    BackColor = UiTheme.HeaderBgColor,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 bool isMountRoot = file.Uid == file.MountId || string.IsNullOrEmpty(relativePath);
 
                 Label titleLabel = new Label()
                 {
-                    Left = 20,
+                    Left = margin,
                     Top = 12,
-                    Width = 470,
+                    Width = contentWidth,
                     Height = 22,
                     Text = isMountRoot ? $"Канал: {channelName}" : (file.IsDir ? $"Папка: {file.Name}" : $"Файл: {file.Name}"),
                     Font = UiTheme.HeaderTitleFont,
-                    AutoEllipsis = true
+                    AutoEllipsis = true,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 string fullVirtualPath = isMountRoot ? $"\\{channelName}" : (string.IsNullOrEmpty(relativePath) ? $"\\{channelName}\\{file.Name}" : $"\\{channelName}\\{relativePath}");
                 Label pathSubLabel = new Label()
                 {
-                    Left = 20,
+                    Left = margin,
                     Top = 35,
-                    Width = 470,
+                    Width = contentWidth,
                     Height = 18,
                     Text = fullVirtualPath,
                     ForeColor = Color.Gray,
-                    AutoEllipsis = true
+                    AutoEllipsis = true,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 headerPanel.Controls.Add(titleLabel);
@@ -73,11 +79,12 @@ public static class FilePropertiesDialog
                 // Группа свойств
                 GroupBox infoGroup = new GroupBox()
                 {
-                    Left = 20,
+                    Left = margin,
                     Top = 75,
-                    Width = 475,
+                    Width = contentWidth,
                     Height = 315,
-                    Text = isMountRoot ? "Параметры канала" : (file.IsDir ? "Параметры папки" : "Параметры Telegram VFS")
+                    Text = isMountRoot ? "Параметры канала" : (file.IsDir ? "Параметры папки" : "Параметры Telegram VFS"),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 int curTop = 24;
@@ -200,6 +207,14 @@ public static class FilePropertiesDialog
                 };
                 infoGroup.Controls.Add(copyBtn);
                 form.Controls.Add(infoGroup);
+
+                int bottomPanelHeight = 52;
+                int contentBottom = infoGroup.Bottom + topMargin;
+                int clientHeight = contentBottom + bottomPanelHeight;
+
+                form.ClientSize = new Size(clientWidth, clientHeight);
+                form.MinimumSize = form.Size;
+                form.MaximumSize = form.Size;
 
                 // Нижняя панель с кнопками
                 Panel bottomPanel = UiTheme.CreateBottomPanel(52);
@@ -365,49 +380,55 @@ public static class FilePropertiesDialog
                 db.GetTrashStats(mountId, out int filesCount, out int dirsCount, out long totalTrashSize);
                 int totalItems = filesCount + dirsCount;
 
+                int margin = 20;
+                int topMargin = 16;
+                int clientWidth = 474;
+                int contentWidth = clientWidth - margin * 2; // 434px
+
                 using Form form = new Form()
                 {
-                    Width = 490,
-                    Height = 360,
-                    MinimumSize = new Size(490, 360),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = $"Свойства корзины: {channelName}",
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
                     TopMost = false,
-                    Font = UiTheme.DefaultFont
+                    Font = UiTheme.DefaultFont,
+                    AutoScaleMode = AutoScaleMode.None
                 };
 
                 Panel headerPanel = new Panel()
                 {
                     Left = 0,
                     Top = 0,
-                    Width = 490,
+                    Width = clientWidth,
                     Height = 60,
-                    BackColor = UiTheme.HeaderBgColor
+                    BackColor = UiTheme.HeaderBgColor,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 Label titleLabel = new Label()
                 {
-                    Left = 20,
+                    Left = margin,
                     Top = 12,
-                    Width = 450,
+                    Width = contentWidth,
                     Height = 22,
                     Text = $"Корзина канала: {channelName}",
                     Font = UiTheme.HeaderTitleFont,
-                    AutoEllipsis = true
+                    AutoEllipsis = true,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 Label pathSubLabel = new Label()
                 {
-                    Left = 20,
+                    Left = margin,
                     Top = 35,
-                    Width = 450,
+                    Width = contentWidth,
                     Height = 18,
                     Text = $"Telegram ID: {channelId}",
                     ForeColor = Color.Gray,
-                    AutoEllipsis = true
+                    AutoEllipsis = true,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 headerPanel.Controls.Add(titleLabel);
@@ -416,11 +437,12 @@ public static class FilePropertiesDialog
 
                 GroupBox infoGroup = new GroupBox()
                 {
-                    Left = 20,
+                    Left = margin,
                     Top = 75,
-                    Width = 435,
+                    Width = contentWidth,
                     Height = 175,
-                    Text = "Состояние корзины"
+                    Text = "Состояние корзины",
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 int labelWidth = 155;
@@ -494,6 +516,14 @@ public static class FilePropertiesDialog
                 infoGroup.Controls.Add(noteLbl);
                 form.Controls.Add(infoGroup);
 
+                int bottomPanelHeight = 52;
+                int contentBottom = infoGroup.Bottom + topMargin;
+                int clientHeight = contentBottom + bottomPanelHeight;
+
+                form.ClientSize = new Size(clientWidth, clientHeight);
+                form.MinimumSize = form.Size;
+                form.MaximumSize = form.Size;
+
                 // Нижняя панель
                 Panel bottomPanel = UiTheme.CreateBottomPanel(52);
                 form.Controls.Add(bottomPanel);
@@ -541,7 +571,7 @@ public static class FilePropertiesDialog
                 };
 
                 Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно свойств корзины", toolTip, 90, dialogResult: DialogResult.OK);
-                closeBtn.Left = form.ClientSize.Width - 20 - closeBtn.Width;
+                closeBtn.Left = form.ClientSize.Width - margin - closeBtn.Width;
                 closeBtn.Top = 11;
                 closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
