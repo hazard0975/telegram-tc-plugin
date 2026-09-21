@@ -84,73 +84,93 @@ public static unsafe class WfxExports
 
     public static void PurgeTrashRecords(string mountId, long channelId, List<VfsDatabase.FileRecord> trashRecords)
     {
-        if (trashRecords == null || trashRecords.Count == 0 || _db == null) return;
-
-        var itemsWithMsg = trashRecords.Where(x => x.TgMessageId > 0).ToList();
-        var itemsWithoutMsg = trashRecords.Where(x => x.TgMessageId <= 0).ToList();
-
-        // Виртуальные папки и элементы без сообщения сразу удаляем из БД
-        if (itemsWithoutMsg.Count > 0)
+        try
         {
-            _db.DeleteFilesByUids(itemsWithoutMsg.Select(x => x.Uid));
-        }
+            if (trashRecords == null || trashRecords.Count == 0 || _db == null) return;
 
-        if (itemsWithMsg.Count > 0 && channelId != 0)
-        {
-            int[] allMsgIds = itemsWithMsg.Select(x => x.TgMessageId).ToArray();
-            var msgToUidMap = itemsWithMsg.ToDictionary(x => x.TgMessageId, x => x.Uid);
-            int total = allMsgIds.Length;
-            int processed = 0;
+            var itemsWithMsg = trashRecords.Where(x => x.TgMessageId > 0).ToList();
+            var itemsWithoutMsg = trashRecords.Where(x => x.TgMessageId <= 0).ToList();
 
-            for (int i = 0; i < allMsgIds.Length; i += 100)
+            // Виртуальные папки и элементы без сообщения сразу удаляем из БД
+            if (itemsWithoutMsg.Count > 0)
             {
-                var chunk = allMsgIds.Skip(i).Take(100).ToArray();
-                int batchNum = (i / 100) + 1;
-                int totalBatches = (int)Math.Ceiling((double)total / 100.0);
-                int percentDone = total > 0 ? (int)((processed * 100.0) / total) : 0;
+                _db.DeleteFilesByUids(itemsWithoutMsg.Select(x => x.Uid));
+            }
 
-                string statusMsg = $"Очистка корзины ({processed}/{total})";
-                int progressRes = ReportProgress(".[🗑] Корзина", statusMsg, percentDone);
-                if (progressRes == 1)
+            if (itemsWithMsg.Count > 0 && channelId != 0)
+            {
+                // Безопасная группировка: одно сообщение может быть привязано к нескольким записям (копии/дубликаты)
+                var msgToUids = itemsWithMsg
+                    .GroupBy(x => x.TgMessageId)
+                    .ToDictionary(g => g.Key, g => g.Select(x => x.Uid).ToList());
+
+                // Проверяем ссылки: удаляем сообщение из Telegram ТОЛЬКО если на него больше нет АКТИВНЫХ ссылок в файловой системе!
+                var safeToDeleteFromTg = _db.FilterMessagesWithoutActiveReferences(mountId, msgToUids.Keys);
+
+                var distinctMsgIds = msgToUids.Keys.ToList();
+                int total = distinctMsgIds.Count;
+                int processed = 0;
+
+                for (int i = 0; i < total; i += 100)
                 {
-                    Logger.Warn("WFX", $"[TRASH PURGE CANCELLED] User pressed Cancel in Total Commander at batch {batchNum}/{totalBatches}. Stopping further deletion.");
-                    break;
-                }
+                    var chunk = distinctMsgIds.Skip(i).Take(100).ToArray();
+                    int batchNum = (i / 100) + 1;
+                    int totalBatches = (int)Math.Ceiling((double)total / 100.0);
+                    int percentDone = total > 0 ? (int)((processed * 100.0) / total) : 0;
 
-                Logger.Info("WFX", $"[TRASH PURGE BATCH {batchNum}/{totalBatches}] Requesting Telegram to delete {chunk.Length} messages...");
+                    string statusMsg = $"Очистка корзины ({processed}/{total})";
+                    int progressRes = ReportProgress(".[🗑] Корзина", statusMsg, percentDone);
+                    if (progressRes == 1)
+                    {
+                        Logger.Warn("WFX", $"[TRASH PURGE CANCELLED] User pressed Cancel in Total Commander at batch {batchNum}/{totalBatches}. Stopping further deletion.");
+                        break;
+                    }
 
-                var deletedMsgIds = System.Threading.Tasks.Task.Run(() => 
-                    TelegramManager.DeleteMessagesAsync(
-                        channelId, 
-                        chunk, 
-                        onProgress: null, 
-                        cancellationToken: System.Threading.CancellationToken.None
-                    )).GetAwaiter().GetResult();
+                    // В Telegram отправляем только те ID, у которых нет живых оригиналов
+                    var tgDeleteBatch = chunk.Where(id => safeToDeleteFromTg.Contains(id)).ToArray();
 
-                if (deletedMsgIds.Count > 0)
-                {
-                    _db.DeleteFilesByTgMessageIds(mountId, deletedMsgIds);
-                    var uidsToRemove = deletedMsgIds.Where(msgToUidMap.ContainsKey).Select(id => msgToUidMap[id]);
+                    if (tgDeleteBatch.Length > 0)
+                    {
+                        Logger.Info("WFX", $"[TRASH PURGE BATCH {batchNum}/{totalBatches}] Requesting Telegram to delete {tgDeleteBatch.Length} messages...");
+
+                        try
+                        {
+                            var deletedMsgIds = System.Threading.Tasks.Task.Run(() => 
+                                TelegramManager.DeleteMessagesAsync(
+                                    channelId, 
+                                    tgDeleteBatch, 
+                                    onProgress: null, 
+                                    cancellationToken: System.Threading.CancellationToken.None
+                                )).GetAwaiter().GetResult();
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Error("WFX", $"Ошибка пакетного удаления {tgDeleteBatch.Length} сообщений из TG: {ex.Message}");
+                        }
+                    }
+
+                    // Из локальной базы SQLite удаляем записи ВСЕГДА (раз пользователь очищает корзину)
+                    var uidsToRemove = chunk.SelectMany(id => msgToUids[id]).Distinct().ToList();
                     _db.DeleteFilesByUids(uidsToRemove);
-                    Logger.Info("DB", $"[DB PURGE SUCCESS] Deleted {deletedMsgIds.Count} items from SQLite database after Telegram confirmation.");
-                }
-                else
-                {
-                    Logger.Warn("DB", $"[DB PURGE SKIPPED] No messages deleted in Telegram for batch {batchNum}/{totalBatches}. Preserving database records.");
-                }
+                    Logger.Info("DB", $"[DB PURGE SUCCESS] Deleted {uidsToRemove.Count} items from SQLite database.");
 
-                processed += chunk.Length;
+                    processed += chunk.Length;
 
-                if (i + 100 < allMsgIds.Length)
-                {
-                    System.Threading.Thread.Sleep(250);
+                    if (i + 100 < total)
+                    {
+                        System.Threading.Thread.Sleep(250);
+                    }
                 }
             }
-        }
 
-        _db.DeleteEmptyTrashDirectories(mountId);
-        ReportProgress(".[🗑] Корзина", "Очистка завершена", 100);
-        TriggerCheckpoint(immediate: true);
+            _db.DeleteEmptyTrashDirectories(mountId);
+            ReportProgress(".[🗑] Корзина", "Очистка завершена", 100);
+            TriggerCheckpoint(immediate: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("WFX", $"Критическая ошибка при выполнении PurgeTrashRecords: {ex.Message}\n{ex.StackTrace}");
+        }
     }
 
     private static void ProcessPendingTrashDeletions()
@@ -1773,71 +1793,92 @@ public static unsafe class WfxExports
     [UnmanagedCallersOnly(EntryPoint = "FsStatusInfo", CallConvs = [typeof(CallConvStdcall)])]
     public static void FsStatusInfo(byte* remoteDir, int infoStartEnd, int infoOperation)
     {
-        string dir = Marshal.PtrToStringAnsi((IntPtr)remoteDir) ?? "";
-        HandleStatusInfo(dir, infoStartEnd, infoOperation);
+        try
+        {
+            string dir = Marshal.PtrToStringAnsi((IntPtr)remoteDir) ?? "";
+            HandleStatusInfo(dir, infoStartEnd, infoOperation);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("WFX", $"Необработанное исключение в FsStatusInfo: {ex.Message}\n{ex.StackTrace}");
+        }
     }
 
     // Оповещение о начале/завершении операций плагина (Unicode)
     [UnmanagedCallersOnly(EntryPoint = "FsStatusInfoW", CallConvs = [typeof(CallConvStdcall)])]
     public static void FsStatusInfoW(char* remoteDir, int infoStartEnd, int infoOperation)
     {
-        string dir = Marshal.PtrToStringUni((IntPtr)remoteDir) ?? "";
-        HandleStatusInfo(dir, infoStartEnd, infoOperation);
+        try
+        {
+            string dir = Marshal.PtrToStringUni((IntPtr)remoteDir) ?? "";
+            HandleStatusInfo(dir, infoStartEnd, infoOperation);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("WFX", $"Необработанное исключение в FsStatusInfoW: {ex.Message}\n{ex.StackTrace}");
+        }
     }
 
     private static void HandleStatusInfo(string remoteDir, int infoStartEnd, int infoOperation)
     {
-        string opName = infoOperation switch
+        try
         {
-            Win32Api.FS_STATUS_OP_LIST => "LIST_DIR",
-            Win32Api.FS_STATUS_OP_GET_SINGLE => "GET_FILE",
-            Win32Api.FS_STATUS_OP_GET_MULTI => "GET_MULTI",
-            Win32Api.FS_STATUS_OP_PUT_SINGLE => "PUT_FILE",
-            Win32Api.FS_STATUS_OP_PUT_MULTI => "PUT_MULTI",
-            Win32Api.FS_STATUS_OP_RENMOV_SINGLE => "RENMOV",
-            Win32Api.FS_STATUS_OP_RENMOV_MULTI => "RENMOV_MULTI",
-            Win32Api.FS_STATUS_OP_DELETE => "DELETE",
-            Win32Api.FS_STATUS_OP_ATTRIB => "ATTRIB",
-            Win32Api.FS_STATUS_OP_MKDIR => "MKDIR",
-            _ => $"OP_{infoOperation}"
-        };
-
-        string cleanDir = NormalizeVfsPath(remoteDir);
-        string displayDir = string.IsNullOrEmpty(cleanDir) ? "\\" : $"\\{cleanDir}";
-
-        if (infoStartEnd == Win32Api.FS_STATUS_START)
-        {
-            Logger.Info("WFX", $"[STATUS START] Operation: {opName} | Dir: '{displayDir}'");
-        }
-        else
-        {
-            Logger.Info("WFX", $"[STATUS END]   Operation: {opName} | Dir: '{displayDir}'");
-        }
-
-        bool isBatchOp = infoOperation == Win32Api.FS_STATUS_OP_GET_MULTI ||
-                         infoOperation == Win32Api.FS_STATUS_OP_PUT_MULTI ||
-                         infoOperation == Win32Api.FS_STATUS_OP_RENMOV_MULTI ||
-                         infoOperation == Win32Api.FS_STATUS_OP_DELETE;
-
-        if (infoStartEnd == Win32Api.FS_STATUS_START)
-        {
-            if (isBatchOp)
+            string opName = infoOperation switch
             {
-                _isBatchOperation = true;
+                Win32Api.FS_STATUS_OP_LIST => "LIST_DIR",
+                Win32Api.FS_STATUS_OP_GET_SINGLE => "GET_FILE",
+                Win32Api.FS_STATUS_OP_GET_MULTI => "GET_MULTI",
+                Win32Api.FS_STATUS_OP_PUT_SINGLE => "PUT_FILE",
+                Win32Api.FS_STATUS_OP_PUT_MULTI => "PUT_MULTI",
+                Win32Api.FS_STATUS_OP_RENMOV_SINGLE => "RENMOV",
+                Win32Api.FS_STATUS_OP_RENMOV_MULTI => "RENMOV_MULTI",
+                Win32Api.FS_STATUS_OP_DELETE => "DELETE",
+                Win32Api.FS_STATUS_OP_ATTRIB => "ATTRIB",
+                Win32Api.FS_STATUS_OP_MKDIR => "MKDIR",
+                _ => $"OP_{infoOperation}"
+            };
+
+            string cleanDir = NormalizeVfsPath(remoteDir);
+            string displayDir = string.IsNullOrEmpty(cleanDir) ? "\\" : $"\\{cleanDir}";
+
+            if (infoStartEnd == Win32Api.FS_STATUS_START)
+            {
+                Logger.Info("WFX", $"[STATUS START] Operation: {opName} | Dir: '{displayDir}'");
             }
-        }
-        else if (infoStartEnd == Win32Api.FS_STATUS_END)
-        {
-            if (_isBatchOperation)
+            else
             {
-                _isBatchOperation = false;
-                if (infoOperation == Win32Api.FS_STATUS_OP_DELETE)
+                Logger.Info("WFX", $"[STATUS END]   Operation: {opName} | Dir: '{displayDir}'");
+            }
+
+            bool isBatchOp = infoOperation == Win32Api.FS_STATUS_OP_GET_MULTI ||
+                             infoOperation == Win32Api.FS_STATUS_OP_PUT_MULTI ||
+                             infoOperation == Win32Api.FS_STATUS_OP_RENMOV_MULTI ||
+                             infoOperation == Win32Api.FS_STATUS_OP_DELETE;
+
+            if (infoStartEnd == Win32Api.FS_STATUS_START)
+            {
+                if (isBatchOp)
                 {
-                    ProcessPendingTrashDeletions();
+                    _isBatchOperation = true;
                 }
-                Logger.Info("DB", "[WAL CHECKPOINT] Batch operation completed. Executing SQLite checkpoint.");
-                TriggerCheckpoint(immediate: true);
             }
+            else if (infoStartEnd == Win32Api.FS_STATUS_END)
+            {
+                if (_isBatchOperation)
+                {
+                    _isBatchOperation = false;
+                    if (infoOperation == Win32Api.FS_STATUS_OP_DELETE)
+                    {
+                        ProcessPendingTrashDeletions();
+                    }
+                    Logger.Info("DB", "[WAL CHECKPOINT] Batch operation completed. Executing SQLite checkpoint.");
+                    TriggerCheckpoint(immediate: true);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("WFX", $"Ошибка в HandleStatusInfo: {ex.Message}\n{ex.StackTrace}");
         }
     }
 

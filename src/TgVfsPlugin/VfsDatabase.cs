@@ -787,6 +787,96 @@ public class VfsDatabase : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Получает список всех записей дерева папки в корзине перед физическим удалением (для удаления сообщений из Telegram)
+    /// </summary>
+    public List<FileRecord> GetTrashSubTreeFiles(string mountId, string folderPath)
+    {
+        var result = new List<FileRecord>();
+        if (_connection == null || string.IsNullOrEmpty(mountId)) return result;
+
+        string normalized = folderPath.Trim('\\', '/');
+        string prefix = normalized + "\\%";
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver, source_path
+            FROM files
+            WHERE mount_id = @mid AND in_trash = 1
+              AND (parent = @exactPath OR parent LIKE @prefixPath OR (name = @folderName AND (parent IS NULL OR parent = '')));
+        ";
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        cmd.Parameters.AddWithValue("@exactPath", normalized);
+        cmd.Parameters.AddWithValue("@prefixPath", prefix);
+        cmd.Parameters.AddWithValue("@folderName", normalized);
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            result.Add(new FileRecord
+            {
+                Uid = reader.GetString(0),
+                MountId = reader.GetString(1),
+                IsDir = reader.GetInt32(2) == 1,
+                Name = reader.GetString(3),
+                Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
+                MTime = ReadDateTime(reader, 5),
+                Size = reader.GetInt64(6),
+                TgMessageId = reader.GetInt32(7),
+                InTrash = reader.GetInt32(8),
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9),
+                SourcePath = reader.IsDBNull(10) ? null : reader.GetString(10)
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Фильтрует список ID сообщений Telegram: возвращает только те ID, на которые больше НЕТ активных (не в корзине) ссылок.
+    /// Защищает оригиналы файлов при удалении их копий/дубликатов.
+    /// </summary>
+    public HashSet<int> FilterMessagesWithoutActiveReferences(string mountId, IEnumerable<int> msgIds)
+    {
+        var safeToDelete = new HashSet<int>();
+        var distinctIds = msgIds.Where(id => id > 0).Distinct().ToList();
+        if (distinctIds.Count == 0 || _connection == null) return safeToDelete;
+
+        const int batchSize = 500;
+        for (int i = 0; i < distinctIds.Count; i += batchSize)
+        {
+            var chunk = distinctIds.Skip(i).Take(batchSize).ToList();
+            var inClause = string.Join(",", chunk);
+
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = $@"
+                SELECT DISTINCT tg_message_id 
+                FROM files 
+                WHERE mount_id = @mid 
+                  AND (in_trash IS NULL OR in_trash = 0)
+                  AND tg_message_id IN ({inClause});
+            ";
+            cmd.Parameters.AddWithValue("@mid", mountId);
+
+            var activeIds = new HashSet<int>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                activeIds.Add(reader.GetInt32(0));
+            }
+
+            foreach (var id in chunk)
+            {
+                if (!activeIds.Contains(id))
+                {
+                    safeToDelete.Add(id);
+                }
+            }
+        }
+
+        return safeToDelete;
+    }
+
     public void CleanupDuplicateActiveFiles(string mountId)
     {
         try
