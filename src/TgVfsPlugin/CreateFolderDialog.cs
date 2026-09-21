@@ -44,11 +44,11 @@ public static class CreateFolderDialog
                 int contentWidth = form.ClientSize.Width - margin * 2; // точно 434px при ширине 490
 
                 // 1. Название папки
-                Label nameLabel = new Label() { Left = margin, Top = 16, Width = contentWidth, Text = "Название папки:" };
+                Label nameLabel = new Label() { Left = margin, Top = 16, Height = 18, Width = contentWidth, Text = "Название папки:" };
                 TextBox nameBox = new TextBox() { Left = margin, Top = 38, Width = contentWidth };
 
                 // 2. Локальный путь для зеркала + кнопка Обзор...
-                Label pathLabel = new Label() { Left = margin, Top = 70, Width = contentWidth, Text = "Локальный путь (только для Зеркала):" };
+                Label pathLabel = new Label() { Left = margin, Top = 72, Height = 18, Width = contentWidth, Text = "Локальный путь (только для Зеркала):" };
                 
                 int browseBtnWidth = 85;
                 int spacing = 8;
@@ -57,7 +57,7 @@ public static class CreateFolderDialog
                 TextBox pathBox = new TextBox() 
                 { 
                     Left = margin, 
-                    Top = 92, 
+                    Top = 94, 
                     Width = pathBoxWidth, 
                     ReadOnly = true,
                     BackColor = SystemColors.Window
@@ -66,13 +66,13 @@ public static class CreateFolderDialog
                 // Высота и положение кнопки строго выравниваются по Textbox
                 Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать локальную папку для создания Зеркала", toolTip, browseBtnWidth, 23);
                 browseBtn.Left = margin + pathBoxWidth + spacing;
-                browseBtn.Top = 91;
-                browseBtn.Height = nameBox.Height + 2;
+                browseBtn.Top = 93;
+                browseBtn.Height = 25;
 
                 // 3. Режим работы (смещен вниз)
-                Label modeLabel = new Label() { Left = margin, Top = 124, Width = contentWidth, Text = "Режим работы папки:" };
-                RadioButton modeMirror = new RadioButton() { Left = margin, Top = 144, Width = contentWidth, Text = "Зеркало (Бэкап локальной папки)", Checked = true };
-                RadioButton modeContainer = new RadioButton() { Left = margin, Top = 168, Width = contentWidth, Text = "Контейнер (Обычная виртуальная папка)" };
+                Label modeLabel = new Label() { Left = margin, Top = 132, Height = 18, Width = contentWidth, Text = "Режим работы папки:" };
+                RadioButton modeMirror = new RadioButton() { Left = margin, Top = 154, Width = contentWidth, Text = "Зеркало (Бэкап локальной папки)", Checked = true };
+                RadioButton modeContainer = new RadioButton() { Left = margin, Top = 180, Width = contentWidth, Text = "Контейнер (Обычная виртуальная папка)" };
 
                 // Реакция на смену режима
                 void UpdateModeState()
@@ -133,7 +133,7 @@ public static class CreateFolderDialog
                 Panel bottomPanel = UiTheme.CreateBottomPanel(52);
                 form.Controls.Add(bottomPanel);
 
-                Button okBtn = UiTheme.CreateButton("OK", "Создать папку/канал", toolTip, 85, dialogResult: DialogResult.OK);
+                Button okBtn = UiTheme.CreateButton("OK", "Создать папку/канал", toolTip, 85);
                 Button cancelBtn = UiTheme.CreateButton("Отмена", "Отменить создание", toolTip, 85, dialogResult: DialogResult.Cancel);
 
                 okBtn.Left = form.ClientSize.Width - 20 - okBtn.Width;
@@ -143,6 +143,33 @@ public static class CreateFolderDialog
                 cancelBtn.Left = okBtn.Left - 10 - cancelBtn.Width;
                 cancelBtn.Top = 11;
                 cancelBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                okBtn.Click += (s, e) =>
+                {
+                    if (string.IsNullOrWhiteSpace(nameBox.Text))
+                    {
+                        MessageBox.Show("Введите название папки", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        nameBox.Focus();
+                        return;
+                    }
+
+                    if (modeMirror.Checked && string.IsNullOrWhiteSpace(pathBox.Text))
+                    {
+                        MessageBox.Show("Для режима «Зеркало» необходимо выбрать локальную папку через кнопку «Обзор...»", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        browseBtn.Focus();
+                        return;
+                    }
+
+                    result = new CreateFolderResult
+                    {
+                        Name = nameBox.Text.Trim(),
+                        Mode = modeMirror.Checked ? 0 : 1,
+                        LocalPath = modeMirror.Checked ? pathBox.Text.Trim() : ""
+                    };
+
+                    form.DialogResult = DialogResult.OK;
+                    form.Close();
+                };
 
                 bottomPanel.Controls.Add(okBtn);
                 bottomPanel.Controls.Add(cancelBtn);
@@ -164,27 +191,7 @@ public static class CreateFolderDialog
                     nameBox.Focus();
                 };
 
-                if (form.ShowModalTc() == DialogResult.OK)
-                {
-                    if (string.IsNullOrWhiteSpace(nameBox.Text))
-                    {
-                        MessageBox.Show("Введите название папки", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-
-                    if (modeMirror.Checked && string.IsNullOrWhiteSpace(pathBox.Text))
-                    {
-                        MessageBox.Show("Для режима «Зеркало» необходимо выбрать локальную папку через кнопку «Обзор...»", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
-                    
-                    result = new CreateFolderResult
-                    {
-                        Name = nameBox.Text.Trim(),
-                        Mode = modeMirror.Checked ? 0 : 1,
-                        LocalPath = modeMirror.Checked ? pathBox.Text.Trim() : ""
-                    };
-                }
+                form.ShowModalTc();
             }
             catch (Exception ex)
             {
