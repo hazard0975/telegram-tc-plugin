@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -37,8 +38,8 @@ public static class SmartSyncDialog
 
                 using Form form = new Form()
                 {
-                    Width = 840,
-                    Height = 560,
+                    Width = 980,
+                    Height = 600,
                     MinimumSize = new Size(840, 520),
                     FormBorderStyle = FormBorderStyle.Sizable,
                     Text = $"Умная синхронизация (Smart Sync) — \\{channelName}\\{(string.IsNullOrEmpty(folderPath) ? "" : folderPath)}",
@@ -167,8 +168,8 @@ public static class SmartSyncDialog
                 {
                     Left = 20,
                     Top = 105,
-                    Width = 790,
-                    Height = 350,
+                    Width = 920,
+                    Height = 390,
                     Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
                     View = View.Details,
                     CheckBoxes = true,
@@ -176,10 +177,14 @@ public static class SmartSyncDialog
                     GridLines = true
                 };
 
-                listView.Columns.Add("Путь в VFS", 280);
+                // Включаем двойную буферизацию для устранения мерцания при ресайзе и растягивании колонок
+                typeof(Control).GetProperty("DoubleBuffered", BindingFlags.NonPublic | BindingFlags.Instance)?
+                    .SetValue(listView, true, null);
+
+                listView.Columns.Add("Путь в VFS", 460);
                 listView.Columns.Add("Статус", 120);
-                listView.Columns.Add("Направление", 130);
-                listView.Columns.Add("Оригинал на ПК", 380);
+                listView.Columns.Add("Направление", 150);
+                listView.Columns.Add("Оригинал на ПК", 580);
 
                 foreach (var item in items)
                 {
@@ -223,9 +228,9 @@ public static class SmartSyncDialog
                 Button selectUpdatesBtn = new Button()
                 {
                     Left = 20,
-                    Top = 470,
-                    Width = 220,
-                    Height = 32,
+                    Top = 510,
+                    Width = 230,
+                    Height = 34,
                     Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
                     Text = "Выбрать требующие обновления"
                 };
@@ -242,10 +247,10 @@ public static class SmartSyncDialog
 
                 Button clearSelectionBtn = new Button()
                 {
-                    Left = 250,
-                    Top = 470,
+                    Left = 260,
+                    Top = 510,
                     Width = 120,
-                    Height = 32,
+                    Height = 34,
                     Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
                     Text = "Снять выбор"
                 };
@@ -256,10 +261,10 @@ public static class SmartSyncDialog
 
                 Button syncBtn = new Button()
                 {
-                    Left = 470,
-                    Top = 470,
+                    Left = 600,
+                    Top = 510,
                     Width = 220,
-                    Height = 32,
+                    Height = 34,
                     Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
                     Text = "Синхронизировать выбранные",
                     BackColor = Color.FromArgb(230, 245, 230),
@@ -268,10 +273,10 @@ public static class SmartSyncDialog
 
                 Button closeBtn = new Button()
                 {
-                    Left = 700,
-                    Top = 470,
+                    Left = 830,
+                    Top = 510,
                     Width = 110,
-                    Height = 32,
+                    Height = 34,
                     Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
                     Text = "Закрыть",
                     DialogResult = DialogResult.Cancel
