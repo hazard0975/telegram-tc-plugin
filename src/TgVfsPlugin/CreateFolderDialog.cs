@@ -29,8 +29,8 @@ public static class CreateFolderDialog
                 using Form form = new Form()
                 {
                     Width = 490,
-                    Height = 310,
-                    MinimumSize = new Size(490, 310),
+                    Height = 285,
+                    MinimumSize = new Size(490, 285),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Создать папку (Канал)",
                     StartPosition = FormStartPosition.CenterScreen,
@@ -40,34 +40,39 @@ public static class CreateFolderDialog
                     Font = UiTheme.DefaultFont
                 };
 
+                int margin = 20;
+                int contentWidth = form.ClientSize.Width - margin * 2; // точно 434px при ширине 490
+
                 // 1. Название папки
-                Label nameLabel = new Label() { Left = 20, Top = 16, Width = 430, Text = "Название папки:" };
-                TextBox nameBox = new TextBox() { Left = 20, Top = 38, Width = 430 };
+                Label nameLabel = new Label() { Left = margin, Top = 16, Width = contentWidth, Text = "Название папки:" };
+                TextBox nameBox = new TextBox() { Left = margin, Top = 38, Width = contentWidth };
 
                 // 2. Локальный путь для зеркала + кнопка Обзор...
-                Label pathLabel = new Label() { Left = 20, Top = 72, Width = 430, Text = "Локальный путь (только для Зеркала):" };
+                Label pathLabel = new Label() { Left = margin, Top = 70, Width = contentWidth, Text = "Локальный путь (только для Зеркала):" };
                 
-                int browseBtnWidth = 95;
-                int pathBoxWidth = 430 - browseBtnWidth - 8;
+                int browseBtnWidth = 85;
+                int spacing = 8;
+                int pathBoxWidth = contentWidth - browseBtnWidth - spacing;
                 
                 TextBox pathBox = new TextBox() 
                 { 
-                    Left = 20, 
-                    Top = 94, 
+                    Left = margin, 
+                    Top = 92, 
                     Width = pathBoxWidth, 
                     ReadOnly = true,
                     BackColor = SystemColors.Window
                 };
 
+                // Высота и положение кнопки строго выравниваются по Textbox
                 Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать локальную папку для создания Зеркала", toolTip, browseBtnWidth, 23);
-                browseBtn.Left = 20 + pathBoxWidth + 8;
-                browseBtn.Top = 93;
-                browseBtn.Height = 25;
+                browseBtn.Left = margin + pathBoxWidth + spacing;
+                browseBtn.Top = 91;
+                browseBtn.Height = nameBox.Height + 2;
 
                 // 3. Режим работы (смещен вниз)
-                Label modeLabel = new Label() { Left = 20, Top = 130, Width = 430, Text = "Режим работы папки:" };
-                RadioButton modeMirror = new RadioButton() { Left = 20, Top = 152, Width = 430, Text = "Зеркало (Бэкап локальной папки)", Checked = true };
-                RadioButton modeContainer = new RadioButton() { Left = 20, Top = 178, Width = 430, Text = "Контейнер (Обычная виртуальная папка)" };
+                Label modeLabel = new Label() { Left = margin, Top = 124, Width = contentWidth, Text = "Режим работы папки:" };
+                RadioButton modeMirror = new RadioButton() { Left = margin, Top = 144, Width = contentWidth, Text = "Зеркало (Бэкап локальной папки)", Checked = true };
+                RadioButton modeContainer = new RadioButton() { Left = margin, Top = 168, Width = contentWidth, Text = "Контейнер (Обычная виртуальная папка)" };
 
                 // Реакция на смену режима
                 void UpdateModeState()
@@ -87,7 +92,7 @@ public static class CreateFolderDialog
                     try
                     {
                         using FolderBrowserDialog fbd = new FolderBrowserDialog();
-                        fbd.Description = "Выберите локальную папку для зеркалирования в Telegram-канал:";
+                        fbd.Description = ""; // Убираем громоздкое нижнее описание, чтобы окно выглядело аккуратно
                         fbd.ShowNewFolderButton = true;
                         
                         if (!string.IsNullOrWhiteSpace(pathBox.Text) && Directory.Exists(pathBox.Text))
