@@ -49,8 +49,7 @@ public static class SmartSyncDialog
 
                 using Form form = new Form()
                 {
-                    Width = initWidth,
-                    Height = initHeight,
+                    ClientSize = new Size(initWidth, initHeight),
                     MinimumSize = new Size(880, 520),
                     FormBorderStyle = FormBorderStyle.Sizable,
                     Text = $"Умная синхронизация (Smart Sync) — \\{channelName}\\{(string.IsNullOrEmpty(folderPath) ? "" : folderPath)}",
@@ -69,11 +68,8 @@ public static class SmartSyncDialog
                 // Шапка
                 Panel headerPanel = new Panel()
                 {
-                    Left = 0,
-                    Top = 0,
-                    Width = 840,
-                    Height = 65,
                     Dock = DockStyle.Top,
+                    Height = 65,
                     BackColor = Color.FromArgb(245, 247, 250)
                 };
 
@@ -100,6 +96,15 @@ public static class SmartSyncDialog
                 headerPanel.Controls.Add(titleLabel);
                 headerPanel.Controls.Add(subLabel);
                 form.Controls.Add(headerPanel);
+
+                // Нижняя панель для кнопок управления
+                Panel bottomPanel = new Panel()
+                {
+                    Dock = DockStyle.Bottom,
+                    Height = 60,
+                    BackColor = Color.FromArgb(245, 247, 250)
+                };
+                form.Controls.Add(bottomPanel);
 
                 // Сканирование элементов из БД
                 var dbFiles = db.GetFilesWithSourcePathRecursive(mountId, folderPath);
@@ -246,7 +251,7 @@ public static class SmartSyncDialog
                 {
                     Left = 20,
                     Top = 75,
-                    Width = 790,
+                    Width = form.ClientSize.Width - 40,
                     Height = 22,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                     Font = new Font("Segoe UI", 9, FontStyle.Bold),
@@ -259,8 +264,8 @@ public static class SmartSyncDialog
                 {
                     Left = 20,
                     Top = 105,
-                    Width = 1000,
-                    Height = 400,
+                    Width = form.ClientSize.Width - 40,
+                    Height = form.ClientSize.Height - bottomPanel.Height - 115,
                     Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
                     View = View.Details,
                     CheckBoxes = true,
@@ -455,14 +460,14 @@ public static class SmartSyncDialog
 
                 form.Controls.Add(listView);
 
-                // Кнопки
+                // Кнопки управления в нижней панели
                 Button selectUpdatesBtn = new Button()
                 {
                     Left = 20,
-                    Top = 520,
-                    Width = 230,
-                    Height = 34,
-                    Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+                    Top = 11,
+                    Width = 235,
+                    Height = 36,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left,
                     Text = "Выбрать требующие обновления"
                 };
                 selectUpdatesBtn.Click += (s, e) =>
@@ -478,11 +483,11 @@ public static class SmartSyncDialog
 
                 Button clearSelectionBtn = new Button()
                 {
-                    Left = 260,
-                    Top = 520,
+                    Left = 265,
+                    Top = 11,
                     Width = 120,
-                    Height = 34,
-                    Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+                    Height = 36,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left,
                     Text = "Снять выбор"
                 };
                 clearSelectionBtn.Click += (s, e) =>
@@ -492,11 +497,11 @@ public static class SmartSyncDialog
 
                 Button syncBtn = new Button()
                 {
-                    Left = 660,
-                    Top = 520,
+                    Left = form.ClientSize.Width - 380,
+                    Top = 11,
                     Width = 240,
-                    Height = 34,
-                    Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                    Height = 36,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Right,
                     Text = "Синхронизировать выбранные",
                     BackColor = Color.FromArgb(230, 245, 230),
                     Font = new Font("Segoe UI", 9, FontStyle.Bold)
@@ -504,11 +509,11 @@ public static class SmartSyncDialog
 
                 Button closeBtn = new Button()
                 {
-                    Left = 910,
-                    Top = 520,
+                    Left = form.ClientSize.Width - 130,
+                    Top = 11,
                     Width = 110,
-                    Height = 34,
-                    Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                    Height = 36,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Right,
                     Text = "Закрыть",
                     DialogResult = DialogResult.Cancel
                 };
@@ -659,10 +664,10 @@ public static class SmartSyncDialog
                     }
                 };
 
-                form.Controls.Add(selectUpdatesBtn);
-                form.Controls.Add(clearSelectionBtn);
-                form.Controls.Add(syncBtn);
-                form.Controls.Add(closeBtn);
+                bottomPanel.Controls.Add(selectUpdatesBtn);
+                bottomPanel.Controls.Add(clearSelectionBtn);
+                bottomPanel.Controls.Add(syncBtn);
+                bottomPanel.Controls.Add(closeBtn);
                 form.CancelButton = closeBtn;
 
                 form.FormClosing += (s, e) =>
