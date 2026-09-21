@@ -383,8 +383,8 @@ public static class SmartSyncDialog
                         sub.Font = rowFont;
                     }
 
-                    // Для центральной колонки направления (<=>) делаем крупный жирный шрифт 11pt Bold
-                    lvi.SubItems[3].Font = new Font("Segoe UI", 11f, FontStyle.Bold);
+                    // Для центральной колонки направления (<=>) делаем крупный жирный шрифт 14pt Bold
+                    lvi.SubItems[3].Font = new Font("Segoe UI", 14f, FontStyle.Bold);
 
                     listView.Items.Add(lvi);
                     rowIndex++;
