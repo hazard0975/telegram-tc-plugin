@@ -129,16 +129,30 @@ public static class SmartSyncDialog
 
                             long localUnix = new DateTimeOffset(fi.LastWriteTimeUtc).ToUnixTimeSeconds();
                             long remoteUnix = new DateTimeOffset(file.MTime.ToUniversalTime()).ToUnixTimeSeconds();
+                            long diff = localUnix - remoteUnix;
 
-                            if (item.LocalSize == file.Size && Math.Abs(localUnix - remoteUnix) <= 2)
+                            if (Math.Abs(diff) <= 2)
                             {
-                                item.Status = SyncItemStatus.Identical;
-                                item.StatusText = "Идентичны";
-                                item.DirectionText = "Синхронизировано";
-                                identicalCount++;
+                                // Даты совпадают в пределах 2 сек
+                                if (item.LocalSize == file.Size)
+                                {
+                                    item.Status = SyncItemStatus.Identical;
+                                    item.StatusText = "Идентичны";
+                                    item.DirectionText = "Синхронизировано";
+                                    identicalCount++;
+                                }
+                                else
+                                {
+                                    // Даты равны, но размеры отличаются - приоритет локальному источнику ПК
+                                    item.Status = SyncItemStatus.LocalNewer;
+                                    item.StatusText = "На ПК изменен";
+                                    item.DirectionText = "ПК -> Telegram";
+                                    localNewerCount++;
+                                }
                             }
-                            else if (localUnix > remoteUnix || item.LocalSize != file.Size)
+                            else if (diff > 2)
                             {
+                                // Файл на ПК свежее, чем в Telegram
                                 item.Status = SyncItemStatus.LocalNewer;
                                 item.StatusText = "На ПК новее";
                                 item.DirectionText = "ПК -> Telegram";
@@ -146,6 +160,7 @@ public static class SmartSyncDialog
                             }
                             else
                             {
+                                // Файл в Telegram свежее, чем на ПК (diff < -2)
                                 item.Status = SyncItemStatus.RemoteNewer;
                                 item.StatusText = "В TG новее";
                                 item.DirectionText = "Telegram -> ПК";
