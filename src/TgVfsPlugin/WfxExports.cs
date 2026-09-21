@@ -332,6 +332,36 @@ public static unsafe class WfxExports
         return string.Join("\\", parts);
     }
 
+    /// <summary>
+    /// Проверяет, является ли локальный путь временным файлом редактирования/просмотра (например Total Commander _tc или %TEMP%)
+    /// </summary>
+    public static bool IsTemporaryLocalPath(string? localPath)
+    {
+        if (string.IsNullOrWhiteSpace(localPath)) return false;
+
+        try
+        {
+            string fullPath = Path.GetFullPath(localPath).Replace('/', '\\');
+
+            // 1. Папка %TEMP% или %TMP%
+            string tempDir = Path.GetFullPath(Path.GetTempPath()).TrimEnd('\\').Replace('/', '\\');
+            if (fullPath.StartsWith(tempDir + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // 2. Специфические папки Total Commander (_tc, _tc\...)
+            if (fullPath.IndexOf("\\_tc\\", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                fullPath.IndexOf("\\_tc", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
     private static FindState? CreateStateForPath(string pathStr)
     {
         string dirPath = pathStr;
@@ -1267,11 +1297,27 @@ public static unsafe class WfxExports
 
             // Обработка перезаписи: переносим старую версию в корзину и инкрементируем версию
             int ver = 1;
+            string? preservedSourcePath = null;
             if (existingFile != null)
             {
                 _db.MoveFileToTrash(existingFile.Uid);
                 ver = existingFile.Ver + 1;
+                preservedSourcePath = existingFile.SourcePath;
                 Logger.Info("DB", $"[DB WRITE] Old version of '{fileName}' marked in_trash=1. New version: {ver}");
+            }
+
+            // Определение source_path: если файл редактировался во временной папке (Total Commander F4 / _tc / %TEMP%),
+            // мы НЕ затираем оригинальный путь на диске мусорным временным путем, а сохраняем существующий source_path!
+            string? finalSourcePath;
+            bool isTemp = IsTemporaryLocalPath(localPath);
+            if (isTemp)
+            {
+                finalSourcePath = preservedSourcePath;
+                Logger.Info("WFX", $"FsPutFile: Uploading from temp editor location '{localPath}'. Preserving existing source_path: '{finalSourcePath ?? "<none>"}'");
+            }
+            else
+            {
+                finalSourcePath = Path.GetFullPath(localPath);
             }
 
             _db.AddFile(new VfsDatabase.FileRecord
@@ -1286,7 +1332,7 @@ public static unsafe class WfxExports
                 TgMessageId = messageId,
                 InTrash = 0,
                 Ver = ver,
-                SourcePath = Path.GetFullPath(localPath)
+                SourcePath = finalSourcePath
             });
 
             Logger.Info("DB", $"[DB WRITE] File '{fileName}' successfully recorded in DB.");
