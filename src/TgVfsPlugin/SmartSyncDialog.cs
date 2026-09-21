@@ -277,7 +277,7 @@ public static class SmartSyncDialog
                 int colVfsWidth = 260;
                 int colTgSizeWidth = 85;
                 int colTgDateWidth = 145;
-                int colDirWidth = 55;
+                int colDirWidth = 60;
                 int colPcDateWidth = 145;
                 int colPcSizeWidth = 85;
                 int colSrcWidth = 320;
@@ -382,6 +382,9 @@ public static class SmartSyncDialog
                         sub.BackColor = rowBg;
                         sub.Font = rowFont;
                     }
+
+                    // Для центральной колонки направления (<=>) делаем крупный жирный шрифт 11pt Bold
+                    lvi.SubItems[3].Font = new Font("Segoe UI", 11f, FontStyle.Bold);
 
                     listView.Items.Add(lvi);
                     rowIndex++;
