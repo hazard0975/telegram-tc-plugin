@@ -31,18 +31,9 @@ public static class SettingsDialog
                 int topMargin = 16;
                 int clientWidth = 530;
                 int contentWidth = clientWidth - margin * 2; // 490px
+                int clientHeight = 334;
 
-                using Form form = new Form()
-                {
-                    FormBorderStyle = FormBorderStyle.FixedDialog,
-                    Text = "Настройки Telegram VFS",
-                    StartPosition = FormStartPosition.CenterScreen,
-                    MinimizeBox = false,
-                    MaximizeBox = false,
-                    TopMost = false,
-                    Font = UiTheme.DefaultFont,
-                    AutoScaleMode = AutoScaleMode.None
-                };
+                using Form form = UiTheme.CreateDialogForm("Настройки Telegram VFS", clientWidth, clientHeight);
 
                 GroupBox storageGroup = new GroupBox()
                 {
@@ -65,7 +56,7 @@ public static class SettingsDialog
                     Left = innerMargin,
                     Top = 22,
                     Width = innerContentWidth,
-                    Height = 20,
+                    Height = 24,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.DefaultAppData,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
@@ -90,7 +81,7 @@ public static class SettingsDialog
                     Left = innerMargin,
                     Top = 76,
                     Width = innerContentWidth,
-                    Height = 20,
+                    Height = 24,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Portable,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
@@ -115,31 +106,27 @@ public static class SettingsDialog
                     Left = innerMargin,
                     Top = 130,
                     Width = innerContentWidth,
-                    Height = 20,
+                    Height = 24,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Custom,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
-                int browseBtnWidth = 85;
+                int browseBtnWidth = 80;
                 Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать пользовательскую папку на диске", toolTip, browseBtnWidth, 30);
                 browseBtn.Left = contentWidth - innerMargin - browseBtnWidth;
                 browseBtn.Top = 156;
                 browseBtn.Enabled = rbCustom.Checked;
                 browseBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
-                TextBox customPathBox = new TextBox()
-                {
-                    Left = 38,
-                    Top = 156,
-                    Width = browseBtn.Left - 10 - 38,
-                    AutoSize = false,
-                    Height = 30,
-                    Text = SettingsManager.CurrentStorageMode == StorageMode.Custom 
-                        ? SettingsManager.DataDirectory 
-                        : (SettingsManager.GetSetting("data_path") ?? "D:\\TelegramVFS_Data"),
-                    Enabled = rbCustom.Checked,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-                };
+                TextBox customPathBox = UiTheme.CreateTextBox();
+                customPathBox.Left = 38;
+                customPathBox.Top = 156;
+                customPathBox.Width = browseBtn.Left - 10 - 38;
+                customPathBox.Text = SettingsManager.CurrentStorageMode == StorageMode.Custom 
+                    ? SettingsManager.DataDirectory 
+                    : (SettingsManager.GetSetting("data_path") ?? "D:\\TelegramVFS_Data");
+                customPathBox.Enabled = rbCustom.Checked;
+                customPathBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                 CheckBox migrateCheck = new CheckBox()
                 {
@@ -188,11 +175,6 @@ public static class SettingsDialog
                 storageGroup.Controls.Add(browseBtn);
                 storageGroup.Controls.Add(migrateCheck);
 
-                int bottomPanelHeight = 52;
-                int contentBottom = storageGroup.Bottom + topMargin;
-                int clientHeight = contentBottom + bottomPanelHeight;
-
-                form.ClientSize = new Size(clientWidth, clientHeight);
                 form.MinimumSize = form.Size;
                 form.MaximumSize = form.Size;
 

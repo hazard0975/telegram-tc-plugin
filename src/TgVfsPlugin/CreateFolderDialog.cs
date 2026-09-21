@@ -26,22 +26,13 @@ public static class CreateFolderDialog
                 Win32Api.EnsureVisualStyles();
                 using ToolTip toolTip = UiTheme.CreateToolTip();
 
-                using Form form = new Form()
-                {
-                    FormBorderStyle = FormBorderStyle.FixedDialog,
-                    Text = "Создать папку (Канал)",
-                    StartPosition = FormStartPosition.CenterScreen,
-                    MinimizeBox = false,
-                    MaximizeBox = false,
-                    TopMost = false,
-                    Font = UiTheme.DefaultFont,
-                    AutoScaleMode = AutoScaleMode.None
-                };
-
                 int margin = 20;
                 int topMargin = 16;
                 int clientWidth = 474;
                 int contentWidth = clientWidth - margin * 2; // 434px
+                int clientHeight = 282;
+
+                using Form form = UiTheme.CreateDialogForm("Создать папку (Канал)", clientWidth, clientHeight);
 
                 // 1. Название папки
                 Label nameLabel = new Label() 
@@ -53,15 +44,11 @@ public static class CreateFolderDialog
                     Text = "Название папки:",
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
                 };
-                TextBox nameBox = new TextBox() 
-                { 
-                    Left = margin, 
-                    Top = nameLabel.Bottom + 4, 
-                    Width = contentWidth,
-                    AutoSize = false,
-                    Height = 30,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
-                };
+                TextBox nameBox = UiTheme.CreateTextBox();
+                nameBox.Left = margin;
+                nameBox.Top = nameLabel.Bottom + 4;
+                nameBox.Width = contentWidth;
+                nameBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                 // 2. Локальный путь для зеркала + кнопка Обзор...
                 Label pathLabel = new Label() 
@@ -74,7 +61,7 @@ public static class CreateFolderDialog
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
                 };
                 
-                int browseBtnWidth = 85;
+                int browseBtnWidth = 80;
                 int spacing = 10;
                 
                 Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать локальную папку для создания Зеркала", toolTip, browseBtnWidth, 30);
@@ -83,17 +70,12 @@ public static class CreateFolderDialog
                 browseBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
                 int pathBoxWidth = browseBtn.Left - spacing - margin;
-                TextBox pathBox = new TextBox() 
-                { 
-                    Left = margin, 
-                    Top = pathLabel.Bottom + 4, 
-                    Width = pathBoxWidth, 
-                    AutoSize = false,
-                    Height = 30,
-                    ReadOnly = true,
-                    BackColor = SystemColors.Window,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-                };
+                TextBox pathBox = UiTheme.CreateTextBox(readOnly: true);
+                pathBox.Left = margin;
+                pathBox.Top = pathLabel.Bottom + 4;
+                pathBox.Width = pathBoxWidth;
+                pathBox.BackColor = SystemColors.Window;
+                pathBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                 // 3. Режим работы
                 Label modeLabel = new Label() 
@@ -110,7 +92,7 @@ public static class CreateFolderDialog
                     Left = margin, 
                     Top = modeLabel.Bottom + 4, 
                     Width = contentWidth, 
-                    Height = 22,
+                    Height = 24,
                     Text = "Зеркало (Бэкап локальной папки)", 
                     Checked = true,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
@@ -120,17 +102,11 @@ public static class CreateFolderDialog
                     Left = margin, 
                     Top = modeMirror.Bottom + 4, 
                     Width = contentWidth, 
-                    Height = 22,
+                    Height = 24,
                     Text = "Контейнер (Обычная виртуальная папка)",
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
                 };
 
-                // Отступ снизу (между нижним переключателем и нижней панелью) строго равен отступу сверху (topMargin = 16px)
-                int bottomPanelHeight = 52;
-                int contentBottom = modeContainer.Bottom + topMargin;
-                int clientHeight = contentBottom + bottomPanelHeight;
-
-                form.ClientSize = new Size(clientWidth, clientHeight);
                 form.MinimumSize = form.Size;
                 form.MaximumSize = form.Size;
 

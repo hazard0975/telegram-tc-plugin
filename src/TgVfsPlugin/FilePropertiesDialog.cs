@@ -18,21 +18,11 @@ public static class FilePropertiesDialog
                 using ToolTip toolTip = UiTheme.CreateToolTip();
 
                 int margin = 20;
-                int topMargin = 16;
                 int clientWidth = 514;
                 int contentWidth = clientWidth - margin * 2; // 474px
+                int clientHeight = 468; // 75 (header) + 325 (infoGroup) + 16 (gap) + 52 (bottom) = 468px
 
-                using Form form = new Form()
-                {
-                    FormBorderStyle = FormBorderStyle.FixedDialog,
-                    Text = $"Свойства: {file.Name}",
-                    StartPosition = FormStartPosition.CenterScreen,
-                    MinimizeBox = false,
-                    MaximizeBox = false,
-                    TopMost = false,
-                    Font = UiTheme.DefaultFont,
-                    AutoScaleMode = AutoScaleMode.None
-                };
+                using Form form = UiTheme.CreateDialogForm($"Свойства: {file.Name}", clientWidth, clientHeight);
 
                 // Иконка и заголовок
                 Panel headerPanel = new Panel()
@@ -220,11 +210,6 @@ public static class FilePropertiesDialog
                 infoGroup.Controls.Add(copyBtn);
                 form.Controls.Add(infoGroup);
 
-                int bottomPanelHeight = 52;
-                int contentBottom = infoGroup.Bottom + topMargin;
-                int clientHeight = contentBottom + bottomPanelHeight;
-
-                form.ClientSize = new Size(clientWidth, clientHeight);
                 form.MinimumSize = form.Size;
                 form.MaximumSize = form.Size;
 
