@@ -184,13 +184,13 @@ public static class SmartSyncDialog
                                 // Файл на ПК свежее, чем в Telegram
                                 item.Status = SyncItemStatus.LocalNewer;
                                 item.StatusText = "На ПК новее";
-                                item.DirectionSymbol = ">>";
+                                item.DirectionSymbol = "-->>";
                                 item.DirectionText = "ПК -> Telegram";
 
                                 TimeSpan span = fi.LastWriteTimeUtc - file.MTime.ToUniversalTime();
                                 string diffStr = FormatTimeSpan(span);
 
-                                item.ToolTipDetails = $"{renameHeader}[>> На ПК новее] (ПК >> Telegram)\n" +
+                                item.ToolTipDetails = $"{renameHeader}[-->> На ПК новее] (ПК -->> Telegram)\n" +
                                                       $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
                                                       $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                       $"• Опережение:      на {diffStr}\n" +
@@ -202,13 +202,13 @@ public static class SmartSyncDialog
                                 // Файл в Telegram свежее, чем на ПК (diff < -2)
                                 item.Status = SyncItemStatus.RemoteNewer;
                                 item.StatusText = "В TG новее";
-                                item.DirectionSymbol = "<<";
+                                item.DirectionSymbol = "<<--";
                                 item.DirectionText = "Telegram -> ПК";
 
                                 TimeSpan span = file.MTime.ToUniversalTime() - fi.LastWriteTimeUtc;
                                 string diffStr = FormatTimeSpan(span);
 
-                                item.ToolTipDetails = $"{renameHeader}[<< В Telegram новее] (Telegram << ПК)\n" +
+                                item.ToolTipDetails = $"{renameHeader}[<<-- В Telegram новее] (Telegram <<-- ПК)\n" +
                                                       $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                       $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
                                                       $"• Опережение:       на {diffStr}\n" +
@@ -277,7 +277,7 @@ public static class SmartSyncDialog
                 int colVfsWidth = 260;
                 int colTgSizeWidth = 85;
                 int colTgDateWidth = 145;
-                int colDirWidth = 45;
+                int colDirWidth = 55;
                 int colPcDateWidth = 145;
                 int colPcSizeWidth = 85;
                 int colSrcWidth = 320;
@@ -382,9 +382,6 @@ public static class SmartSyncDialog
                         sub.BackColor = rowBg;
                         sub.Font = rowFont;
                     }
-
-                    // Для центральной колонки направления (<=>) делаем крупный жирный шрифт 12pt
-                    lvi.SubItems[3].Font = new Font("Segoe UI", 12f, FontStyle.Bold);
 
                     listView.Items.Add(lvi);
                     rowIndex++;
