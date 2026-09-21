@@ -11,8 +11,9 @@ namespace TgVfsPlugin;
 public enum SyncItemStatus
 {
     Identical,           // Файлы совпадают (размер и время изменения)
-    LocalNewer,          // На ПК файл новее или размер изменился -> обновить в TG
+    LocalNewer,          // На ПК файл новее -> обновить в TG
     RemoteNewer,         // В Telegram файл новее -> обновить на ПК
+    SizeMismatch,        // Даты совпадают, но размеры отличаются (конфликт / неоднозначность)
     SourceNotFound       // Локальный файл-источник на диске отсутствует
 }
 
@@ -106,6 +107,7 @@ public static class SmartSyncDialog
                 int remoteNewerCount = 0;
                 int missingCount = 0;
                 int identicalCount = 0;
+                int mismatchCount = 0;
 
                 foreach (var file in dbFiles)
                 {
@@ -143,11 +145,11 @@ public static class SmartSyncDialog
                                 }
                                 else
                                 {
-                                    // Даты равны, но размеры отличаются - приоритет локальному источнику ПК
-                                    item.Status = SyncItemStatus.LocalNewer;
-                                    item.StatusText = "На ПК изменен";
-                                    item.DirectionText = "ПК -> Telegram";
-                                    localNewerCount++;
+                                    // Даты равны, но размеры отличаются (конфликт / несовпадение размеров)
+                                    item.Status = SyncItemStatus.SizeMismatch;
+                                    item.StatusText = "⚠️ Разный размер";
+                                    item.DirectionText = "Требует решения";
+                                    mismatchCount++;
                                 }
                             }
                             else if (diff > 2)
@@ -179,6 +181,16 @@ public static class SmartSyncDialog
                 }
 
                 // Информационная сводка
+                string summaryText = $"Файлов с источником: {items.Count}  |  Требуют обновления: {localNewerCount + remoteNewerCount}  |  Идентичны: {identicalCount}";
+                if (mismatchCount > 0)
+                {
+                    summaryText += $"  |  Разный размер: {mismatchCount}";
+                }
+                if (missingCount > 0)
+                {
+                    summaryText += $"  |  Не найдены на диске: {missingCount}";
+                }
+
                 Label summaryLabel = new Label()
                 {
                     Left = 20,
@@ -187,7 +199,7 @@ public static class SmartSyncDialog
                     Height = 22,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                     Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                    Text = $"Файлов с источником: {items.Count}  |  Требуют обновления: {localNewerCount + remoteNewerCount}  |  Идентичны: {identicalCount}  |  Не найдены на диске: {missingCount}"
+                    Text = summaryText
                 };
                 form.Controls.Add(summaryLabel);
 
@@ -261,6 +273,13 @@ public static class SmartSyncDialog
                     {
                         lvi.Checked = true;
                         lvi.ForeColor = Color.FromArgb(0, 50, 160);
+                    }
+                    else if (item.Status == SyncItemStatus.SizeMismatch)
+                    {
+                        lvi.Checked = false;
+                        lvi.ForeColor = Color.FromArgb(180, 100, 0); // Оранжево-коричневый цвет предупреждения
+                        lvi.ToolTipText = (string.IsNullOrEmpty(lvi.ToolTipText) ? "" : lvi.ToolTipText + "\n") +
+                            $"Даты изменения файлов совпадают, но размеры отличаются:\nПК: {item.LocalSize:N0} байт | VFS: {item.FileRecord.Size:N0} байт";
                     }
                     else if (item.Status == SyncItemStatus.SourceNotFound)
                     {
