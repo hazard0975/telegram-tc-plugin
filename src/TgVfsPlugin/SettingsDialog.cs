@@ -65,7 +65,7 @@ public static class SettingsDialog
                     Left = innerMargin,
                     Top = 22,
                     Width = innerContentWidth,
-                    Height = 22,
+                    Height = 20,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.DefaultAppData,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
@@ -74,7 +74,7 @@ public static class SettingsDialog
                 {
                     Text = SettingsManager.DefaultAppDataDirectory,
                     Left = 38,
-                    Top = 45,
+                    Top = 48,
                     Width = innerContentWidth - 22,
                     Height = 20,
                     ForeColor = Color.DimGray,
@@ -88,9 +88,9 @@ public static class SettingsDialog
                 {
                     Text = "Портативный режим (рядом с плагином)",
                     Left = innerMargin,
-                    Top = 72,
+                    Top = 76,
                     Width = innerContentWidth,
-                    Height = 22,
+                    Height = 20,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Portable,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
@@ -99,7 +99,7 @@ public static class SettingsDialog
                 {
                     Text = SettingsManager.PortableDirectory,
                     Left = 38,
-                    Top = 95,
+                    Top = 102,
                     Width = innerContentWidth - 22,
                     Height = 20,
                     ForeColor = Color.DimGray,
@@ -113,9 +113,9 @@ public static class SettingsDialog
                 {
                     Text = "Пользовательская папка на диске:",
                     Left = innerMargin,
-                    Top = 122,
+                    Top = 130,
                     Width = innerContentWidth,
-                    Height = 22,
+                    Height = 20,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Custom,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
@@ -123,15 +123,15 @@ public static class SettingsDialog
                 int browseBtnWidth = 85;
                 Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать пользовательскую папку на диске", toolTip, browseBtnWidth, 30);
                 browseBtn.Left = contentWidth - innerMargin - browseBtnWidth;
-                browseBtn.Top = 146;
+                browseBtn.Top = 156;
                 browseBtn.Enabled = rbCustom.Checked;
                 browseBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
                 TextBox customPathBox = new TextBox()
                 {
                     Left = 38,
-                    Top = 146,
-                    Width = browseBtn.Left - 8 - 38,
+                    Top = 156,
+                    Width = browseBtn.Left - 10 - 38,
                     AutoSize = false,
                     Height = 30,
                     Text = SettingsManager.CurrentStorageMode == StorageMode.Custom 
@@ -145,7 +145,7 @@ public static class SettingsDialog
                 {
                     Text = "Перенести файлы",
                     Left = innerMargin,
-                    Top = 190,
+                    Top = 196,
                     Width = innerContentWidth,
                     Height = 40,
                     CheckAlign = ContentAlignment.TopLeft,

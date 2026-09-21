@@ -89,7 +89,7 @@ public static class FilePropertiesDialog
 
                 int curTop = 24;
                 int labelWidth = 145;
-                int valueWidth = 300;
+                int valueWidth = contentWidth - 30 - labelWidth;
                 int rowHeight = 23;
 
                 void AddRow(string labelText, string valueText)
@@ -112,7 +112,8 @@ public static class FilePropertiesDialog
                         BorderStyle = BorderStyle.None,
                         BackColor = SystemColors.Control,
                         Font = UiTheme.DefaultFont,
-                        TabStop = false
+                        TabStop = false,
+                        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                     };
                     infoGroup.Controls.Add(lbl);
                     infoGroup.Controls.Add(valBox);
@@ -126,6 +127,16 @@ public static class FilePropertiesDialog
                 {
                     string dirSubPath = isMountRoot ? "" : (string.IsNullOrEmpty(file.Parent) ? file.Name : $"{file.Parent}\\{file.Name}");
                     db.GetDirectoryStats(file.MountId, dirSubPath, file.InTrash == 1, out dirFilesCount, out dirDirsCount, out dirTotalSize);
+                }
+
+                string folderModeStr = "Контейнер";
+                if (db != null)
+                {
+                    var mount = db.GetMountById(file.MountId) ?? db.GetMountByName(channelName);
+                    if (mount != null && mount.Mode == 0)
+                    {
+                        folderModeStr = "Зеркало";
+                    }
                 }
 
                 string dateStr = file.MTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss");
@@ -166,6 +177,7 @@ public static class FilePropertiesDialog
                 }
 
                 AddRow("Статус файла:", statusStr);
+                AddRow("Режим папки:", folderModeStr);
                 AddRow("Уникальный UID:", file.Uid);
 
                 // Кнопка копирования свойств прямо внутри блока свойств

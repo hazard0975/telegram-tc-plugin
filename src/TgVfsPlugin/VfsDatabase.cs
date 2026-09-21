@@ -188,6 +188,26 @@ public class VfsDatabase : IDisposable
         return null;
     }
 
+    public MountInfo? GetMountById(string id)
+    {
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name FROM mounts WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id);
+        using var reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            return new MountInfo
+            {
+                Id = reader.GetString(0),
+                LocalPath = reader.GetString(1),
+                ChannelId = reader.GetInt64(2),
+                ChannelName = reader.GetString(4),
+                Mode = reader.GetInt32(3)
+            };
+        }
+        return null;
+    }
+
     public System.Collections.Generic.List<VfsItem> GetMounts()
     {
         var items = new System.Collections.Generic.List<VfsItem>();

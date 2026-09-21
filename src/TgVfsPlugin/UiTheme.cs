@@ -22,7 +22,10 @@ public static class UiTheme
     public static readonly Color LabelForeColor = Color.FromArgb(70, 70, 70);
 
     public const int DefaultButtonHeight = 30;
+    public const int DefaultInputHeight = 30;
     public const int DefaultBottomPanelHeight = 52;
+    public const int DefaultMargin = 20;
+    public const int DefaultTopMargin = 16;
 
     /// <summary>
     /// Вычисляет оптимальную ширину кнопки под длину текста со стандартными отступами.
@@ -32,6 +35,63 @@ public static class UiTheme
         font ??= DefaultFont;
         int textWidth = TextRenderer.MeasureText(text, font).Width;
         return Math.Max(minWidth, textWidth + padding);
+    }
+
+    /// <summary>
+    /// Создает стандартизированное текстовое поле ввода с фиксированной высотой (30px по умолчанию).
+    /// </summary>
+    public static TextBox CreateTextBox(
+        string text = "",
+        bool readOnly = false,
+        bool multiline = false,
+        int height = DefaultInputHeight,
+        Font? font = null)
+    {
+        font ??= DefaultFont;
+        return new TextBox()
+        {
+            Text = text,
+            Font = font,
+            Multiline = multiline,
+            AutoSize = !multiline && height == DefaultInputHeight ? false : true,
+            Height = height,
+            ReadOnly = readOnly,
+            BackColor = readOnly ? SystemColors.Window : SystemColors.Window
+        };
+    }
+
+    /// <summary>
+    /// Создает стандартизированный выпадающий список (ComboBox) с фиксированной высотой (30px по умолчанию).
+    /// </summary>
+    public static ComboBox CreateComboBox(int height = DefaultInputHeight, Font? font = null)
+    {
+        font ??= DefaultFont;
+        return new ComboBox()
+        {
+            Font = font,
+            Height = height,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+    }
+
+    /// <summary>
+    /// Создает стандартизированную диалоговую форму с отключенным AutoScaleMode и правильным стилем.
+    /// </summary>
+    public static Form CreateDialogForm(string title, int clientWidth, int clientHeight, Font? font = null)
+    {
+        font ??= DefaultFont;
+        return new Form()
+        {
+            Text = title,
+            Font = font,
+            ClientSize = new Size(clientWidth, clientHeight),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterScreen,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            TopMost = false,
+            AutoScaleMode = AutoScaleMode.None
+        };
     }
 
     /// <summary>

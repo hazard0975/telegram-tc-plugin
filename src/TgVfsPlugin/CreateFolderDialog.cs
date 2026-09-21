@@ -75,7 +75,7 @@ public static class CreateFolderDialog
                 };
                 
                 int browseBtnWidth = 85;
-                int spacing = 8;
+                int spacing = 10;
                 
                 Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать локальную папку для создания Зеркала", toolTip, browseBtnWidth, 30);
                 browseBtn.Left = clientWidth - margin - browseBtnWidth;
