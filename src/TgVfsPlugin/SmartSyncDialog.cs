@@ -299,6 +299,7 @@ public static class SmartSyncDialog
                 listView.Columns.Add("Размер (ПК)", colPcSizeWidth, HorizontalAlignment.Right);
                 listView.Columns.Add("Оригинал на ПК", colSrcWidth, HorizontalAlignment.Left);
 
+                int rowIndex = 0;
                 foreach (var item in items)
                 {
                     string vfsDisplayPath = string.IsNullOrEmpty(item.FileRecord.Parent)
@@ -334,34 +335,40 @@ public static class SmartSyncDialog
                     {
                         lvi.Checked = true;
                         lvi.ForeColor = Color.FromArgb(0, 110, 0); // Зеленый цвет Total Commander
+                        lvi.BackColor = Color.FromArgb(235, 248, 235); // Мягкий светло-зеленый фон
                         lvi.Font = new Font(listView.Font, FontStyle.Bold);
                     }
                     else if (item.Status == SyncItemStatus.RemoteNewer)
                     {
                         lvi.Checked = true;
                         lvi.ForeColor = Color.FromArgb(0, 70, 180); // Синий цвет Total Commander
+                        lvi.BackColor = Color.FromArgb(235, 244, 255); // Мягкий светло-голубой фон
                         lvi.Font = new Font(listView.Font, FontStyle.Bold);
                     }
                     else if (item.Status == SyncItemStatus.SizeMismatch)
                     {
                         lvi.Checked = false;
                         lvi.ForeColor = Color.FromArgb(180, 100, 0); // Оранжево-коричневый
+                        lvi.BackColor = Color.FromArgb(255, 247, 230); // Мягкий янтарный фон
                         lvi.Font = new Font(listView.Font, FontStyle.Bold);
                     }
                     else if (item.Status == SyncItemStatus.SourceNotFound)
                     {
                         lvi.Checked = false;
                         lvi.ForeColor = Color.FromArgb(170, 0, 0); // Красный
+                        lvi.BackColor = Color.FromArgb(255, 235, 235); // Мягкий светло-розовый фон
                         lvi.Font = new Font(listView.Font, FontStyle.Bold);
                     }
                     else
                     {
                         lvi.Checked = false;
                         lvi.ForeColor = Color.FromArgb(90, 90, 90); // Серый (Идентичны)
+                        lvi.BackColor = (rowIndex % 2 == 0) ? Color.White : Color.FromArgb(248, 249, 250); // Мягкая зебра
                         lvi.Font = new Font(listView.Font, FontStyle.Regular);
                     }
 
                     listView.Items.Add(lvi);
+                    rowIndex++;
                 }
 
                 // Интерактивные многострочные всплывающие подсказки по всей строке ListView
