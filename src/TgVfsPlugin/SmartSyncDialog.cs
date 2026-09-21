@@ -101,7 +101,7 @@ public static class SmartSyncDialog
                 Panel bottomPanel = new Panel()
                 {
                     Dock = DockStyle.Bottom,
-                    Height = 60,
+                    Height = 52,
                     BackColor = Color.FromArgb(245, 247, 250)
                 };
                 form.Controls.Add(bottomPanel);
@@ -460,15 +460,19 @@ public static class SmartSyncDialog
 
                 form.Controls.Add(listView);
 
-                // Кнопки управления в нижней панели
+                // Кнопки управления в нижней панели по нативному стандарту Windows/TC
+                Font btnFont = new Font("Segoe UI", 9f);
+
                 Button selectUpdatesBtn = new Button()
                 {
                     Left = 20,
                     Top = 11,
-                    Width = 235,
-                    Height = 36,
+                    Width = 160,
+                    Height = 30,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left,
-                    Text = "Выбрать требующие обновления"
+                    Font = btnFont,
+                    UseVisualStyleBackColor = true,
+                    Text = "Выбрать требующие"
                 };
                 selectUpdatesBtn.Click += (s, e) =>
                 {
@@ -483,11 +487,13 @@ public static class SmartSyncDialog
 
                 Button clearSelectionBtn = new Button()
                 {
-                    Left = 265,
+                    Left = 190,
                     Top = 11,
-                    Width = 120,
-                    Height = 36,
+                    Width = 110,
+                    Height = 30,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                    Font = btnFont,
+                    UseVisualStyleBackColor = true,
                     Text = "Снять выбор"
                 };
                 clearSelectionBtn.Click += (s, e) =>
@@ -497,23 +503,25 @@ public static class SmartSyncDialog
 
                 Button syncBtn = new Button()
                 {
-                    Left = form.ClientSize.Width - 380,
+                    Left = form.ClientSize.Width - 340,
                     Top = 11,
-                    Width = 240,
-                    Height = 36,
+                    Width = 220,
+                    Height = 30,
                     Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                    Text = "Синхронизировать выбранные",
-                    BackColor = Color.FromArgb(230, 245, 230),
-                    Font = new Font("Segoe UI", 9, FontStyle.Bold)
+                    Font = btnFont,
+                    UseVisualStyleBackColor = true,
+                    Text = "Синхронизировать выбранные"
                 };
 
                 Button closeBtn = new Button()
                 {
-                    Left = form.ClientSize.Width - 130,
+                    Left = form.ClientSize.Width - 110,
                     Top = 11,
-                    Width = 110,
-                    Height = 36,
+                    Width = 90,
+                    Height = 30,
                     Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                    Font = btnFont,
+                    UseVisualStyleBackColor = true,
                     Text = "Закрыть",
                     DialogResult = DialogResult.Cancel
                 };
