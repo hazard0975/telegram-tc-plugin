@@ -187,7 +187,8 @@ public static class SmartSyncDialog
                     View = View.Details,
                     CheckBoxes = true,
                     FullRowSelect = true,
-                    GridLines = true
+                    GridLines = true,
+                    ShowItemToolTips = true
                 };
 
                 // Включаем двойную буферизацию для устранения мерцания при ресайзе и растягивании колонок
@@ -215,11 +216,26 @@ public static class SmartSyncDialog
                         ? item.FileRecord.Name
                         : $"{item.FileRecord.Parent}\\{item.FileRecord.Name}";
 
-                    var lvi = new ListViewItem(vfsDisplayPath);
+                    // Проверяем, переименован ли файл в VFS относительно исходного файла на ПК
+                    string vfsFileName = item.FileRecord.Name;
+                    string srcFileName = !string.IsNullOrEmpty(item.FileRecord.SourcePath)
+                        ? Path.GetFileName(item.FileRecord.SourcePath)
+                        : "";
+                    bool isRenamed = !string.IsNullOrEmpty(srcFileName) &&
+                                     !string.Equals(vfsFileName, srcFileName, StringComparison.OrdinalIgnoreCase);
+
+                    string itemText = isRenamed ? $"🏷️ {vfsDisplayPath}" : vfsDisplayPath;
+
+                    var lvi = new ListViewItem(itemText);
                     lvi.SubItems.Add(item.StatusText);
                     lvi.SubItems.Add(item.DirectionText);
                     lvi.SubItems.Add(item.FileRecord.SourcePath ?? "");
                     lvi.Tag = item;
+
+                    if (isRenamed)
+                    {
+                        lvi.ToolTipText = $"Файл переименован в VFS\nОригинальное имя на ПК: {srcFileName}";
+                    }
 
                     if (item.Status == SyncItemStatus.LocalNewer)
                     {
