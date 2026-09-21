@@ -24,11 +24,12 @@
 
 ## Стандарты UI интерфейса (Обязательно к исполнению)
 При создании любых новых диалогов, окон или контролов ты ОБЯЗАНА использовать фабричные методы `UiTheme`:
-1. **Высота элемента:** Все кнопки (`Button`), поля ввода (`TextBox`) и выпадающие списки (`ComboBox`) ДОЛЖНЫ иметь строгую фиксированную высоту **30 px** (`UiTheme.DefaultButtonHeight` / `UiTheme.DefaultInputHeight`).
+1. **Высота элемента:** Все кнопки (`Button`), поля ввода (`TextBox`) и выпадающие списки (`ComboBox`) ДОЛЖНЫ иметь строгую фиксированную высоту **30 px** (`UiTheme.DefaultButtonHeight` / `UiTheme.DefaultInputHeight`). Текстовые метки (`Label`) ДОЛЖНЫ иметь высоту не менее **22 px** (`UiTheme.DefaultLabelHeight`), чтобы не срезались нижние хвосты букв («у», «д», «р», «ю»).
 2. **Фабричные методы:**
    - Создание кнопок: `UiTheme.CreateButton(...)`
    - Создание полей ввода: `UiTheme.CreateTextBox(...)`
    - Создание выпадающих списков: `UiTheme.CreateComboBox(...)`
+   - Создание текстовых меток: `UiTheme.CreateLabel(...)`
    - Создание формы: `UiTheme.CreateDialogForm(...)`
    - Создание нижней панели: `UiTheme.CreateBottomPanel(52)`
 3. **Геометрия и сетка:**

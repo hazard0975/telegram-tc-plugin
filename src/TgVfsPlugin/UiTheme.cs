@@ -23,6 +23,7 @@ public static class UiTheme
 
     public const int DefaultButtonHeight = 30;
     public const int DefaultInputHeight = 30;
+    public const int DefaultLabelHeight = 22;
     public const int DefaultBottomPanelHeight = 52;
     public const int DefaultMargin = 20;
     public const int DefaultTopMargin = 16;
@@ -127,6 +128,27 @@ public static class UiTheme
         }
 
         return btn;
+    }
+
+    /// <summary>
+    /// Создает стандартизированную текстовую метку (Label) с правильной высотой (22px по умолчанию, чтобы не срезать нижние элементы букв).
+    /// </summary>
+    public static Label CreateLabel(
+        string text = "",
+        int height = DefaultLabelHeight,
+        Font? font = null,
+        Color? foreColor = null,
+        bool autoEllipsis = false)
+    {
+        font ??= DefaultFont;
+        return new Label()
+        {
+            Text = text,
+            Font = font,
+            Height = height,
+            ForeColor = foreColor ?? SystemColors.ControlText,
+            AutoEllipsis = autoEllipsis
+        };
     }
 
     /// <summary>
