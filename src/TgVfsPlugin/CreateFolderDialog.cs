@@ -56,8 +56,10 @@ public static class CreateFolderDialog
                 TextBox nameBox = new TextBox() 
                 { 
                     Left = margin, 
-                    Top = 38, 
+                    Top = nameLabel.Bottom + 4, 
                     Width = contentWidth,
+                    AutoSize = false,
+                    Height = 30,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
                 };
 
@@ -65,7 +67,7 @@ public static class CreateFolderDialog
                 Label pathLabel = new Label() 
                 { 
                     Left = margin, 
-                    Top = 70, 
+                    Top = nameBox.Bottom + 10, 
                     Height = 18, 
                     Width = contentWidth, 
                     Text = "Локальный путь (только для Зеркала):",
@@ -75,29 +77,29 @@ public static class CreateFolderDialog
                 int browseBtnWidth = 85;
                 int spacing = 8;
                 
-                // Кнопка "Обзор..." выравнивается строго по правому краю (отступ margin = 20px, как у кнопки OK)
-                Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать локальную папку для создания Зеркала", toolTip, browseBtnWidth, 23);
+                Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать локальную папку для создания Зеркала", toolTip, browseBtnWidth, 30);
                 browseBtn.Left = clientWidth - margin - browseBtnWidth;
-                browseBtn.Top = 91;
+                browseBtn.Top = pathLabel.Bottom + 4;
                 browseBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
                 int pathBoxWidth = browseBtn.Left - spacing - margin;
                 TextBox pathBox = new TextBox() 
                 { 
                     Left = margin, 
-                    Top = 92, 
+                    Top = pathLabel.Bottom + 4, 
                     Width = pathBoxWidth, 
+                    AutoSize = false,
+                    Height = 30,
                     ReadOnly = true,
                     BackColor = SystemColors.Window,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
-                browseBtn.Height = pathBox.Height + 2;
 
                 // 3. Режим работы
                 Label modeLabel = new Label() 
                 { 
                     Left = margin, 
-                    Top = 126, 
+                    Top = pathBox.Bottom + 10, 
                     Height = 18, 
                     Width = contentWidth, 
                     Text = "Режим работы папки:",
@@ -106,7 +108,7 @@ public static class CreateFolderDialog
                 RadioButton modeMirror = new RadioButton() 
                 { 
                     Left = margin, 
-                    Top = 148, 
+                    Top = modeLabel.Bottom + 4, 
                     Width = contentWidth, 
                     Height = 22,
                     Text = "Зеркало (Бэкап локальной папки)", 
@@ -116,7 +118,7 @@ public static class CreateFolderDialog
                 RadioButton modeContainer = new RadioButton() 
                 { 
                     Left = margin, 
-                    Top = 174, 
+                    Top = modeMirror.Bottom + 4, 
                     Width = contentWidth, 
                     Height = 22,
                     Text = "Контейнер (Обычная виртуальная папка)",

@@ -50,7 +50,7 @@ public static class SettingsDialog
                     Left = margin,
                     Top = topMargin,
                     Width = contentWidth,
-                    Height = 240,
+                    Height = 250,
                     Font = UiTheme.DefaultFont,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
@@ -121,7 +121,7 @@ public static class SettingsDialog
                 };
 
                 int browseBtnWidth = 85;
-                Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать пользовательскую папку на диске", toolTip, browseBtnWidth, 23);
+                Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать пользовательскую папку на диске", toolTip, browseBtnWidth, 30);
                 browseBtn.Left = contentWidth - innerMargin - browseBtnWidth;
                 browseBtn.Top = 146;
                 browseBtn.Enabled = rbCustom.Checked;
@@ -130,21 +130,22 @@ public static class SettingsDialog
                 TextBox customPathBox = new TextBox()
                 {
                     Left = 38,
-                    Top = 148,
+                    Top = 146,
                     Width = browseBtn.Left - 8 - 38,
+                    AutoSize = false,
+                    Height = 30,
                     Text = SettingsManager.CurrentStorageMode == StorageMode.Custom 
                         ? SettingsManager.DataDirectory 
                         : (SettingsManager.GetSetting("data_path") ?? "D:\\TelegramVFS_Data"),
                     Enabled = rbCustom.Checked,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
-                browseBtn.Height = customPathBox.Height + 2;
 
                 CheckBox migrateCheck = new CheckBox()
                 {
-                    Text = "Перенести существующую сессию и базу данных в новую папку",
+                    Text = "Перенести файлы",
                     Left = innerMargin,
-                    Top = 186,
+                    Top = 190,
                     Width = innerContentWidth,
                     Height = 40,
                     CheckAlign = ContentAlignment.TopLeft,

@@ -50,6 +50,8 @@ public static class InputDialog
                     Left = margin, 
                     Top = textLabel.Bottom + 6, 
                     Width = contentWidth,
+                    AutoSize = false,
+                    Height = 30,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
                 };
                 

@@ -56,8 +56,9 @@ public static class DeleteFolderDialog
                 ComboBox combo = new ComboBox()
                 {
                     Left = margin,
-                    Top = 38,
+                    Top = label.Bottom + 4,
                     Width = contentWidth,
+                    Height = 30,
                     DropDownStyle = ComboBoxStyle.DropDownList,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };

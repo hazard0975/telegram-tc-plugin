@@ -55,6 +55,8 @@ public static class UiTheme
             Width = width,
             Height = height,
             Font = font,
+            TextAlign = ContentAlignment.MiddleCenter,
+            ImageAlign = ContentAlignment.MiddleCenter,
             UseVisualStyleBackColor = true,
             DialogResult = dialogResult
         };

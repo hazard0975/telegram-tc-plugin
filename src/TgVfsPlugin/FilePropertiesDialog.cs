@@ -82,7 +82,7 @@ public static class FilePropertiesDialog
                     Left = margin,
                     Top = 75,
                     Width = contentWidth,
-                    Height = 315,
+                    Height = 325,
                     Text = isMountRoot ? "Параметры канала" : (file.IsDir ? "Параметры папки" : "Параметры Telegram VFS"),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
@@ -169,9 +169,9 @@ public static class FilePropertiesDialog
                 AddRow("Уникальный UID:", file.Uid);
 
                 // Кнопка копирования свойств прямо внутри блока свойств
-                Button copyBtn = UiTheme.CreateButton("Копировать свойства", "Скопировать всю текстовую информацию о свойствах в буфер обмена", toolTip, 150, 26);
+                Button copyBtn = UiTheme.CreateButton("Копировать свойства", "Скопировать всю текстовую информацию о свойствах в буфер обмена", toolTip, 150, 30);
                 copyBtn.Left = 15;
-                copyBtn.Top = infoGroup.Height - 34;
+                copyBtn.Top = infoGroup.Height - 40;
                 copyBtn.Click += (s, e) =>
                 {
                     string infoReport = file.IsDir ?
