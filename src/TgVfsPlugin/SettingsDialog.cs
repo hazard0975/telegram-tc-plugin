@@ -175,6 +175,12 @@ public static class SettingsDialog
                 storageGroup.Controls.Add(browseBtn);
                 storageGroup.Controls.Add(migrateCheck);
 
+                form.Layout += (s, e) =>
+                {
+                    browseBtn.Left = rbCustom.Right - browseBtn.Width;
+                    customPathBox.Width = browseBtn.Left - 10 - customPathBox.Left;
+                };
+
                 form.MinimumSize = form.Size;
                 form.MaximumSize = form.Size;
 

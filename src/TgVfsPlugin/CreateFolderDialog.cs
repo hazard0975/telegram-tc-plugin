@@ -107,6 +107,12 @@ public static class CreateFolderDialog
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
                 };
 
+                form.Layout += (s, e) =>
+                {
+                    browseBtn.Left = nameBox.Right - browseBtn.Width;
+                    pathBox.Width = browseBtn.Left - spacing - pathBox.Left;
+                };
+
                 form.MinimumSize = form.Size;
                 form.MaximumSize = form.Size;
 
