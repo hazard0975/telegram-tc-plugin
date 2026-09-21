@@ -467,12 +467,12 @@ public static class SmartSyncDialog
                 {
                     Left = 20,
                     Top = 11,
-                    Width = 160,
+                    Width = 140,
                     Height = 30,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left,
                     Font = btnFont,
                     UseVisualStyleBackColor = true,
-                    Text = "Выбрать требующие"
+                    Text = "Выбрать разные"
                 };
                 selectUpdatesBtn.Click += (s, e) =>
                 {
@@ -487,7 +487,7 @@ public static class SmartSyncDialog
 
                 Button clearSelectionBtn = new Button()
                 {
-                    Left = 190,
+                    Left = 170,
                     Top = 11,
                     Width = 110,
                     Height = 30,
