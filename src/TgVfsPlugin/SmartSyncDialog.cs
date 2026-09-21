@@ -463,16 +463,25 @@ public static class SmartSyncDialog
                 // Кнопки управления в нижней панели по нативному стандарту Windows/TC
                 Font btnFont = new Font("Segoe UI", 9f);
 
+                // Хелпер для динамического вычисления ширины кнопки под длину текста с запасом
+                int CalcBtnWidth(string text, int minW = 85)
+                {
+                    int textW = TextRenderer.MeasureText(text, btnFont).Width;
+                    return Math.Max(minW, textW + 28);
+                }
+
+                string selectText = "Выбрать разные";
+                int selectW = CalcBtnWidth(selectText, 130);
                 Button selectUpdatesBtn = new Button()
                 {
                     Left = 20,
                     Top = 11,
-                    Width = 140,
+                    Width = selectW,
                     Height = 30,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left,
                     Font = btnFont,
                     UseVisualStyleBackColor = true,
-                    Text = "Выбрать разные"
+                    Text = selectText
                 };
                 selectUpdatesBtn.Click += (s, e) =>
                 {
@@ -485,45 +494,51 @@ public static class SmartSyncDialog
                     }
                 };
 
+                string clearText = "Снять выбор";
+                int clearW = CalcBtnWidth(clearText, 100);
                 Button clearSelectionBtn = new Button()
                 {
-                    Left = 170,
+                    Left = selectUpdatesBtn.Right + 10,
                     Top = 11,
-                    Width = 110,
+                    Width = clearW,
                     Height = 30,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left,
                     Font = btnFont,
                     UseVisualStyleBackColor = true,
-                    Text = "Снять выбор"
+                    Text = clearText
                 };
                 clearSelectionBtn.Click += (s, e) =>
                 {
                     foreach (ListViewItem lvi in listView.Items) lvi.Checked = false;
                 };
 
-                Button syncBtn = new Button()
-                {
-                    Left = form.ClientSize.Width - 340,
-                    Top = 11,
-                    Width = 220,
-                    Height = 30,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                    Font = btnFont,
-                    UseVisualStyleBackColor = true,
-                    Text = "Синхронизировать выбранные"
-                };
-
+                string closeText = "Закрыть";
+                int closeW = CalcBtnWidth(closeText, 85);
                 Button closeBtn = new Button()
                 {
-                    Left = form.ClientSize.Width - 110,
+                    Left = form.ClientSize.Width - 20 - closeW,
                     Top = 11,
-                    Width = 90,
+                    Width = closeW,
                     Height = 30,
                     Anchor = AnchorStyles.Top | AnchorStyles.Right,
                     Font = btnFont,
                     UseVisualStyleBackColor = true,
-                    Text = "Закрыть",
+                    Text = closeText,
                     DialogResult = DialogResult.Cancel
+                };
+
+                string syncText = "Синхронизировать";
+                int syncW = CalcBtnWidth(syncText, 130);
+                Button syncBtn = new Button()
+                {
+                    Left = closeBtn.Left - 10 - syncW,
+                    Top = 11,
+                    Width = syncW,
+                    Height = 30,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                    Font = btnFont,
+                    UseVisualStyleBackColor = true,
+                    Text = syncText
                 };
 
                 syncBtn.Click += async (s, e) =>
