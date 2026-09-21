@@ -363,12 +363,16 @@ public static class SmartSyncDialog
                 ToolTip rowToolTip = new ToolTip()
                 {
                     AutoPopDelay = 12000,
-                    InitialDelay = 250,
+                    InitialDelay = 200,
                     ReshowDelay = 100,
-                    ShowAlways = true
+                    ShowAlways = true,
+                    UseFading = true,
+                    UseAnimation = true
                 };
 
                 ListViewItem? lastHoveredItem = null;
+                Point lastHoverPos = Point.Empty;
+
                 listView.MouseMove += (s, e) =>
                 {
                     var hit = listView.HitTest(e.Location);
@@ -377,13 +381,14 @@ public static class SmartSyncDialog
                         if (hit.Item != lastHoveredItem)
                         {
                             lastHoveredItem = hit.Item;
+                            lastHoverPos = e.Location;
                             if (hit.Item.Tag is SmartSyncItem syncItem && !string.IsNullOrEmpty(syncItem.ToolTipDetails))
                             {
-                                rowToolTip.SetToolTip(listView, syncItem.ToolTipDetails);
+                                rowToolTip.Show(syncItem.ToolTipDetails, listView, e.X + 16, e.Y + 16, 10000);
                             }
                             else
                             {
-                                rowToolTip.SetToolTip(listView, null);
+                                rowToolTip.Hide(listView);
                             }
                         }
                     }
@@ -392,15 +397,29 @@ public static class SmartSyncDialog
                         if (lastHoveredItem != null)
                         {
                             lastHoveredItem = null;
-                            rowToolTip.SetToolTip(listView, null);
+                            rowToolTip.Hide(listView);
                         }
+                    }
+                };
+
+                listView.ItemMouseHover += (s, e) =>
+                {
+                    if (e.Item != null && e.Item.Tag is SmartSyncItem syncItem && !string.IsNullOrEmpty(syncItem.ToolTipDetails))
+                    {
+                        Point mousePos = listView.PointToClient(Cursor.Position);
+                        rowToolTip.Show(syncItem.ToolTipDetails, listView, mousePos.X + 16, mousePos.Y + 16, 10000);
                     }
                 };
 
                 listView.MouseLeave += (s, e) =>
                 {
                     lastHoveredItem = null;
-                    rowToolTip.SetToolTip(listView, null);
+                    rowToolTip.Hide(listView);
+                };
+
+                listView.MouseDown += (s, e) =>
+                {
+                    rowToolTip.Hide(listView);
                 };
 
                 form.Controls.Add(listView);
