@@ -67,7 +67,7 @@ public static class SettingsDialog
                     Left = 38,
                     Top = 48,
                     Width = innerContentWidth - 22,
-                    Height = 20,
+                    Height = 22,
                     ForeColor = Color.DimGray,
                     Cursor = Cursors.Hand,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
@@ -92,7 +92,7 @@ public static class SettingsDialog
                     Left = 38,
                     Top = 102,
                     Width = innerContentWidth - 22,
-                    Height = 20,
+                    Height = 22,
                     ForeColor = Color.DimGray,
                     Cursor = Cursors.Hand,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right

@@ -31,17 +31,9 @@ public static class DeleteFolderDialog
                 int clientWidth = 474;
                 int contentWidth = clientWidth - margin * 2; // 434px
 
-                using Form form = new Form()
-                {
-                    FormBorderStyle = FormBorderStyle.FixedDialog,
-                    Text = "Удалить виртуальную папку",
-                    StartPosition = FormStartPosition.CenterScreen,
-                    MinimizeBox = false,
-                    MaximizeBox = false,
-                    TopMost = false,
-                    Font = UiTheme.DefaultFont,
-                    AutoScaleMode = AutoScaleMode.None
-                };
+                int clientHeight = 152; // 16 (top) + 22 (label) + 4 + 30 (combo) + 16 (gap) + 52 (bottom) = 140 -> 152px
+
+                using Form form = UiTheme.CreateDialogForm("Удалить виртуальную папку", clientWidth, clientHeight);
 
                 Label label = new Label()
                 {
@@ -49,19 +41,15 @@ public static class DeleteFolderDialog
                     Left = margin,
                     Top = topMargin,
                     Width = contentWidth,
-                    Height = 18,
+                    Height = 22,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
-                ComboBox combo = new ComboBox()
-                {
-                    Left = margin,
-                    Top = label.Bottom + 4,
-                    Width = contentWidth,
-                    Height = 30,
-                    DropDownStyle = ComboBoxStyle.DropDownList,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-                };
+                ComboBox combo = UiTheme.CreateComboBox();
+                combo.Left = margin;
+                combo.Top = label.Bottom + 4;
+                combo.Width = contentWidth;
+                combo.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                 foreach (var folder in folderNames)
                 {
@@ -69,11 +57,6 @@ public static class DeleteFolderDialog
                 }
                 combo.SelectedIndex = 0;
 
-                int bottomPanelHeight = 52;
-                int contentBottom = combo.Bottom + topMargin;
-                int clientHeight = contentBottom + bottomPanelHeight;
-
-                form.ClientSize = new Size(clientWidth, clientHeight);
                 form.MinimumSize = form.Size;
                 form.MaximumSize = form.Size;
 

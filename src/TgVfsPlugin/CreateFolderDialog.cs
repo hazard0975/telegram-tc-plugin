@@ -39,7 +39,7 @@ public static class CreateFolderDialog
                 { 
                     Left = margin, 
                     Top = topMargin, 
-                    Height = 18, 
+                    Height = 22, 
                     Width = contentWidth, 
                     Text = "Название папки:",
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
@@ -55,7 +55,7 @@ public static class CreateFolderDialog
                 { 
                     Left = margin, 
                     Top = nameBox.Bottom + 10, 
-                    Height = 18, 
+                    Height = 22, 
                     Width = contentWidth, 
                     Text = "Локальный путь (только для Зеркала):",
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
@@ -82,7 +82,7 @@ public static class CreateFolderDialog
                 { 
                     Left = margin, 
                     Top = pathBox.Bottom + 10, 
-                    Height = 18, 
+                    Height = 22, 
                     Width = contentWidth, 
                     Text = "Режим работы папки:",
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 

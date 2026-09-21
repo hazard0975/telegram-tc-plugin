@@ -92,7 +92,7 @@ public static class SmartSyncDialog
                     Left = margin,
                     Top = 35,
                     Width = 800,
-                    Height = 20,
+                    Height = 22,
                     ForeColor = UiTheme.LabelForeColor,
                     Text = "Отслеживание актуальности файлов виртуальной подборки и оригинальных файлов на дисках ПК",
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
