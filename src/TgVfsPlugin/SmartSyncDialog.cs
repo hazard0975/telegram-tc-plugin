@@ -38,6 +38,7 @@ public static class SmartSyncDialog
             try
             {
                 Win32Api.EnsureVisualStyles();
+                using ToolTip toolTip = UiTheme.CreateToolTip();
 
                 int initWidth = 1080;
                 int initHeight = 620;
@@ -57,7 +58,7 @@ public static class SmartSyncDialog
                     MinimizeBox = true,
                     MaximizeBox = true,
                     TopMost = false,
-                    Font = new Font("Segoe UI", 9)
+                    Font = UiTheme.DefaultFont
                 };
 
                 if (initMaximized)
@@ -70,7 +71,7 @@ public static class SmartSyncDialog
                 {
                     Dock = DockStyle.Top,
                     Height = 65,
-                    BackColor = Color.FromArgb(245, 247, 250)
+                    BackColor = UiTheme.HeaderBgColor
                 };
 
                 Label titleLabel = new Label()
@@ -80,7 +81,7 @@ public static class SmartSyncDialog
                     Width = 800,
                     Height = 22,
                     Text = "Сравнение версий с локальными оригиналами на ПК",
-                    Font = new Font("Segoe UI", 11, FontStyle.Bold)
+                    Font = UiTheme.HeaderTitleFont
                 };
 
                 Label subLabel = new Label()
@@ -89,7 +90,7 @@ public static class SmartSyncDialog
                     Top = 35,
                     Width = 800,
                     Height = 20,
-                    ForeColor = Color.FromArgb(90, 90, 90),
+                    ForeColor = UiTheme.LabelForeColor,
                     Text = "Отслеживание актуальности файлов виртуальной подборки и оригинальных файлов на дисках ПК"
                 };
 
@@ -461,28 +462,10 @@ public static class SmartSyncDialog
                 form.Controls.Add(listView);
 
                 // Кнопки управления в нижней панели по нативному стандарту Windows/TC
-                Font btnFont = new Font("Segoe UI", 9f);
-
-                // Хелпер для динамического вычисления ширины кнопки под длину текста с запасом
-                int CalcBtnWidth(string text, int minW = 85)
-                {
-                    int textW = TextRenderer.MeasureText(text, btnFont).Width;
-                    return Math.Max(minW, textW + 28);
-                }
-
-                string selectText = "Выбрать разные";
-                int selectW = CalcBtnWidth(selectText, 130);
-                Button selectUpdatesBtn = new Button()
-                {
-                    Left = 20,
-                    Top = 11,
-                    Width = selectW,
-                    Height = 30,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left,
-                    Font = btnFont,
-                    UseVisualStyleBackColor = true,
-                    Text = selectText
-                };
+                Button selectUpdatesBtn = UiTheme.CreateButton("Выбрать разные", "Отметить галочками все файлы, у которых не совпадает версия на ПК и в Telegram", toolTip, 130);
+                selectUpdatesBtn.Left = 20;
+                selectUpdatesBtn.Top = 11;
+                selectUpdatesBtn.Anchor = AnchorStyles.Top | AnchorStyles.Left;
                 selectUpdatesBtn.Click += (s, e) =>
                 {
                     foreach (ListViewItem lvi in listView.Items)
@@ -494,52 +477,24 @@ public static class SmartSyncDialog
                     }
                 };
 
-                string clearText = "Снять выбор";
-                int clearW = CalcBtnWidth(clearText, 100);
-                Button clearSelectionBtn = new Button()
-                {
-                    Left = selectUpdatesBtn.Right + 10,
-                    Top = 11,
-                    Width = clearW,
-                    Height = 30,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left,
-                    Font = btnFont,
-                    UseVisualStyleBackColor = true,
-                    Text = clearText
-                };
+                Button clearSelectionBtn = UiTheme.CreateButton("Снять выбор", "Снять отметки выбора со всех файлов в списке", toolTip, 100);
+                clearSelectionBtn.Left = selectUpdatesBtn.Right + 10;
+                clearSelectionBtn.Top = 11;
+                clearSelectionBtn.Anchor = AnchorStyles.Top | AnchorStyles.Left;
                 clearSelectionBtn.Click += (s, e) =>
                 {
                     foreach (ListViewItem lvi in listView.Items) lvi.Checked = false;
                 };
 
-                string closeText = "Закрыть";
-                int closeW = CalcBtnWidth(closeText, 85);
-                Button closeBtn = new Button()
-                {
-                    Left = form.ClientSize.Width - 20 - closeW,
-                    Top = 11,
-                    Width = closeW,
-                    Height = 30,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                    Font = btnFont,
-                    UseVisualStyleBackColor = true,
-                    Text = closeText,
-                    DialogResult = DialogResult.Cancel
-                };
+                Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно синхронизации", toolTip, 85, dialogResult: DialogResult.Cancel);
+                closeBtn.Left = form.ClientSize.Width - 20 - closeBtn.Width;
+                closeBtn.Top = 11;
+                closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
-                string syncText = "Синхронизировать";
-                int syncW = CalcBtnWidth(syncText, 130);
-                Button syncBtn = new Button()
-                {
-                    Left = closeBtn.Left - 10 - syncW,
-                    Top = 11,
-                    Width = syncW,
-                    Height = 30,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                    Font = btnFont,
-                    UseVisualStyleBackColor = true,
-                    Text = syncText
-                };
+                Button syncBtn = UiTheme.CreateButton("Синхронизировать", "Запустить обновление всех отмеченных файлов", toolTip, 130);
+                syncBtn.Left = closeBtn.Left - 10 - syncBtn.Width;
+                syncBtn.Top = 11;
+                syncBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
                 syncBtn.Click += async (s, e) =>
                 {

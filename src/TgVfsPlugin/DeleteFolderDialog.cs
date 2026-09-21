@@ -24,18 +24,20 @@ public static class DeleteFolderDialog
             {
                 Logger.Info("UI", "Initializing DeleteFolderDialog...");
                 Win32Api.EnsureVisualStyles();
+                using ToolTip toolTip = UiTheme.CreateToolTip();
 
                 using Form form = new Form()
                 {
-                    Width = 480,
-                    Height = 185,
+                    Width = 490,
+                    Height = 205,
+                    MinimumSize = new Size(490, 205),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Удалить виртуальную папку",
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
                     TopMost = false,
-                    Font = new Font("Segoe UI", 9)
+                    Font = UiTheme.DefaultFont
                 };
 
                 Label label = new Label()
@@ -43,7 +45,7 @@ public static class DeleteFolderDialog
                     Text = "Выберите виртуальную папку для удаления:",
                     Left = 20,
                     Top = 20,
-                    Width = 420,
+                    Width = 430,
                     Height = 20
                 };
 
@@ -51,7 +53,7 @@ public static class DeleteFolderDialog
                 {
                     Left = 20,
                     Top = 45,
-                    Width = 420,
+                    Width = 430,
                     DropDownStyle = ComboBoxStyle.DropDownList
                 };
 
@@ -61,30 +63,25 @@ public static class DeleteFolderDialog
                 }
                 combo.SelectedIndex = 0;
 
-                Button deleteBtn = new Button()
-                {
-                    Text = "Удалить",
-                    Left = 230,
-                    Top = 95,
-                    Width = 100,
-                    Height = 30,
-                    DialogResult = DialogResult.OK
-                };
+                Panel bottomPanel = UiTheme.CreateBottomPanel(52);
+                form.Controls.Add(bottomPanel);
 
-                Button cancelBtn = new Button()
-                {
-                    Text = "Отмена",
-                    Left = 340,
-                    Top = 95,
-                    Width = 100,
-                    Height = 30,
-                    DialogResult = DialogResult.Cancel
-                };
+                Button deleteBtn = UiTheme.CreateButton("Удалить", "Удалить выбранную виртуальную папку", toolTip, 85, dialogResult: DialogResult.OK);
+                Button cancelBtn = UiTheme.CreateButton("Отмена", "Отменить удаление", toolTip, 85, dialogResult: DialogResult.Cancel);
+
+                deleteBtn.Left = form.ClientSize.Width - 20 - deleteBtn.Width;
+                deleteBtn.Top = 11;
+                deleteBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                cancelBtn.Left = deleteBtn.Left - 10 - cancelBtn.Width;
+                cancelBtn.Top = 11;
+                cancelBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                bottomPanel.Controls.Add(deleteBtn);
+                bottomPanel.Controls.Add(cancelBtn);
 
                 form.Controls.Add(label);
                 form.Controls.Add(combo);
-                form.Controls.Add(deleteBtn);
-                form.Controls.Add(cancelBtn);
 
                 form.AcceptButton = deleteBtn;
                 form.CancelButton = cancelBtn;

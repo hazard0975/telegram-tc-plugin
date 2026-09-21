@@ -16,18 +16,20 @@ public static class InputDialog
             {
                 Logger.Debug("UI", "Initializing WinForms dialog...");
                 Win32Api.EnsureVisualStyles();
+                using ToolTip toolTip = UiTheme.CreateToolTip();
 
                 using Form promptForm = new Form()
                 {
                     Width = 460,
-                    Height = 200,
+                    Height = 210,
+                    MinimumSize = new Size(460, 210),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = title,
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
                     TopMost = false,
-                    Font = new Font("Segoe UI", 9)
+                    Font = UiTheme.DefaultFont
                 };
 
                 Label textLabel = new Label() { Left = 20, Top = 20, Width = 400, Height = 40, Text = prompt };
@@ -38,13 +40,25 @@ public static class InputDialog
                     inputBox.UseSystemPasswordChar = true;
                 }
 
-                Button confirmation = new Button() { Text = "OK", Left = 320, Width = 100, Height = 30, Top = 115, DialogResult = DialogResult.OK };
-                Button cancel = new Button() { Text = "Cancel", Left = 210, Width = 100, Height = 30, Top = 115, DialogResult = DialogResult.Cancel };
+                Panel bottomPanel = UiTheme.CreateBottomPanel(52);
+                promptForm.Controls.Add(bottomPanel);
+
+                Button confirmation = UiTheme.CreateButton("OK", "Подтвердить ввод", toolTip, 85, dialogResult: DialogResult.OK);
+                Button cancel = UiTheme.CreateButton("Отмена", "Отменить ввод", toolTip, 85, dialogResult: DialogResult.Cancel);
+
+                confirmation.Left = promptForm.ClientSize.Width - 20 - confirmation.Width;
+                confirmation.Top = 11;
+                confirmation.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                cancel.Left = confirmation.Left - 10 - cancel.Width;
+                cancel.Top = 11;
+                cancel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                bottomPanel.Controls.Add(confirmation);
+                bottomPanel.Controls.Add(cancel);
 
                 promptForm.Controls.Add(textLabel);
                 promptForm.Controls.Add(inputBox);
-                promptForm.Controls.Add(confirmation);
-                promptForm.Controls.Add(cancel);
                 promptForm.AcceptButton = confirmation;
                 promptForm.CancelButton = cancel;
 

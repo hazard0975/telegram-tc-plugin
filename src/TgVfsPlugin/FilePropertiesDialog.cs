@@ -15,18 +15,20 @@ public static class FilePropertiesDialog
             try
             {
                 Win32Api.EnsureVisualStyles();
+                using ToolTip toolTip = UiTheme.CreateToolTip();
 
                 using Form form = new Form()
                 {
-                    Width = 520,
+                    Width = 530,
                     Height = 490,
+                    MinimumSize = new Size(530, 490),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = $"Свойства: {file.Name}",
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
                     TopMost = false,
-                    Font = new Font("Segoe UI", 9)
+                    Font = UiTheme.DefaultFont
                 };
 
                 // Иконка и заголовок
@@ -34,9 +36,9 @@ public static class FilePropertiesDialog
                 {
                     Left = 0,
                     Top = 0,
-                    Width = 520,
+                    Width = 530,
                     Height = 60,
-                    BackColor = Color.FromArgb(245, 247, 250)
+                    BackColor = UiTheme.HeaderBgColor
                 };
 
                 bool isMountRoot = file.Uid == file.MountId || string.IsNullOrEmpty(relativePath);
@@ -45,10 +47,10 @@ public static class FilePropertiesDialog
                 {
                     Left = 20,
                     Top = 12,
-                    Width = 460,
+                    Width = 470,
                     Height = 22,
                     Text = isMountRoot ? $"Канал: {channelName}" : (file.IsDir ? $"Папка: {file.Name}" : $"Файл: {file.Name}"),
-                    Font = new Font("Segoe UI", 11, FontStyle.Bold),
+                    Font = UiTheme.HeaderTitleFont,
                     AutoEllipsis = true
                 };
 
@@ -57,7 +59,7 @@ public static class FilePropertiesDialog
                 {
                     Left = 20,
                     Top = 35,
-                    Width = 460,
+                    Width = 470,
                     Height = 18,
                     Text = fullVirtualPath,
                     ForeColor = Color.Gray,
@@ -73,15 +75,15 @@ public static class FilePropertiesDialog
                 {
                     Left = 20,
                     Top = 75,
-                    Width = 465,
-                    Height = 305,
+                    Width = 475,
+                    Height = 315,
                     Text = isMountRoot ? "Параметры канала" : (file.IsDir ? "Параметры папки" : "Параметры Telegram VFS")
                 };
 
-                int curTop = 25;
+                int curTop = 24;
                 int labelWidth = 145;
-                int valueWidth = 295;
-                int rowHeight = 24;
+                int valueWidth = 300;
+                int rowHeight = 23;
 
                 void AddRow(string labelText, string valueText)
                 {
@@ -91,18 +93,18 @@ public static class FilePropertiesDialog
                         Top = curTop,
                         Width = labelWidth,
                         Text = labelText,
-                        ForeColor = Color.FromArgb(70, 70, 70)
+                        ForeColor = UiTheme.LabelForeColor
                     };
                     TextBox valBox = new TextBox()
                     {
                         Left = 15 + labelWidth,
-                        Top = curTop - 3,
+                        Top = curTop - 2,
                         Width = valueWidth,
                         Text = valueText,
                         ReadOnly = true,
                         BorderStyle = BorderStyle.None,
                         BackColor = SystemColors.Control,
-                        Font = new Font("Segoe UI", 9, FontStyle.Regular),
+                        Font = UiTheme.DefaultFont,
                         TabStop = false
                     };
                     infoGroup.Controls.Add(lbl);
@@ -159,17 +161,10 @@ public static class FilePropertiesDialog
                 AddRow("Статус файла:", statusStr);
                 AddRow("Уникальный UID:", file.Uid);
 
-                form.Controls.Add(infoGroup);
-
-                // Кнопки
-                Button copyBtn = new Button()
-                {
-                    Text = "Копировать",
-                    Left = 20,
-                    Top = 395,
-                    Width = 110,
-                    Height = 30
-                };
+                // Кнопка копирования свойств прямо внутри блока свойств
+                Button copyBtn = UiTheme.CreateButton("Копировать свойства", "Скопировать всю текстовую информацию о свойствах в буфер обмена", toolTip, 150, 26);
+                copyBtn.Left = 15;
+                copyBtn.Top = infoGroup.Height - 34;
                 copyBtn.Click += (s, e) =>
                 {
                     string infoReport = file.IsDir ?
@@ -203,21 +198,38 @@ public static class FilePropertiesDialog
                         Logger.Warn("UI", $"Clipboard copy failed: {ex.Message}");
                     }
                 };
+                infoGroup.Controls.Add(copyBtn);
+                form.Controls.Add(infoGroup);
 
+                // Нижняя панель с кнопками
+                Panel bottomPanel = UiTheme.CreateBottomPanel(52);
+                form.Controls.Add(bottomPanel);
+
+                Button? smartSyncBtn = null;
                 Button? restoreBtn = null;
-                Button? navBtn = null;
                 Button? openLocBtn = null;
+                Button? navBtn = null;
 
+                // Кнопка Smart Sync слева внизу для папок/канала
+                if (file.IsDir && file.InTrash != 1 && db != null)
+                {
+                    smartSyncBtn = UiTheme.CreateButton("Smart Sync", "Сравнить файлы и папки с оригиналами на дисках ПК и синхронизировать", toolTip, 105);
+                    smartSyncBtn.Left = 20;
+                    smartSyncBtn.Top = 11;
+                    smartSyncBtn.Click += (s, e) =>
+                    {
+                        string targetFolder = file.Uid == file.MountId ? "" : relativePath;
+                        SmartSyncDialog.Show(channelName, channelId, file.MountId, targetFolder, db);
+                    };
+                    bottomPanel.Controls.Add(smartSyncBtn);
+                }
+
+                // Дополнительные кнопки действий
                 if (!file.IsDir && !string.IsNullOrEmpty(file.SourcePath))
                 {
-                    openLocBtn = new Button()
-                    {
-                        Text = "Найти на ПК",
-                        Left = 135,
-                        Top = 395,
-                        Width = 110,
-                        Height = 30
-                    };
+                    openLocBtn = UiTheme.CreateButton("Найти на ПК", "Открыть папку с оригиналом файла в Проводнике Windows", toolTip, 100);
+                    openLocBtn.Left = smartSyncBtn != null ? smartSyncBtn.Right + 10 : 20;
+                    openLocBtn.Top = 11;
                     openLocBtn.Click += (s, e) =>
                     {
                         try
@@ -244,20 +256,14 @@ public static class FilePropertiesDialog
                             MessageBox.Show(form, $"Ошибка: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                     };
-                    form.Controls.Add(openLocBtn);
+                    bottomPanel.Controls.Add(openLocBtn);
                 }
 
                 if (file.InTrash == 1 && db != null)
                 {
-                    restoreBtn = new Button()
-                    {
-                        Text = "Восстановить",
-                        Left = openLocBtn != null ? 250 : 135,
-                        Top = 395,
-                        Width = 120,
-                        Height = 30,
-                        BackColor = Color.FromArgb(230, 245, 230)
-                    };
+                    restoreBtn = UiTheme.CreateButton("Восстановить", "Восстановить этот файл из корзины в его исходную папку", toolTip, 110);
+                    restoreBtn.Left = 20;
+                    restoreBtn.Top = 11;
                     restoreBtn.Click += (s, e) =>
                     {
                         string targetDir = string.IsNullOrEmpty(file.Parent) ? "\\" : $"\\{file.Parent}\\";
@@ -282,17 +288,11 @@ public static class FilePropertiesDialog
                             }
                         }
                     };
-                    form.Controls.Add(restoreBtn);
+                    bottomPanel.Controls.Add(restoreBtn);
 
-                    // Кнопка перехода к файлу или к папке из корзины в активный VFS
-                    navBtn = new Button()
-                    {
-                        Text = "К папке",
-                        Left = openLocBtn != null ? 375 : 260,
-                        Top = 395,
-                        Width = 90,
-                        Height = 30
-                    };
+                    navBtn = UiTheme.CreateButton("К папке", "Перейти к исходной папке в активном хранилище Total Commander", toolTip, 90);
+                    navBtn.Left = restoreBtn.Right + 10;
+                    navBtn.Top = 11;
                     navBtn.Click += (s, e) =>
                     {
                         if (db != null && !db.ActiveFolderExists(file.MountId, file.Parent))
@@ -307,19 +307,14 @@ public static class FilePropertiesDialog
                             form.Close();
                         }
                     };
-                    form.Controls.Add(navBtn);
+                    bottomPanel.Controls.Add(navBtn);
                 }
-                else if (file.Uid != file.MountId) // не показываем на самом канале
+                else if (file.Uid != file.MountId) // кнопка корзины для файла/папки
                 {
-                    // Кнопка перехода к корзине для активного файла или папки
-                    navBtn = new Button()
-                    {
-                        Text = "Корзина",
-                        Left = openLocBtn != null ? 250 : 135,
-                        Top = 395,
-                        Width = 105,
-                        Height = 30
-                    };
+                    int leftPos = openLocBtn != null ? openLocBtn.Right + 10 : (smartSyncBtn != null ? smartSyncBtn.Right + 10 : 20);
+                    navBtn = UiTheme.CreateButton("Корзина", "Перейти в папку корзины этого каталога в Total Commander", toolTip, 85);
+                    navBtn.Left = leftPos;
+                    navBtn.Top = 11;
                     navBtn.Click += (s, e) =>
                     {
                         string pluginName = Win32Api.GetPluginVfsName();
@@ -329,47 +324,23 @@ public static class FilePropertiesDialog
                         Win32Api.NavigateToVfsPath(targetVfsPath, isLeftPanel);
                         form.Close();
                     };
-                    form.Controls.Add(navBtn);
+                    bottomPanel.Controls.Add(navBtn);
                 }
 
-                if (file.IsDir && file.InTrash != 1 && db != null)
-                {
-                    Button syncBtn = new Button()
-                    {
-                        Text = "Smart Sync",
-                        Left = file.Uid == file.MountId ? 140 : 250,
-                        Top = 395,
-                        Width = 115,
-                        Height = 30,
-                        BackColor = Color.FromArgb(235, 245, 255)
-                    };
-                    syncBtn.Click += (s, e) =>
-                    {
-                        string targetFolder = file.Uid == file.MountId ? "" : relativePath;
-                        SmartSyncDialog.Show(channelName, channelId, file.MountId, targetFolder, db);
-                    };
-                    form.Controls.Add(syncBtn);
-                }
+                // Кнопка Закрыть справа
+                Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно свойств", toolTip, 90, dialogResult: DialogResult.OK);
+                closeBtn.Left = form.ClientSize.Width - 20 - closeBtn.Width;
+                closeBtn.Top = 11;
+                closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                bottomPanel.Controls.Add(closeBtn);
 
-                Button okBtn = new Button()
-                {
-                    Text = "Закрыть",
-                    Left = 380,
-                    Top = 395,
-                    Width = 100,
-                    Height = 30,
-                    DialogResult = DialogResult.OK
-                };
-
-                form.Controls.Add(copyBtn);
-                form.Controls.Add(okBtn);
-                form.AcceptButton = okBtn;
-                form.CancelButton = okBtn;
+                form.AcceptButton = closeBtn;
+                form.CancelButton = closeBtn;
 
                 form.Shown += (s, e) =>
                 {
                     if (restoreBtn != null) restoreBtn.Focus();
-                    else okBtn.Focus();
+                    else closeBtn.Focus();
                 };
 
                 form.ShowModalTc();
@@ -389,40 +360,42 @@ public static class FilePropertiesDialog
             try
             {
                 Win32Api.EnsureVisualStyles();
+                using ToolTip toolTip = UiTheme.CreateToolTip();
 
                 db.GetTrashStats(mountId, out int filesCount, out int dirsCount, out long totalTrashSize);
                 int totalItems = filesCount + dirsCount;
 
                 using Form form = new Form()
                 {
-                    Width = 480,
-                    Height = 350,
+                    Width = 490,
+                    Height = 360,
+                    MinimumSize = new Size(490, 360),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = $"Свойства корзины: {channelName}",
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
                     TopMost = false,
-                    Font = new Font("Segoe UI", 9)
+                    Font = UiTheme.DefaultFont
                 };
 
                 Panel headerPanel = new Panel()
                 {
                     Left = 0,
                     Top = 0,
-                    Width = 480,
+                    Width = 490,
                     Height = 60,
-                    BackColor = Color.FromArgb(245, 247, 250)
+                    BackColor = UiTheme.HeaderBgColor
                 };
 
                 Label titleLabel = new Label()
                 {
                     Left = 20,
                     Top = 12,
-                    Width = 440,
+                    Width = 450,
                     Height = 22,
                     Text = $"Корзина канала: {channelName}",
-                    Font = new Font("Segoe UI", 11, FontStyle.Bold),
+                    Font = UiTheme.HeaderTitleFont,
                     AutoEllipsis = true
                 };
 
@@ -430,7 +403,7 @@ public static class FilePropertiesDialog
                 {
                     Left = 20,
                     Top = 35,
-                    Width = 440,
+                    Width = 450,
                     Height = 18,
                     Text = $"Telegram ID: {channelId}",
                     ForeColor = Color.Gray,
@@ -445,14 +418,14 @@ public static class FilePropertiesDialog
                 {
                     Left = 20,
                     Top = 75,
-                    Width = 425,
-                    Height = 165,
+                    Width = 435,
+                    Height = 175,
                     Text = "Состояние корзины"
                 };
 
                 int labelWidth = 155;
                 int valLeft = 175;
-                int valWidth = 235;
+                int valWidth = 245;
 
                 Label filesLbl = new Label()
                 {
@@ -466,7 +439,7 @@ public static class FilePropertiesDialog
                     Left = valLeft,
                     Top = 26,
                     Width = valWidth,
-                    Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                    Font = UiTheme.BoldFont,
                     Text = $"{filesCount} шт."
                 };
 
@@ -482,7 +455,7 @@ public static class FilePropertiesDialog
                     Left = valLeft,
                     Top = 50,
                     Width = valWidth,
-                    Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                    Font = UiTheme.BoldFont,
                     Text = $"{dirsCount} шт."
                 };
 
@@ -498,7 +471,7 @@ public static class FilePropertiesDialog
                     Left = valLeft,
                     Top = 74,
                     Width = valWidth,
-                    Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                    Font = UiTheme.BoldFont,
                     Text = $"{FormatSize(totalTrashSize)} ({totalTrashSize:N0} байт)"
                 };
 
@@ -506,8 +479,8 @@ public static class FilePropertiesDialog
                 {
                     Left = 15,
                     Top = 104,
-                    Width = 395,
-                    Height = 45,
+                    Width = 405,
+                    Height = 55,
                     ForeColor = Color.DimGray,
                     Text = "Файлы в корзине сохраняют свои версии в Telegram и могут быть восстановлены в исходные папки."
                 };
@@ -521,16 +494,14 @@ public static class FilePropertiesDialog
                 infoGroup.Controls.Add(noteLbl);
                 form.Controls.Add(infoGroup);
 
-                Button cleanBtn = new Button()
-                {
-                    Text = "Очистить",
-                    Left = 20,
-                    Top = 255,
-                    Width = 110,
-                    Height = 30,
-                    BackColor = Color.FromArgb(255, 235, 235),
-                    Enabled = totalItems > 0
-                };
+                // Нижняя панель
+                Panel bottomPanel = UiTheme.CreateBottomPanel(52);
+                form.Controls.Add(bottomPanel);
+
+                Button cleanBtn = UiTheme.CreateButton("Очистить", "Безвозвратно удалить все файлы корзины и их сообщения в Telegram", toolTip, 95);
+                cleanBtn.Left = 20;
+                cleanBtn.Top = 11;
+                cleanBtn.Enabled = totalItems > 0;
                 cleanBtn.Click += (s, e) =>
                 {
                     string details = filesCount > 0 && dirsCount > 0
@@ -558,24 +529,9 @@ public static class FilePropertiesDialog
                     }
                 };
 
-                Button closeBtn = new Button()
-                {
-                    Text = "Закрыть",
-                    Left = 345,
-                    Top = 255,
-                    Width = 100,
-                    Height = 30,
-                    DialogResult = DialogResult.OK
-                };
-
-                Button navBtn = new Button()
-                {
-                    Text = "К каналу",
-                    Left = 140,
-                    Top = 255,
-                    Width = 110,
-                    Height = 30
-                };
+                Button navBtn = UiTheme.CreateButton("К каналу", "Перейти в корень активного канала в Total Commander", toolTip, 95);
+                navBtn.Left = cleanBtn.Right + 10;
+                navBtn.Top = 11;
                 navBtn.Click += (s, e) =>
                 {
                     string pluginName = Win32Api.GetPluginVfsName();
@@ -584,9 +540,14 @@ public static class FilePropertiesDialog
                     form.Close();
                 };
 
-                form.Controls.Add(cleanBtn);
-                form.Controls.Add(navBtn);
-                form.Controls.Add(closeBtn);
+                Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно свойств корзины", toolTip, 90, dialogResult: DialogResult.OK);
+                closeBtn.Left = form.ClientSize.Width - 20 - closeBtn.Width;
+                closeBtn.Top = 11;
+                closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                bottomPanel.Controls.Add(cleanBtn);
+                bottomPanel.Controls.Add(navBtn);
+                bottomPanel.Controls.Add(closeBtn);
                 form.CancelButton = closeBtn;
 
                 form.ShowModalTc();

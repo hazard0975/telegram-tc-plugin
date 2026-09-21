@@ -23,35 +23,51 @@ public static class CreateFolderDialog
             {
                 Logger.Info("UI", "Initializing CreateFolderDialog...");
                 Win32Api.EnsureVisualStyles();
+                using ToolTip toolTip = UiTheme.CreateToolTip();
 
                 using Form form = new Form()
                 {
-                    Width = 480,
-                    Height = 330,
+                    Width = 490,
+                    Height = 345,
+                    MinimumSize = new Size(490, 345),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Создать папку (Канал)",
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
                     TopMost = false,
-                    Font = new Font("Segoe UI", 9)
+                    Font = UiTheme.DefaultFont
                 };
 
-                Label nameLabel = new Label() { Left = 20, Top = 20, Width = 420, Text = "Название папки:" };
-                TextBox nameBox = new TextBox() { Left = 20, Top = 45, Width = 420 };
+                Label nameLabel = new Label() { Left = 20, Top = 20, Width = 430, Text = "Название папки:" };
+                TextBox nameBox = new TextBox() { Left = 20, Top = 45, Width = 430 };
 
-                RadioButton modeMirror = new RadioButton() { Left = 20, Top = 85, Width = 420, Text = "Зеркало (Бэкап локальной папки)", Checked = true };
-                RadioButton modeContainer = new RadioButton() { Left = 20, Top = 115, Width = 420, Text = "Контейнер (Обычная виртуальная папка)" };
+                RadioButton modeMirror = new RadioButton() { Left = 20, Top = 85, Width = 430, Text = "Зеркало (Бэкап локальной папки)", Checked = true };
+                RadioButton modeContainer = new RadioButton() { Left = 20, Top = 115, Width = 430, Text = "Контейнер (Обычная виртуальная папка)" };
 
-                Label pathLabel = new Label() { Left = 20, Top = 155, Width = 420, Text = "Локальный путь (только для Зеркала):" };
-                TextBox pathBox = new TextBox() { Left = 20, Top = 180, Width = 420 };
+                Label pathLabel = new Label() { Left = 20, Top = 155, Width = 430, Text = "Локальный путь (только для Зеркала):" };
+                TextBox pathBox = new TextBox() { Left = 20, Top = 180, Width = 430 };
 
                 modeMirror.CheckedChanged += (s, e) => {
                     pathBox.Enabled = modeMirror.Checked;
                 };
 
-                Button okBtn = new Button() { Text = "OK", Left = 340, Width = 100, Height = 30, Top = 235, DialogResult = DialogResult.OK };
-                Button cancelBtn = new Button() { Text = "Отмена", Left = 230, Width = 100, Height = 30, Top = 235, DialogResult = DialogResult.Cancel };
+                Panel bottomPanel = UiTheme.CreateBottomPanel(52);
+                form.Controls.Add(bottomPanel);
+
+                Button okBtn = UiTheme.CreateButton("OK", "Создать папку/канал", toolTip, 85, dialogResult: DialogResult.OK);
+                Button cancelBtn = UiTheme.CreateButton("Отмена", "Отменить создание", toolTip, 85, dialogResult: DialogResult.Cancel);
+
+                okBtn.Left = form.ClientSize.Width - 20 - okBtn.Width;
+                okBtn.Top = 11;
+                okBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                cancelBtn.Left = okBtn.Left - 10 - cancelBtn.Width;
+                cancelBtn.Top = 11;
+                cancelBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                bottomPanel.Controls.Add(okBtn);
+                bottomPanel.Controls.Add(cancelBtn);
 
                 form.Controls.Add(nameLabel);
                 form.Controls.Add(nameBox);
@@ -59,8 +75,6 @@ public static class CreateFolderDialog
                 form.Controls.Add(modeContainer);
                 form.Controls.Add(pathLabel);
                 form.Controls.Add(pathBox);
-                form.Controls.Add(okBtn);
-                form.Controls.Add(cancelBtn);
 
                 form.AcceptButton = okBtn;
                 form.CancelButton = cancelBtn;

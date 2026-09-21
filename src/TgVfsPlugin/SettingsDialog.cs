@@ -25,18 +25,20 @@ public static class SettingsDialog
             {
                 Logger.Info("UI", "Opening SettingsDialog...");
                 Win32Api.EnsureVisualStyles();
+                using ToolTip toolTip = UiTheme.CreateToolTip();
 
                 using Form form = new Form()
                 {
-                    Width = 540,
-                    Height = 360,
+                    Width = 550,
+                    Height = 375,
+                    MinimumSize = new Size(550, 375),
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     Text = "Настройки Telegram VFS",
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = false,
                     MaximizeBox = false,
                     TopMost = false,
-                    Font = new Font("Segoe UI", 9)
+                    Font = UiTheme.DefaultFont
                 };
 
                 GroupBox storageGroup = new GroupBox()
@@ -44,9 +46,9 @@ public static class SettingsDialog
                     Text = "Расположение базы данных и сессии",
                     Left = 15,
                     Top = 12,
-                    Width = 495,
+                    Width = 505,
                     Height = 250,
-                    Font = new Font("Segoe UI", 9, FontStyle.Regular)
+                    Font = UiTheme.DefaultFont
                 };
 
                 // 1. По умолчанию (%APPDATA%)
@@ -55,7 +57,7 @@ public static class SettingsDialog
                     Text = "По умолчанию (%APPDATA%)",
                     Left = 16,
                     Top = 22,
-                    Width = 460,
+                    Width = 470,
                     Height = 22,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.DefaultAppData
                 };
@@ -65,7 +67,7 @@ public static class SettingsDialog
                     Text = SettingsManager.DefaultAppDataDirectory,
                     Left = 38,
                     Top = 45,
-                    Width = 440,
+                    Width = 450,
                     Height = 20,
                     ForeColor = Color.DimGray,
                     Cursor = Cursors.Hand
@@ -78,7 +80,7 @@ public static class SettingsDialog
                     Text = "Портативный режим (рядом с плагином)",
                     Left = 16,
                     Top = 72,
-                    Width = 460,
+                    Width = 470,
                     Height = 22,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Portable
                 };
@@ -88,7 +90,7 @@ public static class SettingsDialog
                     Text = SettingsManager.PortableDirectory,
                     Left = 38,
                     Top = 95,
-                    Width = 440,
+                    Width = 450,
                     Height = 20,
                     ForeColor = Color.DimGray,
                     Cursor = Cursors.Hand
@@ -101,7 +103,7 @@ public static class SettingsDialog
                     Text = "Пользовательская папка на диске:",
                     Left = 16,
                     Top = 122,
-                    Width = 460,
+                    Width = 470,
                     Height = 22,
                     Checked = SettingsManager.CurrentStorageMode == StorageMode.Custom
                 };
@@ -110,29 +112,24 @@ public static class SettingsDialog
                 {
                     Left = 38,
                     Top = 148,
-                    Width = 345,
+                    Width = 355,
                     Text = SettingsManager.CurrentStorageMode == StorageMode.Custom 
                         ? SettingsManager.DataDirectory 
                         : (SettingsManager.GetSetting("data_path") ?? "D:\\TelegramVFS_Data"),
                     Enabled = rbCustom.Checked
                 };
 
-                Button browseBtn = new Button()
-                {
-                    Text = "Обзор...",
-                    Left = 390,
-                    Top = 146,
-                    Width = 88,
-                    Height = 30,
-                    Enabled = rbCustom.Checked
-                };
+                Button browseBtn = UiTheme.CreateButton("Обзор...", "Выбрать пользовательскую папку на диске", toolTip, 88);
+                browseBtn.Left = 400;
+                browseBtn.Top = 146;
+                browseBtn.Enabled = rbCustom.Checked;
 
                 CheckBox migrateCheck = new CheckBox()
                 {
                     Text = "Перенести существующую сессию и базу данных в новую папку",
                     Left = 16,
                     Top = 190,
-                    Width = 465,
+                    Width = 475,
                     Height = 44,
                     CheckAlign = ContentAlignment.TopLeft,
                     TextAlign = ContentAlignment.TopLeft,
@@ -173,12 +170,24 @@ public static class SettingsDialog
                 storageGroup.Controls.Add(browseBtn);
                 storageGroup.Controls.Add(migrateCheck);
 
-                Button okBtn = new Button() { Text = "Сохранить", Left = 265, Width = 115, Height = 30, Top = 275, DialogResult = DialogResult.OK };
-                Button cancelBtn = new Button() { Text = "Отмена", Left = 390, Width = 115, Height = 30, Top = 275, DialogResult = DialogResult.Cancel };
+                Panel bottomPanel = UiTheme.CreateBottomPanel(52);
+                form.Controls.Add(bottomPanel);
+
+                Button okBtn = UiTheme.CreateButton("Сохранить", "Сохранить настройки и применить расположение данных", toolTip, 100, dialogResult: DialogResult.OK);
+                Button cancelBtn = UiTheme.CreateButton("Отмена", "Отменить изменения настроек", toolTip, 90, dialogResult: DialogResult.Cancel);
+
+                cancelBtn.Left = form.ClientSize.Width - 20 - cancelBtn.Width;
+                cancelBtn.Top = 11;
+                cancelBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                okBtn.Left = cancelBtn.Left - 10 - okBtn.Width;
+                okBtn.Top = 11;
+                okBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                bottomPanel.Controls.Add(okBtn);
+                bottomPanel.Controls.Add(cancelBtn);
 
                 form.Controls.Add(storageGroup);
-                form.Controls.Add(okBtn);
-                form.Controls.Add(cancelBtn);
 
                 form.AcceptButton = okBtn;
                 form.CancelButton = cancelBtn;
