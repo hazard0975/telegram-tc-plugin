@@ -184,13 +184,13 @@ public static class SmartSyncDialog
                                 // Файл на ПК свежее, чем в Telegram
                                 item.Status = SyncItemStatus.LocalNewer;
                                 item.StatusText = "На ПК новее";
-                                item.DirectionSymbol = "➡";
+                                item.DirectionSymbol = ">>";
                                 item.DirectionText = "ПК -> Telegram";
 
                                 TimeSpan span = fi.LastWriteTimeUtc - file.MTime.ToUniversalTime();
                                 string diffStr = FormatTimeSpan(span);
 
-                                item.ToolTipDetails = $"{renameHeader}[➡ На ПК новее] (ПК ➡ Telegram)\n" +
+                                item.ToolTipDetails = $"{renameHeader}[>> На ПК новее] (ПК >> Telegram)\n" +
                                                       $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
                                                       $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                       $"• Опережение:      на {diffStr}\n" +
@@ -202,13 +202,13 @@ public static class SmartSyncDialog
                                 // Файл в Telegram свежее, чем на ПК (diff < -2)
                                 item.Status = SyncItemStatus.RemoteNewer;
                                 item.StatusText = "В TG новее";
-                                item.DirectionSymbol = "⬅";
+                                item.DirectionSymbol = "<<";
                                 item.DirectionText = "Telegram -> ПК";
 
                                 TimeSpan span = file.MTime.ToUniversalTime() - fi.LastWriteTimeUtc;
                                 string diffStr = FormatTimeSpan(span);
 
-                                item.ToolTipDetails = $"{renameHeader}[⬅ В Telegram новее] (Telegram ⬅ ПК)\n" +
+                                item.ToolTipDetails = $"{renameHeader}[<< В Telegram новее] (Telegram << ПК)\n" +
                                                       $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                       $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
                                                       $"• Опережение:       на {diffStr}\n" +
@@ -331,41 +331,60 @@ public static class SmartSyncDialog
                     lvi.SubItems.Add(pcPathText);
                     lvi.Tag = item;
 
+                    lvi.UseItemStyleForSubItems = false;
+                    Color rowFg;
+                    Color rowBg;
+                    Font rowFont;
+
                     if (item.Status == SyncItemStatus.LocalNewer)
                     {
                         lvi.Checked = true;
-                        lvi.ForeColor = Color.FromArgb(0, 110, 0); // Зеленый цвет Total Commander
-                        lvi.BackColor = Color.FromArgb(235, 248, 235); // Мягкий светло-зеленый фон
-                        lvi.Font = new Font(listView.Font, FontStyle.Bold);
+                        rowFg = Color.FromArgb(0, 110, 0); // Зеленый цвет Total Commander
+                        rowBg = Color.FromArgb(235, 248, 235); // Мягкий светло-зеленый фон
+                        rowFont = new Font(listView.Font, FontStyle.Bold);
                     }
                     else if (item.Status == SyncItemStatus.RemoteNewer)
                     {
                         lvi.Checked = true;
-                        lvi.ForeColor = Color.FromArgb(0, 70, 180); // Синий цвет Total Commander
-                        lvi.BackColor = Color.FromArgb(235, 244, 255); // Мягкий светло-голубой фон
-                        lvi.Font = new Font(listView.Font, FontStyle.Bold);
+                        rowFg = Color.FromArgb(0, 70, 180); // Синий цвет Total Commander
+                        rowBg = Color.FromArgb(235, 244, 255); // Мягкий светло-голубой фон
+                        rowFont = new Font(listView.Font, FontStyle.Bold);
                     }
                     else if (item.Status == SyncItemStatus.SizeMismatch)
                     {
                         lvi.Checked = false;
-                        lvi.ForeColor = Color.FromArgb(180, 100, 0); // Оранжево-коричневый
-                        lvi.BackColor = Color.FromArgb(255, 247, 230); // Мягкий янтарный фон
-                        lvi.Font = new Font(listView.Font, FontStyle.Bold);
+                        rowFg = Color.FromArgb(180, 100, 0); // Оранжево-коричневый
+                        rowBg = Color.FromArgb(255, 247, 230); // Мягкий янтарный фон
+                        rowFont = new Font(listView.Font, FontStyle.Bold);
                     }
                     else if (item.Status == SyncItemStatus.SourceNotFound)
                     {
                         lvi.Checked = false;
-                        lvi.ForeColor = Color.FromArgb(170, 0, 0); // Красный
-                        lvi.BackColor = Color.FromArgb(255, 235, 235); // Мягкий светло-розовый фон
-                        lvi.Font = new Font(listView.Font, FontStyle.Bold);
+                        rowFg = Color.FromArgb(170, 0, 0); // Красный
+                        rowBg = Color.FromArgb(255, 235, 235); // Мягкий светло-розовый фон
+                        rowFont = new Font(listView.Font, FontStyle.Bold);
                     }
                     else
                     {
                         lvi.Checked = false;
-                        lvi.ForeColor = Color.FromArgb(90, 90, 90); // Серый (Идентичны)
-                        lvi.BackColor = (rowIndex % 2 == 0) ? Color.White : Color.FromArgb(248, 249, 250); // Мягкая зебра
-                        lvi.Font = new Font(listView.Font, FontStyle.Regular);
+                        rowFg = Color.FromArgb(90, 90, 90); // Серый (Идентичны)
+                        rowBg = (rowIndex % 2 == 0) ? Color.White : Color.FromArgb(248, 249, 250); // Мягкая зебра
+                        rowFont = new Font(listView.Font, FontStyle.Regular);
                     }
+
+                    lvi.ForeColor = rowFg;
+                    lvi.BackColor = rowBg;
+                    lvi.Font = rowFont;
+
+                    foreach (ListViewItem.ListViewSubItem sub in lvi.SubItems)
+                    {
+                        sub.ForeColor = rowFg;
+                        sub.BackColor = rowBg;
+                        sub.Font = rowFont;
+                    }
+
+                    // Для центральной колонки направления (<=>) делаем крупный жирный шрифт 12pt
+                    lvi.SubItems[3].Font = new Font("Segoe UI", 12f, FontStyle.Bold);
 
                     listView.Items.Add(lvi);
                     rowIndex++;
