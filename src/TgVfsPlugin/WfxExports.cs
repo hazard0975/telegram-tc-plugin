@@ -777,6 +777,30 @@ public static unsafe class WfxExports
                         string[] subParts = subPath.Split('\\');
                         string versionedName = subParts[^1];
                         string? trashSubParent = subParts.Length > 1 ? string.Join("\\", subParts, 0, subParts.Length - 1) : null;
+
+                        if (versionedName == "..")
+                        {
+                            if (string.IsNullOrEmpty(trashSubParent))
+                            {
+                                // ".." в корне корзины канала -> свойства корзины этого канала
+                                FilePropertiesDialog.ShowTrashProperties(mount.ChannelName, mount.ChannelId, mount.Id, _db);
+                                return Win32Api.FS_EXEC_OK;
+                            }
+                            else
+                            {
+                                // ".." в подпапке корзины -> свойства текущей подпапки корзины
+                                int lastSlash = trashSubParent.LastIndexOf('\\');
+                                string currentDirName = lastSlash >= 0 ? trashSubParent.Substring(lastSlash + 1) : trashSubParent;
+                                string? currentDirParent = lastSlash >= 0 ? trashSubParent.Substring(0, lastSlash) : null;
+                                var currentTrashDir = _db.GetTrashFileByVersionedName(mount.Id, currentDirName, currentDirParent);
+                                if (currentTrashDir != null)
+                                {
+                                    FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, trashSubParent, currentTrashDir, _db);
+                                    return Win32Api.FS_EXEC_OK;
+                                }
+                            }
+                        }
+
                         var trashFile = _db.GetTrashFileByVersionedName(mount.Id, versionedName, trashSubParent);
                         if (trashFile != null)
                         {
@@ -813,6 +837,44 @@ public static unsafe class WfxExports
                         string[] subParts = subPath.Split('\\');
                         string fileName = subParts[^1];
                         string? parent = subParts.Length > 1 ? string.Join("\\", subParts, 0, subParts.Length - 1) : null;
+
+                        // Если свойства запрошены для элемента ".." (переход наверх)
+                        if (fileName == "..")
+                        {
+                            if (string.IsNullOrEmpty(parent))
+                            {
+                                // ".." в корне канала -> свойства текущего канала/тома
+                                var mountAsFile = new VfsDatabase.FileRecord
+                                {
+                                    Uid = mount.Id,
+                                    MountId = mount.Id,
+                                    IsDir = true,
+                                    Name = mount.ChannelName,
+                                    Parent = null,
+                                    MTime = DateTime.UtcNow,
+                                    Size = 0,
+                                    TgMessageId = 0,
+                                    InTrash = 0,
+                                    Ver = 1
+                                };
+                                FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, "", mountAsFile, _db);
+                                return Win32Api.FS_EXEC_OK;
+                            }
+                            else
+                            {
+                                // ".." в подпапке -> свойства текущей открытой подпапки (которая является parent для "..")
+                                int lastSlash = parent.LastIndexOf('\\');
+                                string currentDirName = lastSlash >= 0 ? parent.Substring(lastSlash + 1) : parent;
+                                string? currentDirParent = lastSlash >= 0 ? parent.Substring(0, lastSlash) : null;
+
+                                var currentDirRecord = _db.GetFile(mount.Id, currentDirName, currentDirParent);
+                                if (currentDirRecord != null)
+                                {
+                                    FilePropertiesDialog.Show(mount.ChannelName, mount.ChannelId, parent, currentDirRecord, _db);
+                                    return Win32Api.FS_EXEC_OK;
+                                }
+                            }
+                        }
 
                         var fileRecord = _db.GetFile(mount.Id, fileName, parent);
                         if (fileRecord != null)
