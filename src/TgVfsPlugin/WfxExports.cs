@@ -68,6 +68,7 @@ public static unsafe class WfxExports
 
     private static bool _isBatchOperation = false;
     private static string? _currentDeleteStartDir;
+    private static bool _channelDeleteBlockedPromptShown = false;
     private static System.Threading.Timer? _debouncedCheckpointTimer;
     private static bool _processExitHooked = false;
 
@@ -1866,6 +1867,7 @@ public static unsafe class WfxExports
                 if (infoOperation == Win32Api.FS_STATUS_OP_DELETE)
                 {
                     _currentDeleteStartDir = cleanDir;
+                    _channelDeleteBlockedPromptShown = false;
                 }
 
                 if (isBatchOp)
@@ -1878,6 +1880,7 @@ public static unsafe class WfxExports
                 if (infoOperation == Win32Api.FS_STATUS_OP_DELETE)
                 {
                     _currentDeleteStartDir = null;
+                    _channelDeleteBlockedPromptShown = false;
                 }
 
                 if (_isBatchOperation)
@@ -2040,6 +2043,19 @@ public static unsafe class WfxExports
                 {
                     // Блокируем пофайловое стирание сообщений канала при удалении папки канала по F8 в корне корзины
                     Logger.Warn("WFX", $"[DELETE BLOCKED] Channel '{channelName}' deletion from Trash root via F8 is prohibited. File '{cleanPath}' kept safe.");
+
+                    if (!_channelDeleteBlockedPromptShown)
+                    {
+                        _channelDeleteBlockedPromptShown = true;
+                        System.Windows.Forms.MessageBox.Show(
+                            $"Удаление папки канала из корзины заблокировано.\n\n" +
+                            $"Для окончательного удаления канала используйте пункт [❌] Удалить папку в корне плагина.\n" +
+                            $"Для удаления отдельных файлов зайдите внутрь папки канала.",
+                            "Удаление канала",
+                            System.Windows.Forms.MessageBoxButtons.OK,
+                            System.Windows.Forms.MessageBoxIcon.Information);
+                    }
+
                     return 0; // отказ (false)
                 }
 
