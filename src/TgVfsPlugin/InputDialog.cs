@@ -23,52 +23,32 @@ public static class InputDialog
                 int clientWidth = 474;
                 int contentWidth = clientWidth - margin * 2; // 434px
 
-                using Form promptForm = new Form()
-                {
-                    FormBorderStyle = FormBorderStyle.FixedDialog,
-                    Text = title,
-                    StartPosition = FormStartPosition.CenterScreen,
-                    MinimizeBox = false,
-                    MaximizeBox = false,
-                    TopMost = false,
-                    Font = UiTheme.DefaultFont,
-                    AutoScaleMode = AutoScaleMode.None
-                };
+                int labelHeight = 36;
+                int inputHeight = 30;
+                int bottomPanelHeight = 52;
+                int contentBottom = topMargin + labelHeight + 6 + inputHeight + topMargin;
+                int clientHeight = contentBottom + bottomPanelHeight;
 
-                Label textLabel = new Label() 
-                { 
-                    Left = margin, 
-                    Top = topMargin, 
-                    Width = contentWidth, 
-                    Height = 36, 
-                    Text = prompt,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
-                };
+                using Form promptForm = UiTheme.CreateDialogForm(title, clientWidth, clientHeight);
 
-                TextBox inputBox = new TextBox() 
-                { 
-                    Left = margin, 
-                    Top = textLabel.Bottom + 6, 
-                    Width = contentWidth,
-                    AutoSize = false,
-                    Height = 30,
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right 
-                };
+                Label textLabel = UiTheme.CreateLabel(prompt, labelHeight);
+                textLabel.Left = margin;
+                textLabel.Top = topMargin;
+                textLabel.Width = contentWidth;
+                textLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+                TextBox inputBox = UiTheme.CreateTextBox(height: inputHeight);
+                inputBox.Left = margin;
+                inputBox.Top = textLabel.Bottom + 6;
+                inputBox.Width = contentWidth;
+                inputBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
                 
                 if (isPassword)
                 {
                     inputBox.UseSystemPasswordChar = true;
                 }
 
-                int bottomPanelHeight = 52;
-                int contentBottom = inputBox.Bottom + topMargin;
-                int clientHeight = contentBottom + bottomPanelHeight;
-
-                promptForm.ClientSize = new Size(clientWidth, clientHeight);
-                promptForm.MinimumSize = promptForm.Size;
-                promptForm.MaximumSize = promptForm.Size;
-
-                Panel bottomPanel = UiTheme.CreateBottomPanel(52);
+                Panel bottomPanel = UiTheme.CreateBottomPanel(bottomPanelHeight);
                 promptForm.Controls.Add(bottomPanel);
 
                 Button confirmation = UiTheme.CreateButton("OK", "Подтвердить ввод", toolTip, 85, dialogResult: DialogResult.OK);
