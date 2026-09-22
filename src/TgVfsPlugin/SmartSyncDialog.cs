@@ -419,7 +419,7 @@ public static class SmartSyncDialog
                 clearSelectionBtn.Anchor = AnchorStyles.Top | AnchorStyles.Left;
 
                 Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно синхронизации", toolTip, 85, dialogResult: DialogResult.Cancel);
-                closeBtn.Left = form.ClientSize.Width - margin - closeBtn.Width;
+                closeBtn.Left = bottomPanel.Width - margin - closeBtn.Width;
                 closeBtn.Top = 11;
                 closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
@@ -428,6 +428,12 @@ public static class SmartSyncDialog
                 syncBtn.Top = 11;
                 syncBtn.Enabled = false;
                 syncBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                bottomPanel.Controls.Add(selectUpdatesBtn);
+                bottomPanel.Controls.Add(clearSelectionBtn);
+                bottomPanel.Controls.Add(syncBtn);
+                bottomPanel.Controls.Add(closeBtn);
+                bottomPanel.BringToFront();
 
                 List<SmartSyncItem> items = new();
                 int localNewerCount = 0;
