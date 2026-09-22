@@ -355,18 +355,18 @@ public static class SmartSyncDialog
                     {
                         Left = 10,
                         Top = topY,
-                        Width = 125,
+                        Width = 115,
                         Height = 20,
                         Text = prefix,
                         Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
-                        ForeColor = Color.FromArgb(100, 100, 100)
+                        ForeColor = Color.FromArgb(30, 30, 30)
                     };
 
                     Label valLbl = new Label()
                     {
-                        Left = 135,
+                        Left = 125,
                         Top = topY,
-                        Width = cardPanel.Width - 260,
+                        Width = cardPanel.Width - 250,
                         Height = 20,
                         Text = "-",
                         Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
@@ -384,7 +384,7 @@ public static class SmartSyncDialog
                 Label lblFilesCount = CreateCardField("Файлы:", lblY + (lblStep * 2));
                 Label lblTotalBytes = CreateCardField("Объем данных:", lblY + (lblStep * 3));
                 Label lblSpeed = CreateCardField("Скорость:", lblY + (lblStep * 4));
-                Label lblTime = CreateCardField("Прошло времени:", lblY + (lblStep * 5));
+                Label lblTime = CreateCardField("Прошло:", lblY + (lblStep * 5));
                 Label lblDirection = CreateCardField("Направление:", lblY + (lblStep * 6));
 
                 Button pauseBtn = UiTheme.CreateButton("⏸ Пауза", "Приостановить или возобновить передачу данных", toolTip, 110);
@@ -1234,7 +1234,10 @@ public static class SmartSyncDialog
                                         if (form.IsDisposed) return;
                                         lblOperationTitle.Text = isUpload ? "Загрузка в Telegram..." : "Скачивание из Telegram...";
                                         pbCurrentFile.Value = 0;
-                                        lblCurFileName.Text = it.FileRecord.Name;
+                                        string displayPath = !string.IsNullOrEmpty(it.FileRecord.SourcePath)
+                                            ? it.FileRecord.SourcePath
+                                            : (string.IsNullOrEmpty(it.FileRecord.Parent) ? it.FileRecord.Name : $"{it.FileRecord.Parent}\\{it.FileRecord.Name}");
+                                        lblCurFileName.Text = displayPath;
                                         lblFilesCount.Text = $"{processed} из {totalChecked}";
                                         lblDirection.Text = isUpload ? "Диск ПК → Telegram Cloud (VFS)" : "Telegram Cloud (VFS) → Диск ПК";
                                     });
@@ -1270,8 +1273,8 @@ public static class SmartSyncDialog
                                             pbCurrentFile.Value = filePct;
                                             lblOperationTitle.Text = $"{(isUpload ? "Загрузка в Telegram..." : "Скачивание из Telegram...")} ({filePct}%)";
 
-                                            lblCurFileBytes.Text = $"{filePct}% ({Logger.FormatBytes(transferred)} / {Logger.FormatBytes(total)})";
-                                            lblTotalBytes.Text = $"{overallPct}% ({Logger.FormatBytes(currentTotalBytes)} / {Logger.FormatBytes(totalBytesAllFiles)})";
+                                            lblCurFileBytes.Text = $"{filePct}% ({FormatSizeShort(transferred)} / {FormatSizeShort(total)})";
+                                            lblTotalBytes.Text = $"{overallPct}% ({FormatSizeShort(currentTotalBytes)} / {FormatSizeShort(totalBytesAllFiles)})";
 
                                             if (isPaused)
                                             {
@@ -1519,6 +1522,20 @@ public static class SmartSyncDialog
                 Logger.Error("UI", $"Fatal error in SmartSyncDialog: {ex.Message}", ex);
             }
         });
+    }
+
+    private static string FormatSizeShort(long bytes)
+    {
+        if (bytes < 0) return "0 Б";
+        string[] suffixes = { "Б", "КБ", "МБ", "ГБ", "ТБ" };
+        int counter = 0;
+        decimal number = bytes;
+        while (Math.Round(number / 1024m) >= 1 && counter < suffixes.Length - 1)
+        {
+            number /= 1024m;
+            counter++;
+        }
+        return counter == 0 ? $"{bytes} Б" : $"{number:n2} {suffixes[counter]}";
     }
 
     private static string FormatSpeed(double bytesPerSec)
