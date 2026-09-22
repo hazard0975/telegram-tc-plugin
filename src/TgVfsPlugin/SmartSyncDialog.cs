@@ -513,6 +513,19 @@ public static class SmartSyncDialog
                         ? item.FileRecord.Name
                         : $"{item.FileRecord.Parent}\\{item.FileRecord.Name}";
 
+                    if (!string.IsNullOrEmpty(item.FileRecord.SourcePath))
+                    {
+                        string origName = Path.GetFileName(item.FileRecord.SourcePath);
+                        if (!string.Equals(origName, item.FileRecord.Name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            vfsDisplayPath += " 🏷️";
+                            if (!string.IsNullOrEmpty(item.ToolTipDetails) && !item.ToolTipDetails.Contains("🏷️"))
+                            {
+                                item.ToolTipDetails += $"\n• 🏷️ Переименован в VFS (на ПК: {origName})";
+                            }
+                        }
+                    }
+
                     string itemText = vfsDisplayPath;
 
                     string tgSizeText = item.Status == SyncItemStatus.LocalOnly ? "-" : item.FileRecord.Size.ToString("#,##0");
