@@ -743,6 +743,7 @@ public static class SmartSyncDialog
                                                 db.MoveFileToTrash(it.FileRecord.Uid);
                                             }
 
+                                            db.EnsureParentDirectoriesExist(it.FileRecord.MountId, it.FileRecord.Parent);
                                             var fi = new FileInfo(it.FileRecord.SourcePath);
                                             db.AddFile(new VfsDatabase.FileRecord
                                             {

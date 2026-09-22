@@ -166,7 +166,7 @@ public static class FilePropertiesDialog
                     }
                 }
 
-                AddRow("Статус файла:", statusStr);
+                AddRow(isMountRoot ? "Статус канала:" : (file.IsDir ? "Статус папки:" : "Статус файла:"), statusStr);
                 AddRow("Режим папки:", folderModeStr);
                 AddRow("Уникальный UID:", file.Uid);
 

@@ -125,6 +125,7 @@ public class VfsDatabase : IDisposable
         public string ChannelName { get; set; } = "";
         public int Mode { get; set; }
         public int InTrash { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 
     private static DateTime ReadDateTime(SqliteDataReader reader, int index)
@@ -161,7 +162,7 @@ public class VfsDatabase : IDisposable
         cmd.Parameters.AddWithValue("@cid", mount.ChannelId);
         cmd.Parameters.AddWithValue("@cname", mount.ChannelName);
         cmd.Parameters.AddWithValue("@mode", mount.Mode);
-        cmd.Parameters.AddWithValue("@dt", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        cmd.Parameters.AddWithValue("@dt", new DateTimeOffset(mount.CreatedAt.ToUniversalTime()).ToUnixTimeMilliseconds());
         cmd.Parameters.AddWithValue("@trash", mount.InTrash);
         cmd.ExecuteNonQuery();
     }
@@ -186,7 +187,7 @@ public class VfsDatabase : IDisposable
     public MountInfo? GetMountByName(string name)
     {
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name, in_trash FROM mounts WHERE channel_name = @cname COLLATE NOCASE";
+        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name, in_trash, created_at FROM mounts WHERE channel_name = @cname COLLATE NOCASE";
         cmd.Parameters.AddWithValue("@cname", name);
         using var reader = cmd.ExecuteReader();
         if (reader.Read())
@@ -198,7 +199,8 @@ public class VfsDatabase : IDisposable
                 ChannelId = reader.GetInt64(2),
                 ChannelName = reader.GetString(4),
                 Mode = reader.GetInt32(3),
-                InTrash = reader.IsDBNull(5) ? 0 : reader.GetInt32(5)
+                InTrash = reader.IsDBNull(5) ? 0 : reader.GetInt32(5),
+                CreatedAt = ReadDateTime(reader, 6)
             };
         }
         return null;
@@ -207,7 +209,7 @@ public class VfsDatabase : IDisposable
     public MountInfo? GetMountById(string id)
     {
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name, in_trash FROM mounts WHERE id = @id";
+        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name, in_trash, created_at FROM mounts WHERE id = @id";
         cmd.Parameters.AddWithValue("@id", id);
         using var reader = cmd.ExecuteReader();
         if (reader.Read())
@@ -219,7 +221,8 @@ public class VfsDatabase : IDisposable
                 ChannelId = reader.GetInt64(2),
                 ChannelName = reader.GetString(4),
                 Mode = reader.GetInt32(3),
-                InTrash = reader.IsDBNull(5) ? 0 : reader.GetInt32(5)
+                InTrash = reader.IsDBNull(5) ? 0 : reader.GetInt32(5),
+                CreatedAt = ReadDateTime(reader, 6)
             };
         }
         return null;
@@ -229,7 +232,7 @@ public class VfsDatabase : IDisposable
     {
         var items = new System.Collections.Generic.List<MountInfo>();
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name, in_trash FROM mounts ORDER BY channel_name ASC";
+        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name, in_trash, created_at FROM mounts ORDER BY channel_name ASC";
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
@@ -240,7 +243,8 @@ public class VfsDatabase : IDisposable
                 ChannelId = reader.GetInt64(2),
                 ChannelName = reader.GetString(4),
                 Mode = reader.GetInt32(3),
-                InTrash = reader.IsDBNull(5) ? 0 : reader.GetInt32(5)
+                InTrash = reader.IsDBNull(5) ? 0 : reader.GetInt32(5),
+                CreatedAt = ReadDateTime(reader, 6)
             });
         }
         return items;
@@ -690,32 +694,26 @@ public class VfsDatabase : IDisposable
         var cmd = _connection.CreateCommand();
         if (string.IsNullOrEmpty(normalizedDir))
         {
-            // Свойства всего канала/монтирования (корень): считаем все файлы и папки тома
+            // Свойства всего канала/монтирования (корень): выбираем все элементы тома
             cmd.CommandText = @"
-                SELECT 
-                    COUNT(CASE WHEN isdir = 0 THEN 1 END),
-                    COUNT(CASE WHEN isdir = 1 THEN 1 END),
-                    COALESCE(SUM(size), 0)
+                SELECT isdir, name, parent, size
                 FROM files
                 WHERE mount_id = @mid 
-                  AND in_trash = @trash
+                  AND (in_trash = @trash OR (@trash = 0 AND (in_trash IS NULL OR in_trash = 0)))
             ";
             cmd.Parameters.AddWithValue("@mid", mountId);
             cmd.Parameters.AddWithValue("@trash", inTrash ? 1 : 0);
         }
         else
         {
-            // Свойства конкретной подпапки: считаем только элементы внутри неё
+            // Свойства конкретной подпапки: выбираем только элементы внутри неё
             string prefixPattern = normalizedDir + "\\%";
             cmd.CommandText = @"
-                SELECT 
-                    COUNT(CASE WHEN isdir = 0 THEN 1 END),
-                    COUNT(CASE WHEN isdir = 1 THEN 1 END),
-                    COALESCE(SUM(size), 0)
+                SELECT isdir, name, parent, size
                 FROM files
                 WHERE mount_id = @mid 
-                  AND (parent = @dir OR parent LIKE @prefix)
-                  AND in_trash = @trash
+                  AND (parent = @dir COLLATE NOCASE OR parent LIKE @prefix COLLATE NOCASE)
+                  AND (in_trash = @trash OR (@trash = 0 AND (in_trash IS NULL OR in_trash = 0)))
             ";
             cmd.Parameters.AddWithValue("@mid", mountId);
             cmd.Parameters.AddWithValue("@dir", normalizedDir);
@@ -723,13 +721,57 @@ public class VfsDatabase : IDisposable
             cmd.Parameters.AddWithValue("@trash", inTrash ? 1 : 0);
         }
 
+        var dirPathsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         using var reader = cmd.ExecuteReader();
-        if (reader.Read())
+        while (reader.Read())
         {
-            filesCount = reader.GetInt32(0);
-            dirsCount = reader.GetInt32(1);
-            totalSize = reader.GetInt64(2);
+            bool isDir = reader.GetInt32(0) == 1;
+            string name = reader.GetString(1);
+            string? parent = reader.IsDBNull(2) ? null : reader.GetString(2);
+            long size = reader.GetInt64(3);
+
+            if (isDir)
+            {
+                string dirFull = string.IsNullOrEmpty(parent) ? name : $"{parent}\\{name}";
+                if (string.IsNullOrEmpty(normalizedDir))
+                {
+                    dirPathsSet.Add(dirFull);
+                }
+                else if (!dirFull.Equals(normalizedDir, StringComparison.OrdinalIgnoreCase) &&
+                         dirFull.StartsWith(normalizedDir + "\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    dirPathsSet.Add(dirFull);
+                }
+            }
+            else
+            {
+                filesCount++;
+                totalSize += size;
+
+                // Учитываем все промежуточные родительские папки
+                if (!string.IsNullOrEmpty(parent))
+                {
+                    string cleanParent = parent.Trim('\\').Replace('/', '\\');
+                    string[] segments = cleanParent.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+                    string accum = "";
+                    for (int i = 0; i < segments.Length; i++)
+                    {
+                        accum = i == 0 ? segments[i] : accum + "\\" + segments[i];
+                        if (string.IsNullOrEmpty(normalizedDir))
+                        {
+                            dirPathsSet.Add(accum);
+                        }
+                        else if (accum.StartsWith(normalizedDir + "\\", StringComparison.OrdinalIgnoreCase))
+                        {
+                            dirPathsSet.Add(accum);
+                        }
+                    }
+                }
+            }
         }
+
+        dirsCount = dirPathsSet.Count;
     }
 
     public FileRecord? GetFileByUid(string uid)

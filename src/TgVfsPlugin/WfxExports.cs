@@ -846,7 +846,7 @@ public static unsafe class WfxExports
                                 IsDir = true,
                                 Name = mount.ChannelName,
                                 Parent = null,
-                                MTime = DateTime.UtcNow,
+                                MTime = mount.CreatedAt,
                                 Size = 0,
                                 TgMessageId = 0,
                                 InTrash = 0,
@@ -873,7 +873,7 @@ public static unsafe class WfxExports
                                     IsDir = true,
                                     Name = mount.ChannelName,
                                     Parent = null,
-                                    MTime = DateTime.UtcNow,
+                                    MTime = mount.CreatedAt,
                                     Size = 0,
                                     TgMessageId = 0,
                                     InTrash = 0,
@@ -1408,6 +1408,8 @@ public static unsafe class WfxExports
             {
                 finalSourcePath = Path.GetFullPath(localPath);
             }
+
+            _db.EnsureParentDirectoriesExist(mount.Id, parentSubPath);
 
             _db.AddFile(new VfsDatabase.FileRecord
             {
