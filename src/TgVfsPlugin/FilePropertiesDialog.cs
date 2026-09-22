@@ -525,8 +525,33 @@ public static class FilePropertiesDialog
                 Panel bottomPanel = UiTheme.CreateBottomPanel(52);
                 form.Controls.Add(bottomPanel);
 
-                Button cleanBtn = UiTheme.CreateButton("Очистить", "Безвозвратно удалить все файлы корзины и их сообщения в Telegram", toolTip, 95);
-                cleanBtn.Left = 20;
+                Button restoreAllBtn = UiTheme.CreateButton("Восстановить всё", "Восстановить все файлы и папки из корзины в их исходные места в активном канале", toolTip, 130);
+                restoreAllBtn.Left = 20;
+                restoreAllBtn.Top = 11;
+                restoreAllBtn.Enabled = totalItems > 0;
+                restoreAllBtn.Click += (s, e) =>
+                {
+                    string details = filesCount > 0 && dirsCount > 0
+                        ? $"{filesCount} файлов и {dirsCount} папок"
+                        : (filesCount > 0 ? $"{filesCount} файлов" : $"{dirsCount} папок");
+
+                    var ask = MessageBox.Show(form,
+                        $"Вы действительно хотите восстановить все {details} ({FormatSize(totalTrashSize)}) из корзины канала '{channelName}' в их исходные места?",
+                        "Подтверждение восстановления",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question);
+
+                    if (ask == DialogResult.Yes)
+                    {
+                        int restoredCount = db.RestoreAllTrash(mountId);
+                        Win32Api.RefreshActivePanel();
+                        MessageBox.Show(form, "Восстановление корзины успешно завершено.", "Восстановление завершено", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        form.Close();
+                    }
+                };
+
+                Button cleanBtn = UiTheme.CreateButton("Очистить", "Безвозвратно удалить все файлы корзины и их сообщения в Telegram", toolTip, 85);
+                cleanBtn.Left = restoreAllBtn.Right + 10;
                 cleanBtn.Top = 11;
                 cleanBtn.Enabled = totalItems > 0;
                 cleanBtn.Click += (s, e) =>
@@ -556,7 +581,7 @@ public static class FilePropertiesDialog
                     }
                 };
 
-                Button navBtn = UiTheme.CreateButton("К каналу", "Перейти в корень активного канала в Total Commander", toolTip, 95);
+                Button navBtn = UiTheme.CreateButton("К каналу", "Перейти в корень активного канала в Total Commander", toolTip, 85);
                 navBtn.Left = cleanBtn.Right + 10;
                 navBtn.Top = 11;
                 navBtn.Click += (s, e) =>
@@ -567,11 +592,12 @@ public static class FilePropertiesDialog
                     form.Close();
                 };
 
-                Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно свойств корзины", toolTip, 90, dialogResult: DialogResult.OK);
+                Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно свойств корзины", toolTip, 85, dialogResult: DialogResult.OK);
                 closeBtn.Left = form.ClientSize.Width - margin - closeBtn.Width;
                 closeBtn.Top = 11;
                 closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
+                bottomPanel.Controls.Add(restoreAllBtn);
                 bottomPanel.Controls.Add(cleanBtn);
                 bottomPanel.Controls.Add(navBtn);
                 bottomPanel.Controls.Add(closeBtn);

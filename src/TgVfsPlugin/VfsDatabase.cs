@@ -807,6 +807,25 @@ public class VfsDatabase : IDisposable
         return true;
     }
 
+    public int RestoreAllTrash(string mountId)
+    {
+        var trashRecords = GetTrashFileRecords(mountId);
+        if (trashRecords == null || trashRecords.Count == 0) return 0;
+
+        int restoredCount = 0;
+        foreach (var file in trashRecords.Where(r => r.IsDir).ToList())
+        {
+            if (RestoreFile(file)) restoredCount++;
+        }
+        foreach (var file in trashRecords.Where(r => !r.IsDir).ToList())
+        {
+            if (RestoreFile(file)) restoredCount++;
+        }
+
+        CleanupDuplicateActiveFiles(mountId);
+        return restoredCount;
+    }
+
     /// <summary>
     /// Получает список всех записей дерева папки в корзине перед физическим удалением (для удаления сообщений из Telegram)
     /// </summary>
