@@ -67,6 +67,7 @@ public static unsafe class WfxExports
     private static int _nextHandle = 1;
 
     private static bool _isBatchOperation = false;
+    private static string? _currentDeleteStartDir;
     private static System.Threading.Timer? _debouncedCheckpointTimer;
     private static bool _processExitHooked = false;
 
@@ -1862,6 +1863,11 @@ public static unsafe class WfxExports
 
             if (infoStartEnd == Win32Api.FS_STATUS_START)
             {
+                if (infoOperation == Win32Api.FS_STATUS_OP_DELETE)
+                {
+                    _currentDeleteStartDir = cleanDir;
+                }
+
                 if (isBatchOp)
                 {
                     _isBatchOperation = true;
@@ -1869,6 +1875,11 @@ public static unsafe class WfxExports
             }
             else if (infoStartEnd == Win32Api.FS_STATUS_END)
             {
+                if (infoOperation == Win32Api.FS_STATUS_OP_DELETE)
+                {
+                    _currentDeleteStartDir = null;
+                }
+
                 if (_isBatchOperation)
                 {
                     _isBatchOperation = false;
@@ -2013,16 +2024,26 @@ public static unsafe class WfxExports
 
             if (isInTrash)
             {
-                // Если канал находится в корзине (mount.InTrash == 1),
-                // блокируем удаление файлов по F8! Это защищает сообщения в Telegram от стирания при нажатии F8 на папке канала в корзине.
-                // Окончательное удаление канала выполняется ТОЛЬКО через меню [❌] Удалить папку.
-                if (mount.InTrash == 1)
+                // Проверяем: было ли удаление инициировано на уровне корня Корзины (когда пользователь нажал F8 на папке канала)
+                bool isDeletingEntireChannelFromTrashRoot = false;
+                if (!string.IsNullOrEmpty(_currentDeleteStartDir))
                 {
-                    Logger.Warn("WFX", $"[DELETE BLOCKED] Channel '{channelName}' is in Trash (InTrash=1). File deletion via F8 is prohibited: '{cleanPath}'. Use '[❌] Удалить папку'.");
+                    ParseVfsPath(_currentDeleteStartDir, out string startChannel, out _, out bool startInTrash);
+                    if (startInTrash && string.IsNullOrEmpty(startChannel))
+                    {
+                        // Удаление начато снаружи, на уровне списка каналов в корзине
+                        isDeletingEntireChannelFromTrashRoot = true;
+                    }
+                }
+
+                if (isDeletingEntireChannelFromTrashRoot)
+                {
+                    // Блокируем пофайловое стирание сообщений канала при удалении папки канала по F8 в корне корзины
+                    Logger.Warn("WFX", $"[DELETE BLOCKED] Channel '{channelName}' deletion from Trash root via F8 is prohibited. File '{cleanPath}' kept safe.");
                     return 0; // отказ (false)
                 }
 
-                // Удаление элемента из корзины активного канала (удаление навсегда без дублирующего окна - пользователь уже подтвердил в Total Commander)
+                // Удаление элемента из корзины (пользователь находится ВНУТРИ канала в корзине и нажал F8 на конкретном файле)
                 var trashFile = _db.GetTrashFileByVersionedName(mount.Id, fileName, parentSubPath);
                 if (trashFile != null)
                 {
@@ -2155,13 +2176,22 @@ public static unsafe class WfxExports
             {
                 if (isInTrash)
                 {
-                    if (mount.InTrash == 1)
+                    bool isDeletingEntireChannelFromTrashRoot = false;
+                    if (!string.IsNullOrEmpty(_currentDeleteStartDir))
                     {
-                        Logger.Warn("WFX", $"[REMOVEDIR BLOCKED] Channel '{channelName}' is in Trash (InTrash=1). Subfolder deletion via F8 is prohibited.");
-                        return 0; // отказ (false)
+                        ParseVfsPath(_currentDeleteStartDir, out string startChannel, out _, out bool startInTrash);
+                        if (startInTrash && string.IsNullOrEmpty(startChannel))
+                        {
+                            isDeletingEntireChannelFromTrashRoot = true;
+                        }
                     }
 
-                    // Удаление подпапки ВНУТРИ корзины активного канала навсегда
+                    if (isDeletingEntireChannelFromTrashRoot)
+                    {
+                        return 0; // отказ (false) - не удаляем подпапки при удалении всего канала с корня корзины
+                    }
+
+                    // Удаление подпапки ВНУТРИ корзины канала навсегда
                     var trashRecords = _db.GetTrashSubTreeFileRecords(mount.Id, subPath);
                     PurgeTrashRecords(mount.Id, mount.ChannelId, trashRecords);
                     return 1;
