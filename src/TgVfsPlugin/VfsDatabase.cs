@@ -694,9 +694,12 @@ public class VfsDatabase : IDisposable
         var cmd = _connection.CreateCommand();
         if (string.IsNullOrEmpty(normalizedDir))
         {
-            // Свойства всего канала/монтирования (корень): выбираем все элементы тома
+            // Свойства всего канала/монтирования (корень): считаем все файлы и папки тома
             cmd.CommandText = @"
-                SELECT isdir, name, parent, size
+                SELECT 
+                    COUNT(CASE WHEN isdir = 0 THEN 1 END),
+                    COUNT(CASE WHEN isdir = 1 THEN 1 END),
+                    COALESCE(SUM(size), 0)
                 FROM files
                 WHERE mount_id = @mid 
                   AND (in_trash = @trash OR (@trash = 0 AND (in_trash IS NULL OR in_trash = 0)))
@@ -706,10 +709,13 @@ public class VfsDatabase : IDisposable
         }
         else
         {
-            // Свойства конкретной подпапки: выбираем только элементы внутри неё
+            // Свойства конкретной подпапки: считаем только элементы внутри неё
             string prefixPattern = normalizedDir + "\\%";
             cmd.CommandText = @"
-                SELECT isdir, name, parent, size
+                SELECT 
+                    COUNT(CASE WHEN isdir = 0 THEN 1 END),
+                    COUNT(CASE WHEN isdir = 1 THEN 1 END),
+                    COALESCE(SUM(size), 0)
                 FROM files
                 WHERE mount_id = @mid 
                   AND (parent = @dir COLLATE NOCASE OR parent LIKE @prefix COLLATE NOCASE)
@@ -721,57 +727,13 @@ public class VfsDatabase : IDisposable
             cmd.Parameters.AddWithValue("@trash", inTrash ? 1 : 0);
         }
 
-        var dirPathsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
         using var reader = cmd.ExecuteReader();
-        while (reader.Read())
+        if (reader.Read())
         {
-            bool isDir = reader.GetInt32(0) == 1;
-            string name = reader.GetString(1);
-            string? parent = reader.IsDBNull(2) ? null : reader.GetString(2);
-            long size = reader.GetInt64(3);
-
-            if (isDir)
-            {
-                string dirFull = string.IsNullOrEmpty(parent) ? name : $"{parent}\\{name}";
-                if (string.IsNullOrEmpty(normalizedDir))
-                {
-                    dirPathsSet.Add(dirFull);
-                }
-                else if (!dirFull.Equals(normalizedDir, StringComparison.OrdinalIgnoreCase) &&
-                         dirFull.StartsWith(normalizedDir + "\\", StringComparison.OrdinalIgnoreCase))
-                {
-                    dirPathsSet.Add(dirFull);
-                }
-            }
-            else
-            {
-                filesCount++;
-                totalSize += size;
-
-                // Учитываем все промежуточные родительские папки
-                if (!string.IsNullOrEmpty(parent))
-                {
-                    string cleanParent = parent.Trim('\\').Replace('/', '\\');
-                    string[] segments = cleanParent.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
-                    string accum = "";
-                    for (int i = 0; i < segments.Length; i++)
-                    {
-                        accum = i == 0 ? segments[i] : accum + "\\" + segments[i];
-                        if (string.IsNullOrEmpty(normalizedDir))
-                        {
-                            dirPathsSet.Add(accum);
-                        }
-                        else if (accum.StartsWith(normalizedDir + "\\", StringComparison.OrdinalIgnoreCase))
-                        {
-                            dirPathsSet.Add(accum);
-                        }
-                    }
-                }
-            }
+            filesCount = reader.GetInt32(0);
+            dirsCount = reader.GetInt32(1);
+            totalSize = reader.GetInt64(2);
         }
-
-        dirsCount = dirPathsSet.Count;
     }
 
     public FileRecord? GetFileByUid(string uid)
