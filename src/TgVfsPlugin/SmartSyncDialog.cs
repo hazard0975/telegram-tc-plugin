@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -29,6 +30,57 @@ public class SmartSyncItem
     public long LocalSize { get; set; }
     public DateTime LocalWriteTime { get; set; }
     public string ToolTipDetails { get; set; } = "";
+    public bool IsChecked { get; set; }
+}
+
+public class SmartSyncColumnComparer : IComparer
+{
+    private readonly int _column;
+    private readonly SortOrder _order;
+
+    public SmartSyncColumnComparer(int column, SortOrder order)
+    {
+        _column = column;
+        _order = order;
+    }
+
+    public int Compare(object? x, object? y)
+    {
+        if (x is not ListViewItem itemX || y is not ListViewItem itemY) return 0;
+
+        string textX = _column < itemX.SubItems.Count ? itemX.SubItems[_column].Text : "";
+        string textY = _column < itemY.SubItems.Count ? itemY.SubItems[_column].Text : "";
+
+        int result;
+
+        // Колонки 1 и 5 — Размеры файлов (числа)
+        if (_column == 1 || _column == 5)
+        {
+            long numX = ParseSize(textX);
+            long numY = ParseSize(textY);
+            result = numX.CompareTo(numY);
+        }
+        // Колонки 2 и 4 — Даты ("dd.MM.yy HH:mm:ss")
+        else if (_column == 2 || _column == 4)
+        {
+            DateTime dtX = DateTime.TryParse(textX, out DateTime dx) ? dx : DateTime.MinValue;
+            DateTime dtY = DateTime.TryParse(textY, out DateTime dy) ? dy : DateTime.MinValue;
+            result = dtX.CompareTo(dtY);
+        }
+        else
+        {
+            result = string.Compare(textX, textY, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return _order == SortOrder.Descending ? -result : result;
+    }
+
+    private static long ParseSize(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text == "-") return -1;
+        string clean = text.Replace(" ", "").Replace(",", "").Replace(".", "").Replace("\u00A0", "");
+        return long.TryParse(clean, out long val) ? val : -1;
+    }
 }
 
 public static class SmartSyncDialog
@@ -53,6 +105,9 @@ public static class SmartSyncDialog
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_width"), out int savedW) && savedW >= 840) initWidth = savedW;
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_height"), out int savedH) && savedH >= 520) initHeight = savedH;
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_maximized"), out int savedMax) && savedMax == 1) initMaximized = true;
+
+                bool initHideIdentical = false;
+                if (int.TryParse(SettingsManager.GetSetting("smartsync_hide_identical"), out int savedHide) && savedHide == 1) initHideIdentical = true;
 
                 int margin = 20;
 
@@ -195,7 +250,8 @@ public static class SmartSyncDialog
                                                              $"• Путь на ПК: {diskPath}\n" +
                                                              $"• Размер: {fi.Length:#,##0} байт\n" +
                                                              $"• Дата: {fi.LastWriteTime:dd.MM.yy HH:mm:ss}\n" +
-                                                             $"(отметьте для выгрузки с ПК в Telegram)"
+                                                             $"(отметьте для выгрузки с ПК в Telegram)",
+                                            IsChecked = true
                                         };
 
                                         items.Add(newItem);
@@ -231,6 +287,7 @@ public static class SmartSyncDialog
                                                   $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                   $"• Ожидаемый путь: {expectedPath}\n" +
                                                   $"(отметьте для скачивания из Telegram на ПК)";
+                            item.IsChecked = true;
                             remoteNewerCount++;
                         }
                         else
@@ -257,6 +314,7 @@ public static class SmartSyncDialog
                                                               $"• Дата: {remoteLocalTime:dd.MM.yy HH:mm:ss}\n" +
                                                               $"• Размер: {file.Size:#,##0} байт\n" +
                                                               $"• Источник: {expectedPath}";
+                                        item.IsChecked = false;
                                         identicalCount++;
                                     }
                                     else
@@ -270,6 +328,7 @@ public static class SmartSyncDialog
                                                               $"• Telegram: {file.Size:#,##0} байт ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
                                                               $"• Разница размера: {Math.Abs(item.LocalSize - file.Size):#,##0} байт\n" +
                                                               $"• Источник: {expectedPath}";
+                                        item.IsChecked = false;
                                         mismatchCount++;
                                     }
                                 }
@@ -288,6 +347,7 @@ public static class SmartSyncDialog
                                                           $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                           $"• Опережение:      на {diffStr}\n" +
                                                           $"• Источник:        {expectedPath}";
+                                    item.IsChecked = true;
                                     localNewerCount++;
                                 }
                                 else
@@ -305,6 +365,7 @@ public static class SmartSyncDialog
                                                           $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
                                                           $"• Опережение:       на {diffStr}\n" +
                                                           $"• Источник:         {expectedPath}";
+                                    item.IsChecked = true;
                                     remoteNewerCount++;
                                 }
                             }
@@ -315,6 +376,7 @@ public static class SmartSyncDialog
                                 item.DirectionSymbol = "TG  ❌  ПК";
                                 item.DirectionText = "Пропуск";
                                 item.ToolTipDetails = $"[TG  ❌  ПК] (Ошибка доступа к файлу на ПК)\n• Ошибка: {ex.Message}\n• Путь: {expectedPath}";
+                                item.IsChecked = false;
                                 missingCount++;
                             }
                         }
@@ -341,6 +403,7 @@ public static class SmartSyncDialog
                             item.DirectionSymbol = "TG  ❌  ПК";
                             item.DirectionText = "Пропуск";
                             item.ToolTipDetails = $"[TG  ❌  ПК] (Нет источника на ПК)\nФайл создан в VFS и не привязан к локальному файлу.";
+                            item.IsChecked = false;
                             noSourceCount++;
                         }
                         else if (!File.Exists(file.SourcePath))
@@ -353,6 +416,7 @@ public static class SmartSyncDialog
                                                   $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                   $"• Ожидаемый путь: {file.SourcePath}\n" +
                                                   $"(диск отключен или файл удален)";
+                            item.IsChecked = false;
                             missingCount++;
                         }
                         else
@@ -379,6 +443,7 @@ public static class SmartSyncDialog
                                                               $"• Дата: {remoteLocalTime:dd.MM.yy HH:mm:ss}\n" +
                                                               $"• Размер: {file.Size:#,##0} байт\n" +
                                                               $"• Источник: {file.SourcePath}";
+                                        item.IsChecked = false;
                                         identicalCount++;
                                     }
                                     else
@@ -392,6 +457,7 @@ public static class SmartSyncDialog
                                                               $"• Telegram: {file.Size:#,##0} байт ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
                                                               $"• Разница размера: {Math.Abs(item.LocalSize - file.Size):#,##0} байт\n" +
                                                               $"• Источник: {file.SourcePath}";
+                                        item.IsChecked = false;
                                         mismatchCount++;
                                     }
                                 }
@@ -410,6 +476,7 @@ public static class SmartSyncDialog
                                                           $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                           $"• Опережение:      на {diffStr}\n" +
                                                           $"• Источник:        {file.SourcePath}";
+                                    item.IsChecked = true;
                                     localNewerCount++;
                                 }
                                 else
@@ -427,6 +494,7 @@ public static class SmartSyncDialog
                                                           $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
                                                           $"• Опережение:       на {diffStr}\n" +
                                                           $"• Источник:         {file.SourcePath}";
+                                    item.IsChecked = true;
                                     remoteNewerCount++;
                                 }
                             }
@@ -437,6 +505,7 @@ public static class SmartSyncDialog
                                 item.DirectionSymbol = "TG  ❌  ПК";
                                 item.DirectionText = "Пропуск";
                                 item.ToolTipDetails = $"[TG  ❌  ПК] (Ошибка доступа к файлу на ПК)\n• Ошибка: {ex.Message}\n• Путь: {file.SourcePath}";
+                                item.IsChecked = false;
                                 missingCount++;
                             }
                         }
@@ -446,23 +515,32 @@ public static class SmartSyncDialog
                 }
 
                 // Информационная сводка
-                string summaryText = $"Режим: {(isMirror ? "Зеркало" : "Контейнер")}  |  Элементов: {items.Count}  |  К обновлению: {localNewerCount + remoteNewerCount + localOnlyCount}  |  Идентичны: {identicalCount}";
+                string summaryText = $"Режим: {(isMirror ? "Зеркало" : "Контейнер")}  |  Всего: {items.Count}  |  К обновлению: {localNewerCount + remoteNewerCount + localOnlyCount}  |  Идентичны: {identicalCount}";
                 if (localOnlyCount > 0) summaryText += $"  |  Новых на ПК: {localOnlyCount}";
                 if (mismatchCount > 0) summaryText += $"  |  Разный размер: {mismatchCount}";
-                if (missingCount > 0) summaryText += $"  |  Не найдены на диске: {missingCount}";
-                if (noSourceCount > 0) summaryText += $"  |  Без источника: {noSourceCount}";
+                if (missingCount > 0) summaryText += $"  |  Не найдены: {missingCount}";
 
                 Label summaryLabel = new Label()
                 {
                     Left = 20,
                     Top = 75,
-                    Width = form.ClientSize.Width - 40,
+                    Width = form.ClientSize.Width - 280,
                     Height = 22,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                     Font = new Font("Segoe UI", 9, FontStyle.Bold),
                     Text = summaryText
                 };
                 form.Controls.Add(summaryLabel);
+
+                // Чекбокс «Скрыть идентичные файлы»
+                CheckBox hideIdenticalCb = UiTheme.CreateCheckBox("Скрыть идентичные", 220);
+                hideIdenticalCb.Left = form.ClientSize.Width - margin - hideIdenticalCb.Width;
+                hideIdenticalCb.Top = 73;
+                hideIdenticalCb.Height = 24;
+                hideIdenticalCb.Checked = initHideIdentical;
+                hideIdenticalCb.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                toolTip.SetToolTip(hideIdenticalCb, "Скрыть из списка все файлы, содержимое и даты которых полностью совпадают");
+                form.Controls.Add(hideIdenticalCb);
 
                 // Список файлов ListView
                 ListView listView = new ListView()
@@ -506,112 +584,164 @@ public static class SmartSyncDialog
                 listView.Columns.Add("Размер (ПК)", colPcSizeWidth, HorizontalAlignment.Right);
                 listView.Columns.Add("Оригинал на ПК", colSrcWidth, HorizontalAlignment.Left);
 
-                int rowIndex = 0;
-                foreach (var item in items)
-                {
-                    string vfsDisplayPath = string.IsNullOrEmpty(item.FileRecord.Parent)
-                        ? item.FileRecord.Name
-                        : $"{item.FileRecord.Parent}\\{item.FileRecord.Name}";
+                // Переменные состояния сортировки
+                int sortColumn = -1;
+                SortOrder sortOrder = SortOrder.None;
 
-                    if (!string.IsNullOrEmpty(item.FileRecord.SourcePath))
+                // Функция заполнения ListView
+                void PopulateListView()
+                {
+                    listView.BeginUpdate();
+                    listView.Items.Clear();
+
+                    bool hideIdentical = hideIdenticalCb.Checked;
+                    int rowIndex = 0;
+
+                    foreach (var item in items)
                     {
-                        string origName = Path.GetFileName(item.FileRecord.SourcePath);
-                        if (!string.Equals(origName, item.FileRecord.Name, StringComparison.OrdinalIgnoreCase))
+                        if (hideIdentical && item.Status == SyncItemStatus.Identical)
                         {
-                            vfsDisplayPath += " 🏷️";
-                            if (!string.IsNullOrEmpty(item.ToolTipDetails) && !item.ToolTipDetails.Contains("🏷️"))
+                            continue;
+                        }
+
+                        string vfsDisplayPath = string.IsNullOrEmpty(item.FileRecord.Parent)
+                            ? item.FileRecord.Name
+                            : $"{item.FileRecord.Parent}\\{item.FileRecord.Name}";
+
+                        if (!string.IsNullOrEmpty(item.FileRecord.SourcePath))
+                        {
+                            string origName = Path.GetFileName(item.FileRecord.SourcePath);
+                            if (!string.Equals(origName, item.FileRecord.Name, StringComparison.OrdinalIgnoreCase))
                             {
-                                item.ToolTipDetails += $"\n• 🏷️ Переименован в VFS (на ПК: {origName})";
+                                vfsDisplayPath += " 🏷️";
+                                if (!string.IsNullOrEmpty(item.ToolTipDetails) && !item.ToolTipDetails.Contains("🏷️"))
+                                {
+                                    item.ToolTipDetails += $"\n• 🏷️ Переименован в VFS (на ПК: {origName})";
+                                }
                             }
                         }
+
+                        string itemText = vfsDisplayPath;
+                        string tgSizeText = item.Status == SyncItemStatus.LocalOnly ? "-" : item.FileRecord.Size.ToString("#,##0");
+                        string tgDateText = item.Status == SyncItemStatus.LocalOnly ? "-" : item.FileRecord.MTime.ToLocalTime().ToString("dd.MM.yy HH:mm:ss");
+                        string dirSymbol = item.DirectionSymbol;
+                        string pcDateText = (item.Status == SyncItemStatus.SourceNotFound || item.Status == SyncItemStatus.NoSourceConfigured)
+                            ? "-"
+                            : item.LocalWriteTime.ToString("dd.MM.yy HH:mm:ss");
+                        string pcSizeText = (item.Status == SyncItemStatus.SourceNotFound || item.Status == SyncItemStatus.NoSourceConfigured)
+                            ? "-"
+                            : item.LocalSize.ToString("#,##0");
+                        string pcPathText = item.FileRecord.SourcePath ?? "";
+
+                        var lvi = new ListViewItem(itemText)
+                        {
+                            Checked = item.IsChecked,
+                            Tag = item
+                        };
+
+                        lvi.SubItems.Add(tgSizeText);
+                        lvi.SubItems.Add(tgDateText);
+                        lvi.SubItems.Add(dirSymbol);
+                        lvi.SubItems.Add(pcDateText);
+                        lvi.SubItems.Add(pcSizeText);
+                        lvi.SubItems.Add(pcPathText);
+
+                        lvi.UseItemStyleForSubItems = false;
+                        Color rowFg;
+                        Color rowBg;
+                        Font rowFont;
+
+                        if (item.Status == SyncItemStatus.LocalOnly || item.Status == SyncItemStatus.LocalNewer)
+                        {
+                            rowFg = Color.FromArgb(0, 110, 0);
+                            rowBg = Color.FromArgb(235, 248, 235);
+                            rowFont = new Font(listView.Font, FontStyle.Bold);
+                        }
+                        else if (item.Status == SyncItemStatus.RemoteNewer)
+                        {
+                            rowFg = Color.FromArgb(0, 70, 180);
+                            rowBg = Color.FromArgb(235, 244, 255);
+                            rowFont = new Font(listView.Font, FontStyle.Bold);
+                        }
+                        else if (item.Status == SyncItemStatus.SizeMismatch)
+                        {
+                            rowFg = Color.FromArgb(180, 100, 0);
+                            rowBg = Color.FromArgb(255, 247, 230);
+                            rowFont = new Font(listView.Font, FontStyle.Bold);
+                        }
+                        else if (item.Status == SyncItemStatus.SourceNotFound || item.Status == SyncItemStatus.NoSourceConfigured)
+                        {
+                            rowFg = Color.FromArgb(170, 0, 0);
+                            rowBg = Color.FromArgb(255, 235, 235);
+                            rowFont = new Font(listView.Font, FontStyle.Bold);
+                        }
+                        else
+                        {
+                            rowFg = Color.FromArgb(90, 90, 90);
+                            rowBg = (rowIndex % 2 == 0) ? Color.White : Color.FromArgb(248, 249, 250);
+                            rowFont = new Font(listView.Font, FontStyle.Regular);
+                        }
+
+                        lvi.ForeColor = rowFg;
+                        lvi.BackColor = rowBg;
+                        lvi.Font = rowFont;
+
+                        foreach (ListViewItem.ListViewSubItem sub in lvi.SubItems)
+                        {
+                            sub.ForeColor = rowFg;
+                            sub.BackColor = rowBg;
+                            sub.Font = rowFont;
+                        }
+
+                        lvi.SubItems[3].Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+
+                        listView.Items.Add(lvi);
+                        rowIndex++;
                     }
 
-                    string itemText = vfsDisplayPath;
-
-                    string tgSizeText = item.Status == SyncItemStatus.LocalOnly ? "-" : item.FileRecord.Size.ToString("#,##0");
-                    string tgDateText = item.Status == SyncItemStatus.LocalOnly ? "-" : item.FileRecord.MTime.ToLocalTime().ToString("dd.MM.yy HH:mm:ss");
-                    string dirSymbol = item.DirectionSymbol;
-                    string pcDateText = (item.Status == SyncItemStatus.SourceNotFound || item.Status == SyncItemStatus.NoSourceConfigured)
-                        ? "-"
-                        : item.LocalWriteTime.ToString("dd.MM.yy HH:mm:ss");
-                    string pcSizeText = (item.Status == SyncItemStatus.SourceNotFound || item.Status == SyncItemStatus.NoSourceConfigured)
-                        ? "-"
-                        : item.LocalSize.ToString("#,##0");
-                    string pcPathText = item.FileRecord.SourcePath ?? "";
-
-                    var lvi = new ListViewItem(itemText);
-                    lvi.SubItems.Add(tgSizeText);
-                    lvi.SubItems.Add(tgDateText);
-                    lvi.SubItems.Add(dirSymbol);
-                    lvi.SubItems.Add(pcDateText);
-                    lvi.SubItems.Add(pcSizeText);
-                    lvi.SubItems.Add(pcPathText);
-                    lvi.Tag = item;
-
-                    lvi.UseItemStyleForSubItems = false;
-                    Color rowFg;
-                    Color rowBg;
-                    Font rowFont;
-
-                    if (item.Status == SyncItemStatus.LocalOnly)
+                    if (sortColumn >= 0 && sortOrder != SortOrder.None)
                     {
-                        lvi.Checked = true;
-                        rowFg = Color.FromArgb(0, 120, 0);
-                        rowBg = Color.FromArgb(235, 248, 235);
-                        rowFont = new Font(listView.Font, FontStyle.Bold);
+                        listView.ListViewItemSorter = new SmartSyncColumnComparer(sortColumn, sortOrder);
+                        listView.Sort();
                     }
-                    else if (item.Status == SyncItemStatus.LocalNewer)
+
+                    listView.EndUpdate();
+                }
+
+                // Отслеживание изменений галочек элементов
+                listView.ItemChecked += (s, e) =>
+                {
+                    if (e.Item.Tag is SmartSyncItem item)
                     {
-                        lvi.Checked = true;
-                        rowFg = Color.FromArgb(0, 110, 0);
-                        rowBg = Color.FromArgb(235, 248, 235);
-                        rowFont = new Font(listView.Font, FontStyle.Bold);
+                        item.IsChecked = e.Item.Checked;
                     }
-                    else if (item.Status == SyncItemStatus.RemoteNewer)
+                };
+
+                // Переключение фильтра скрытия идентичных
+                hideIdenticalCb.CheckedChanged += (s, e) =>
+                {
+                    PopulateListView();
+                };
+
+                // Сортировка при клике по заголовкам колонок
+                listView.ColumnClick += (s, e) =>
+                {
+                    if (e.Column == sortColumn)
                     {
-                        lvi.Checked = true;
-                        rowFg = Color.FromArgb(0, 70, 180);
-                        rowBg = Color.FromArgb(235, 244, 255);
-                        rowFont = new Font(listView.Font, FontStyle.Bold);
-                    }
-                    else if (item.Status == SyncItemStatus.SizeMismatch)
-                    {
-                        lvi.Checked = false;
-                        rowFg = Color.FromArgb(180, 100, 0);
-                        rowBg = Color.FromArgb(255, 247, 230);
-                        rowFont = new Font(listView.Font, FontStyle.Bold);
-                    }
-                    else if (item.Status == SyncItemStatus.SourceNotFound || item.Status == SyncItemStatus.NoSourceConfigured)
-                    {
-                        lvi.Checked = false;
-                        rowFg = Color.FromArgb(170, 0, 0);
-                        rowBg = Color.FromArgb(255, 235, 235);
-                        rowFont = new Font(listView.Font, FontStyle.Bold);
+                        sortOrder = (sortOrder == SortOrder.Ascending) ? SortOrder.Descending : SortOrder.Ascending;
                     }
                     else
                     {
-                        lvi.Checked = false;
-                        rowFg = Color.FromArgb(90, 90, 90);
-                        rowBg = (rowIndex % 2 == 0) ? Color.White : Color.FromArgb(248, 249, 250);
-                        rowFont = new Font(listView.Font, FontStyle.Regular);
+                        sortColumn = e.Column;
+                        sortOrder = SortOrder.Ascending;
                     }
 
-                    lvi.ForeColor = rowFg;
-                    lvi.BackColor = rowBg;
-                    lvi.Font = rowFont;
+                    listView.ListViewItemSorter = new SmartSyncColumnComparer(sortColumn, sortOrder);
+                    listView.Sort();
+                };
 
-                    foreach (ListViewItem.ListViewSubItem sub in lvi.SubItems)
-                    {
-                        sub.ForeColor = rowFg;
-                        sub.BackColor = rowBg;
-                        sub.Font = rowFont;
-                    }
-
-                    lvi.SubItems[3].Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
-
-                    listView.Items.Add(lvi);
-                    rowIndex++;
-                }
+                // Заполняем список при старте
+                PopulateListView();
 
                 ToolTip rowToolTip = new ToolTip()
                 {
@@ -675,6 +805,31 @@ public static class SmartSyncDialog
 
                 form.Controls.Add(listView);
 
+                // Элементы индикации прогресса синхронизации
+                Label progressLabel = new Label()
+                {
+                    Left = 20,
+                    Top = form.ClientSize.Height - bottomPanel.Height - 50,
+                    Width = form.ClientSize.Width - 40,
+                    Height = 20,
+                    Font = new Font("Segoe UI", 9, FontStyle.Regular),
+                    ForeColor = Color.FromArgb(40, 40, 40),
+                    Visible = false,
+                    Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+                };
+                form.Controls.Add(progressLabel);
+
+                ProgressBar progressBar = new ProgressBar()
+                {
+                    Left = 20,
+                    Top = form.ClientSize.Height - bottomPanel.Height - 26,
+                    Width = form.ClientSize.Width - 40,
+                    Height = 16,
+                    Visible = false,
+                    Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+                };
+                form.Controls.Add(progressBar);
+
                 // Кнопки управления в нижней панели
                 Button selectUpdatesBtn = UiTheme.CreateButton("Выбрать разные", "Отметить галочками все файлы, требующие синхронизации", toolTip, 130);
                 selectUpdatesBtn.Left = margin;
@@ -682,15 +837,13 @@ public static class SmartSyncDialog
                 selectUpdatesBtn.Anchor = AnchorStyles.Top | AnchorStyles.Left;
                 selectUpdatesBtn.Click += (s, e) =>
                 {
-                    foreach (ListViewItem lvi in listView.Items)
+                    foreach (var it in items)
                     {
-                        if (lvi.Tag is SmartSyncItem it)
-                        {
-                            lvi.Checked = (it.Status == SyncItemStatus.LocalNewer ||
-                                           it.Status == SyncItemStatus.RemoteNewer ||
-                                           it.Status == SyncItemStatus.LocalOnly);
-                        }
+                        it.IsChecked = (it.Status == SyncItemStatus.LocalNewer ||
+                                        it.Status == SyncItemStatus.RemoteNewer ||
+                                        it.Status == SyncItemStatus.LocalOnly);
                     }
+                    PopulateListView();
                 };
 
                 Button clearSelectionBtn = UiTheme.CreateButton("Снять выбор", "Снять отметки выбора со всех файлов в списке", toolTip, 100);
@@ -699,7 +852,8 @@ public static class SmartSyncDialog
                 clearSelectionBtn.Anchor = AnchorStyles.Top | AnchorStyles.Left;
                 clearSelectionBtn.Click += (s, e) =>
                 {
-                    foreach (ListViewItem lvi in listView.Items) lvi.Checked = false;
+                    foreach (var it in items) it.IsChecked = false;
+                    PopulateListView();
                 };
 
                 Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно синхронизации", toolTip, 85, dialogResult: DialogResult.Cancel);
@@ -712,21 +866,58 @@ public static class SmartSyncDialog
                 syncBtn.Top = 11;
                 syncBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
+                bool cancellationRequested = false;
+
                 syncBtn.Click += async (s, e) =>
                 {
+                    int totalChecked = 0;
+                    foreach (var it in items) if (it.IsChecked) totalChecked++;
+
+                    if (totalChecked == 0)
+                    {
+                        MessageBox.Show(form, "Отметьте хотя бы один файл для синхронизации.", "Smart Sync", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+
+                    cancellationRequested = false;
                     syncBtn.Enabled = false;
-                    closeBtn.Enabled = false;
                     selectUpdatesBtn.Enabled = false;
                     clearSelectionBtn.Enabled = false;
+                    hideIdenticalCb.Enabled = false;
+                    listView.Enabled = false;
+
+                    closeBtn.Text = "Отмена";
+                    toolTip.SetToolTip(closeBtn, "Прервать выполняемую синхронизацию");
+                    closeBtn.DialogResult = DialogResult.None;
+
+                    progressLabel.Visible = true;
+                    progressBar.Visible = true;
+                    progressBar.Minimum = 0;
+                    progressBar.Maximum = totalChecked;
+                    progressBar.Value = 0;
+
+                    // Уменьшаем высоту ListView во время показа индикатора
+                    listView.Height = form.ClientSize.Height - bottomPanel.Height - 165;
 
                     int updated = 0;
                     int errors = 0;
+                    int processed = 0;
 
                     try
                     {
-                        foreach (ListViewItem lvi in listView.Items)
+                        foreach (var it in items)
                         {
-                            if (!lvi.Checked || lvi.Tag is not SmartSyncItem it) continue;
+                            if (cancellationRequested)
+                            {
+                                break;
+                            }
+
+                            if (!it.IsChecked) continue;
+
+                            processed++;
+                            progressBar.Value = Math.Min(processed, totalChecked);
+                            progressLabel.Text = $"Синхронизация {processed} из {totalChecked}: {it.FileRecord.Name}...";
+                            Application.DoEvents();
 
                             if ((it.Status == SyncItemStatus.LocalNewer || it.Status == SyncItemStatus.LocalOnly) && !string.IsNullOrEmpty(it.FileRecord.SourcePath))
                             {
@@ -771,20 +962,13 @@ public static class SmartSyncDialog
                                             it.FileRecord.MTime = fi.LastWriteTimeUtc;
                                             it.LocalSize = fi.Length;
                                             it.LocalWriteTime = fi.LastWriteTime;
-
-                                            lvi.SubItems[1].Text = fi.Length.ToString("#,##0");
-                                            lvi.SubItems[2].Text = fi.LastWriteTime.ToString("dd.MM.yy HH:mm:ss");
-                                            lvi.SubItems[3].Text = "TG  =  ПК";
-                                            lvi.SubItems[4].Text = fi.LastWriteTime.ToString("dd.MM.yy HH:mm:ss");
-                                            lvi.SubItems[5].Text = fi.Length.ToString("#,##0");
+                                            it.IsChecked = false;
 
                                             it.ToolTipDetails = $"[TG  =  ПК] (Идентичны / Синхронизировано)\n" +
                                                                   $"• Дата: {fi.LastWriteTime:dd.MM.yy HH:mm:ss}\n" +
                                                                   $"• Размер: {fi.Length:#,##0} байт\n" +
                                                                   $"• Источник: {it.FileRecord.SourcePath}";
 
-                                            lvi.Checked = false;
-                                            lvi.ForeColor = Color.FromArgb(90, 90, 90);
                                             updated++;
                                         }
                                         else
@@ -826,20 +1010,13 @@ public static class SmartSyncDialog
                                         it.DirectionText = "Синхронизировано";
                                         it.LocalSize = fi.Length;
                                         it.LocalWriteTime = fi.LastWriteTime;
-
-                                        lvi.SubItems[1].Text = it.FileRecord.Size.ToString("#,##0");
-                                        lvi.SubItems[2].Text = it.FileRecord.MTime.ToLocalTime().ToString("dd.MM.yy HH:mm:ss");
-                                        lvi.SubItems[3].Text = "TG  =  ПК";
-                                        lvi.SubItems[4].Text = fi.LastWriteTime.ToString("dd.MM.yy HH:mm:ss");
-                                        lvi.SubItems[5].Text = fi.Length.ToString("#,##0");
+                                        it.IsChecked = false;
 
                                         it.ToolTipDetails = $"[TG  =  ПК] (Идентичны / Синхронизировано)\n" +
                                                               $"• Дата: {fi.LastWriteTime:dd.MM.yy HH:mm:ss}\n" +
                                                               $"• Размер: {fi.Length:#,##0} байт\n" +
                                                               $"• Источник: {it.FileRecord.SourcePath}";
 
-                                        lvi.Checked = false;
-                                        lvi.ForeColor = Color.FromArgb(90, 90, 90);
                                         updated++;
                                     }
                                     else
@@ -855,14 +1032,37 @@ public static class SmartSyncDialog
                         }
 
                         Win32Api.RefreshActivePanel();
-                        MessageBox.Show(form, $"Синхронизация завершена.\nОбработано элементов: {updated}\nОшибок: {errors}", "Smart Sync", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        PopulateListView();
+
+                        string statusMsg = cancellationRequested
+                            ? $"Синхронизация отменена пользователем.\nОбработано: {updated}\nОшибок: {errors}"
+                            : $"Синхронизация завершена.\nУспешно обработано: {updated}\nОшибок: {errors}";
+
+                        MessageBox.Show(form, statusMsg, "Smart Sync", MessageBoxButtons.OK, cancellationRequested ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
                     }
                     finally
                     {
                         syncBtn.Enabled = true;
-                        closeBtn.Enabled = true;
                         selectUpdatesBtn.Enabled = true;
                         clearSelectionBtn.Enabled = true;
+                        hideIdenticalCb.Enabled = true;
+                        listView.Enabled = true;
+
+                        closeBtn.Text = "Закрыть";
+                        toolTip.SetToolTip(closeBtn, "Закрыть окно синхронизации");
+                        closeBtn.DialogResult = DialogResult.Cancel;
+
+                        progressLabel.Visible = false;
+                        progressBar.Visible = false;
+                        listView.Height = form.ClientSize.Height - bottomPanel.Height - 115;
+                    }
+                };
+
+                closeBtn.Click += (s, e) =>
+                {
+                    if (!syncBtn.Enabled)
+                    {
+                        cancellationRequested = true;
                     }
                 };
 
@@ -876,6 +1076,8 @@ public static class SmartSyncDialog
                 {
                     try
                     {
+                        SettingsManager.SaveSetting("smartsync_hide_identical", hideIdenticalCb.Checked ? "1" : "0");
+
                         if (listView.Columns.Count >= 7)
                         {
                             SettingsManager.SaveSetting("smartsync_col_vfs", listView.Columns[0].Width.ToString());

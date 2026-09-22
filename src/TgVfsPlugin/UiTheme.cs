@@ -167,6 +167,22 @@ public static class UiTheme
     }
 
     /// <summary>
+    /// Создает стандартизированный CheckBox с авто-размером или фиксированной шириной.
+    /// </summary>
+    public static CheckBox CreateCheckBox(string text, int width = 180, Font? font = null)
+    {
+        font ??= DefaultFont;
+        return new CheckBox()
+        {
+            Text = text,
+            Width = width,
+            Font = font,
+            AutoSize = false,
+            UseVisualStyleBackColor = true
+        };
+    }
+
+    /// <summary>
     /// Создает нижнюю панель для кнопок диалога с тонким верхним разделителем.
     /// </summary>
     public static Panel CreateBottomPanel(int height = DefaultBottomPanelHeight)
