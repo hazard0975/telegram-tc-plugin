@@ -1026,63 +1026,96 @@ public static class SmartSyncDialog
 
                 ToolTip rowToolTip = new ToolTip()
                 {
-                    AutoPopDelay = 12000,
-                    InitialDelay = 200,
-                    ReshowDelay = 100,
+                    AutoPopDelay = 10000,
+                    InitialDelay = 700,
+                    ReshowDelay = 300,
                     ShowAlways = true,
                     UseFading = true,
                     UseAnimation = true
                 };
 
-                ListViewItem? lastHoveredItem = null;
+                System.Windows.Forms.Timer hoverTimer = new System.Windows.Forms.Timer()
+                {
+                    Interval = 700
+                };
+
+                ListViewItem? targetHoverItem = null;
+                ListViewItem? currentlyShownItem = null;
+                Point lastHoverPoint = Point.Empty;
+
+                hoverTimer.Tick += (s, e) =>
+                {
+                    hoverTimer.Stop();
+                    if (form.IsDisposed || !listView.IsHandleCreated) return;
+
+                    if (targetHoverItem != null && targetHoverItem.Tag is SmartSyncItem syncItem && !string.IsNullOrEmpty(syncItem.ToolTipDetails))
+                    {
+                        // Умный расчет координат, чтобы подсказка не вылезала за границы и не наезжала на курсор
+                        int tipEstWidth = 380;
+                        int tipEstHeight = 125;
+
+                        int posX = lastHoverPoint.X + 20;
+                        int posY = lastHoverPoint.Y + 20;
+
+                        if (posX + tipEstWidth > listView.ClientSize.Width - 15)
+                        {
+                            posX = Math.Max(10, lastHoverPoint.X - tipEstWidth - 15);
+                        }
+
+                        if (posY + tipEstHeight > listView.ClientSize.Height - 15)
+                        {
+                            posY = Math.Max(10, lastHoverPoint.Y - tipEstHeight - 15);
+                        }
+
+                        rowToolTip.Show(syncItem.ToolTipDetails, listView, posX, posY, 9000);
+                        currentlyShownItem = targetHoverItem;
+                    }
+                };
 
                 listView.MouseMove += (s, e) =>
                 {
                     var hit = listView.HitTest(e.Location);
-                    if (hit.Item != null)
+                    if (hit.Item != null && hit.Item.Tag is SmartSyncItem syncItem && !string.IsNullOrEmpty(syncItem.ToolTipDetails))
                     {
-                        if (hit.Item != lastHoveredItem)
+                        if (hit.Item != targetHoverItem)
                         {
-                            lastHoveredItem = hit.Item;
-                            if (hit.Item.Tag is SmartSyncItem syncItem && !string.IsNullOrEmpty(syncItem.ToolTipDetails))
-                            {
-                                rowToolTip.Show(syncItem.ToolTipDetails, listView, e.X + 16, e.Y + 16, 10000);
-                            }
-                            else
+                            targetHoverItem = hit.Item;
+                            lastHoverPoint = e.Location;
+                            hoverTimer.Stop();
+
+                            if (currentlyShownItem != hit.Item)
                             {
                                 rowToolTip.Hide(listView);
+                                currentlyShownItem = null;
                             }
+
+                            hoverTimer.Start();
                         }
                     }
                     else
                     {
-                        if (lastHoveredItem != null)
+                        if (targetHoverItem != null)
                         {
-                            lastHoveredItem = null;
+                            targetHoverItem = null;
+                            hoverTimer.Stop();
                             rowToolTip.Hide(listView);
+                            currentlyShownItem = null;
                         }
                     }
                 };
 
-                listView.ItemMouseHover += (s, e) =>
+                void HideAndResetTip()
                 {
-                    if (e.Item != null && e.Item.Tag is SmartSyncItem syncItem && !string.IsNullOrEmpty(syncItem.ToolTipDetails))
-                    {
-                        Point mousePos = listView.PointToClient(Cursor.Position);
-                        rowToolTip.Show(syncItem.ToolTipDetails, listView, mousePos.X + 16, mousePos.Y + 16, 10000);
-                    }
-                };
-
-                listView.MouseLeave += (s, e) =>
-                {
-                    lastHoveredItem = null;
+                    hoverTimer.Stop();
+                    targetHoverItem = null;
+                    currentlyShownItem = null;
                     rowToolTip.Hide(listView);
-                };
+                }
 
-                listView.MouseDown += (s, e) =>
-                {
-                    rowToolTip.Hide(listView);
-                };
+                listView.MouseLeave += (s, e) => HideAndResetTip();
+                listView.MouseDown += (s, e) => HideAndResetTip();
+                listView.MouseWheel += (s, e) => HideAndResetTip();
+                form.Deactivate += (s, e) => HideAndResetTip();
 
                 // Переменные паузы и отмены
                 ManualResetEventSlim pauseGate = new ManualResetEventSlim(true);
@@ -1446,6 +1479,10 @@ public static class SmartSyncDialog
                 // Сохранение положения формы при закрытии
                 form.FormClosing += (s, e) =>
                 {
+                    hoverTimer.Stop();
+                    hoverTimer.Dispose();
+                    rowToolTip.Dispose();
+
                     if (closeBtn.Text == "Отмена")
                     {
                         cancellationRequested = true;
