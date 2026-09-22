@@ -2013,7 +2013,16 @@ public static unsafe class WfxExports
 
             if (isInTrash)
             {
-                // Удаление элемента из корзины (удаление навсегда без дублирующего окна - пользователь уже подтвердил в Total Commander)
+                // Если канал находится в корзине (mount.InTrash == 1),
+                // блокируем удаление файлов по F8! Это защищает сообщения в Telegram от стирания при нажатии F8 на папке канала в корзине.
+                // Окончательное удаление канала выполняется ТОЛЬКО через меню [❌] Удалить папку.
+                if (mount.InTrash == 1)
+                {
+                    Logger.Warn("WFX", $"[DELETE BLOCKED] Channel '{channelName}' is in Trash (InTrash=1). File deletion via F8 is prohibited: '{cleanPath}'. Use '[❌] Удалить папку'.");
+                    return 0; // отказ (false)
+                }
+
+                // Удаление элемента из корзины активного канала (удаление навсегда без дублирующего окна - пользователь уже подтвердил в Total Commander)
                 var trashFile = _db.GetTrashFileByVersionedName(mount.Id, fileName, parentSubPath);
                 if (trashFile != null)
                 {
@@ -2146,7 +2155,13 @@ public static unsafe class WfxExports
             {
                 if (isInTrash)
                 {
-                    // Удаление подпапки ВНУТРИ корзины навсегда
+                    if (mount.InTrash == 1)
+                    {
+                        Logger.Warn("WFX", $"[REMOVEDIR BLOCKED] Channel '{channelName}' is in Trash (InTrash=1). Subfolder deletion via F8 is prohibited.");
+                        return 0; // отказ (false)
+                    }
+
+                    // Удаление подпапки ВНУТРИ корзины активного канала навсегда
                     var trashRecords = _db.GetTrashSubTreeFileRecords(mount.Id, subPath);
                     PurgeTrashRecords(mount.Id, mount.ChannelId, trashRecords);
                     return 1;
