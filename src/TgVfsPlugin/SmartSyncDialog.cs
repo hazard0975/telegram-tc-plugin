@@ -186,16 +186,16 @@ public static class SmartSyncDialog
                                             FileRecord = syntheticRecord,
                                             Status = SyncItemStatus.LocalOnly,
                                             StatusText = "Новый на ПК",
-                                            DirectionSymbol = "-->>",
-                                            DirectionText = "ПК -> Telegram",
+                                            DirectionSymbol = "TG <<-- ПК",
+                                            DirectionText = "ПК -> TG",
                                             LocalSize = fi.Length,
                                             LocalWriteTime = fi.LastWriteTime,
-                                            ToolTipDetails = $"[-->> Новый файл на локальном диске ПК]\n" +
+                                            ToolTipDetails = $"[TG <<-- ПК] (Новый файл на локальном диске ПК)\n" +
                                                              $"• Отсутствует в VFS и Telegram\n" +
                                                              $"• Путь на ПК: {diskPath}\n" +
                                                              $"• Размер: {fi.Length:#,##0} байт\n" +
                                                              $"• Дата: {fi.LastWriteTime:dd.MM.yy HH:mm:ss}\n" +
-                                                             $"(отметьте для выгрузки в Telegram)"
+                                                             $"(отметьте для выгрузки с ПК в Telegram)"
                                         };
 
                                         items.Add(newItem);
@@ -225,9 +225,9 @@ public static class SmartSyncDialog
                         {
                             item.Status = SyncItemStatus.RemoteNewer;
                             item.StatusText = "Отсутствует на ПК";
-                            item.DirectionSymbol = "<<--";
-                            item.DirectionText = "Telegram -> ПК";
-                            item.ToolTipDetails = $"[<<-- Файл отсутствует на локальном диске ПК]\n" +
+                            item.DirectionSymbol = "TG -->> ПК";
+                            item.DirectionText = "TG -> ПК";
+                            item.ToolTipDetails = $"[TG -->> ПК] (Файл отсутствует на локальном диске ПК)\n" +
                                                   $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                   $"• Ожидаемый путь: {expectedPath}\n" +
                                                   $"(отметьте для скачивания из Telegram на ПК)";
@@ -251,9 +251,9 @@ public static class SmartSyncDialog
                                     {
                                         item.Status = SyncItemStatus.Identical;
                                         item.StatusText = "Идентичны";
-                                        item.DirectionSymbol = "=";
+                                        item.DirectionSymbol = "TG  =  ПК";
                                         item.DirectionText = "Синхронизировано";
-                                        item.ToolTipDetails = $"[= Идентичны]\n" +
+                                        item.ToolTipDetails = $"[TG  =  ПК] (Идентичны)\n" +
                                                               $"• Дата: {remoteLocalTime:dd.MM.yy HH:mm:ss}\n" +
                                                               $"• Размер: {file.Size:#,##0} байт\n" +
                                                               $"• Источник: {expectedPath}";
@@ -263,9 +263,9 @@ public static class SmartSyncDialog
                                     {
                                         item.Status = SyncItemStatus.SizeMismatch;
                                         item.StatusText = "⚠️ Разный размер";
-                                        item.DirectionSymbol = "≠";
+                                        item.DirectionSymbol = "TG  ≠  ПК";
                                         item.DirectionText = "Требует решения";
-                                        item.ToolTipDetails = $"[⚠️ Несовпадение размеров при совпадающей дате]\n" +
+                                        item.ToolTipDetails = $"[TG  ≠  ПК] (Несовпадение размеров при совпадающей дате)\n" +
                                                               $"• Диск ПК:  {item.LocalSize:#,##0} байт ({item.LocalWriteTime:dd.MM.yy HH:mm:ss})\n" +
                                                               $"• Telegram: {file.Size:#,##0} байт ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
                                                               $"• Разница размера: {Math.Abs(item.LocalSize - file.Size):#,##0} байт\n" +
@@ -277,13 +277,13 @@ public static class SmartSyncDialog
                                 {
                                     item.Status = SyncItemStatus.LocalNewer;
                                     item.StatusText = "На ПК новее";
-                                    item.DirectionSymbol = "-->>";
-                                    item.DirectionText = "ПК -> Telegram";
+                                    item.DirectionSymbol = "TG <<-- ПК";
+                                    item.DirectionText = "ПК -> TG";
 
                                     TimeSpan span = fi.LastWriteTimeUtc - file.MTime.ToUniversalTime();
                                     string diffStr = FormatTimeSpan(span);
 
-                                    item.ToolTipDetails = $"[-->> На ПК новее] (ПК -->> Telegram)\n" +
+                                    item.ToolTipDetails = $"[TG <<-- ПК] (На ПК новее — выгрузка в TG)\n" +
                                                           $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
                                                           $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                           $"• Опережение:      на {diffStr}\n" +
@@ -294,13 +294,13 @@ public static class SmartSyncDialog
                                 {
                                     item.Status = SyncItemStatus.RemoteNewer;
                                     item.StatusText = "В TG новее";
-                                    item.DirectionSymbol = "<<--";
-                                    item.DirectionText = "Telegram -> ПК";
+                                    item.DirectionSymbol = "TG -->> ПК";
+                                    item.DirectionText = "TG -> ПК";
 
                                     TimeSpan span = file.MTime.ToUniversalTime() - fi.LastWriteTimeUtc;
                                     string diffStr = FormatTimeSpan(span);
 
-                                    item.ToolTipDetails = $"[<<-- В Telegram новее] (Telegram <<-- ПК)\n" +
+                                    item.ToolTipDetails = $"[TG -->> ПК] (В Telegram новее — скачивание на ПК)\n" +
                                                           $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                           $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
                                                           $"• Опережение:       на {diffStr}\n" +
@@ -312,9 +312,9 @@ public static class SmartSyncDialog
                             {
                                 item.Status = SyncItemStatus.SourceNotFound;
                                 item.StatusText = "Ошибка доступа";
-                                item.DirectionSymbol = "❌";
+                                item.DirectionSymbol = "TG  ❌  ПК";
                                 item.DirectionText = "Пропуск";
-                                item.ToolTipDetails = $"[❌ Ошибка доступа к файлу на ПК]\n• Ошибка: {ex.Message}\n• Путь: {expectedPath}";
+                                item.ToolTipDetails = $"[TG  ❌  ПК] (Ошибка доступа к файлу на ПК)\n• Ошибка: {ex.Message}\n• Путь: {expectedPath}";
                                 missingCount++;
                             }
                         }
@@ -338,18 +338,18 @@ public static class SmartSyncDialog
                         {
                             item.Status = SyncItemStatus.NoSourceConfigured;
                             item.StatusText = "Виртуальный";
-                            item.DirectionSymbol = "❌";
+                            item.DirectionSymbol = "TG  ❌  ПК";
                             item.DirectionText = "Пропуск";
-                            item.ToolTipDetails = $"[❌ Нет источника на ПК]\nФайл создан в VFS и не привязан к локальному файлу.";
+                            item.ToolTipDetails = $"[TG  ❌  ПК] (Нет источника на ПК)\nФайл создан в VFS и не привязан к локальному файлу.";
                             noSourceCount++;
                         }
                         else if (!File.Exists(file.SourcePath))
                         {
                             item.Status = SyncItemStatus.SourceNotFound;
                             item.StatusText = "Не найден на ПК";
-                            item.DirectionSymbol = "❌";
+                            item.DirectionSymbol = "TG  ❌  ПК";
                             item.DirectionText = "Пропуск";
-                            item.ToolTipDetails = $"[❌ Файл-источник не найден на диске ПК]\n" +
+                            item.ToolTipDetails = $"[TG  ❌  ПК] (Файл-источник не найден на диске ПК)\n" +
                                                   $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                   $"• Ожидаемый путь: {file.SourcePath}\n" +
                                                   $"(диск отключен или файл удален)";
@@ -373,9 +373,9 @@ public static class SmartSyncDialog
                                     {
                                         item.Status = SyncItemStatus.Identical;
                                         item.StatusText = "Идентичны";
-                                        item.DirectionSymbol = "=";
+                                        item.DirectionSymbol = "TG  =  ПК";
                                         item.DirectionText = "Синхронизировано";
-                                        item.ToolTipDetails = $"[= Идентичны]\n" +
+                                        item.ToolTipDetails = $"[TG  =  ПК] (Идентичны)\n" +
                                                               $"• Дата: {remoteLocalTime:dd.MM.yy HH:mm:ss}\n" +
                                                               $"• Размер: {file.Size:#,##0} байт\n" +
                                                               $"• Источник: {file.SourcePath}";
@@ -385,9 +385,9 @@ public static class SmartSyncDialog
                                     {
                                         item.Status = SyncItemStatus.SizeMismatch;
                                         item.StatusText = "⚠️ Разный размер";
-                                        item.DirectionSymbol = "≠";
+                                        item.DirectionSymbol = "TG  ≠  ПК";
                                         item.DirectionText = "Требует решения";
-                                        item.ToolTipDetails = $"[⚠️ Несовпадение размеров при совпадающей дате]\n" +
+                                        item.ToolTipDetails = $"[TG  ≠  ПК] (Несовпадение размеров при совпадающей дате)\n" +
                                                               $"• Диск ПК:  {item.LocalSize:#,##0} байт ({item.LocalWriteTime:dd.MM.yy HH:mm:ss})\n" +
                                                               $"• Telegram: {file.Size:#,##0} байт ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
                                                               $"• Разница размера: {Math.Abs(item.LocalSize - file.Size):#,##0} байт\n" +
@@ -399,13 +399,13 @@ public static class SmartSyncDialog
                                 {
                                     item.Status = SyncItemStatus.LocalNewer;
                                     item.StatusText = "На ПК новее";
-                                    item.DirectionSymbol = "-->>";
-                                    item.DirectionText = "ПК -> Telegram";
+                                    item.DirectionSymbol = "TG <<-- ПК";
+                                    item.DirectionText = "ПК -> TG";
 
                                     TimeSpan span = fi.LastWriteTimeUtc - file.MTime.ToUniversalTime();
                                     string diffStr = FormatTimeSpan(span);
 
-                                    item.ToolTipDetails = $"[-->> На ПК новее] (ПК -->> Telegram)\n" +
+                                    item.ToolTipDetails = $"[TG <<-- ПК] (На ПК новее — выгрузка в TG)\n" +
                                                           $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
                                                           $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                           $"• Опережение:      на {diffStr}\n" +
@@ -416,13 +416,13 @@ public static class SmartSyncDialog
                                 {
                                     item.Status = SyncItemStatus.RemoteNewer;
                                     item.StatusText = "В TG новее";
-                                    item.DirectionSymbol = "<<--";
-                                    item.DirectionText = "Telegram -> ПК";
+                                    item.DirectionSymbol = "TG -->> ПК";
+                                    item.DirectionText = "TG -> ПК";
 
                                     TimeSpan span = file.MTime.ToUniversalTime() - fi.LastWriteTimeUtc;
                                     string diffStr = FormatTimeSpan(span);
 
-                                    item.ToolTipDetails = $"[<<-- В Telegram новее] (Telegram <<-- ПК)\n" +
+                                    item.ToolTipDetails = $"[TG -->> ПК] (В Telegram новее — скачивание на ПК)\n" +
                                                           $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
                                                           $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
                                                           $"• Опережение:       на {diffStr}\n" +
@@ -434,9 +434,9 @@ public static class SmartSyncDialog
                             {
                                 item.Status = SyncItemStatus.SourceNotFound;
                                 item.StatusText = "Ошибка доступа";
-                                item.DirectionSymbol = "❌";
+                                item.DirectionSymbol = "TG  ❌  ПК";
                                 item.DirectionText = "Пропуск";
-                                item.ToolTipDetails = $"[❌ Ошибка доступа к файлу на ПК]\n• Ошибка: {ex.Message}\n• Путь: {file.SourcePath}";
+                                item.ToolTipDetails = $"[TG  ❌  ПК] (Ошибка доступа к файлу на ПК)\n• Ошибка: {ex.Message}\n• Путь: {file.SourcePath}";
                                 missingCount++;
                             }
                         }
@@ -485,7 +485,7 @@ public static class SmartSyncDialog
                 int colVfsWidth = 260;
                 int colTgSizeWidth = 85;
                 int colTgDateWidth = 145;
-                int colDirWidth = 60;
+                int colDirWidth = 105;
                 int colPcDateWidth = 145;
                 int colPcSizeWidth = 85;
                 int colSrcWidth = 320;
@@ -493,7 +493,7 @@ public static class SmartSyncDialog
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_col_vfs"), out int cv) && cv >= 50) colVfsWidth = cv;
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_col_tg_size"), out int ctg_s) && ctg_s >= 40) colTgSizeWidth = ctg_s;
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_col_tg_date"), out int ctg_d) && ctg_d >= 60) colTgDateWidth = ctg_d;
-                if (int.TryParse(SettingsManager.GetSetting("smartsync_col_direction"), out int cd) && cd >= 30) colDirWidth = cd;
+                if (int.TryParse(SettingsManager.GetSetting("smartsync_col_direction"), out int cd) && cd >= 50) colDirWidth = cd;
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_col_pc_date"), out int cpc_d) && cpc_d >= 60) colPcDateWidth = cpc_d;
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_col_pc_size"), out int cpc_s) && cpc_s >= 40) colPcSizeWidth = cpc_s;
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_col_source"), out int csrc) && csrc >= 50) colSrcWidth = csrc;
@@ -501,7 +501,7 @@ public static class SmartSyncDialog
                 listView.Columns.Add("Путь в VFS", colVfsWidth, HorizontalAlignment.Left);
                 listView.Columns.Add("Размер (TG)", colTgSizeWidth, HorizontalAlignment.Right);
                 listView.Columns.Add("Дата (TG)", colTgDateWidth, HorizontalAlignment.Left);
-                listView.Columns.Add("<=>", colDirWidth, HorizontalAlignment.Center);
+                listView.Columns.Add("TG <=> ПК", colDirWidth, HorizontalAlignment.Center);
                 listView.Columns.Add("Дата (ПК)", colPcDateWidth, HorizontalAlignment.Left);
                 listView.Columns.Add("Размер (ПК)", colPcSizeWidth, HorizontalAlignment.Right);
                 listView.Columns.Add("Оригинал на ПК", colSrcWidth, HorizontalAlignment.Left);
@@ -607,7 +607,7 @@ public static class SmartSyncDialog
                         sub.Font = rowFont;
                     }
 
-                    lvi.SubItems[3].Font = new Font("Segoe UI", 14f, FontStyle.Bold);
+                    lvi.SubItems[3].Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
 
                     listView.Items.Add(lvi);
                     rowIndex++;
@@ -761,7 +761,7 @@ public static class SmartSyncDialog
 
                                             it.Status = SyncItemStatus.Identical;
                                             it.StatusText = "Загружен в TG";
-                                            it.DirectionSymbol = "=";
+                                            it.DirectionSymbol = "TG  =  ПК";
                                             it.DirectionText = "Синхронизировано";
                                             it.FileRecord.Size = fi.Length;
                                             it.FileRecord.MTime = fi.LastWriteTimeUtc;
@@ -770,11 +770,11 @@ public static class SmartSyncDialog
 
                                             lvi.SubItems[1].Text = fi.Length.ToString("#,##0");
                                             lvi.SubItems[2].Text = fi.LastWriteTime.ToString("dd.MM.yy HH:mm:ss");
-                                            lvi.SubItems[3].Text = "=";
+                                            lvi.SubItems[3].Text = "TG  =  ПК";
                                             lvi.SubItems[4].Text = fi.LastWriteTime.ToString("dd.MM.yy HH:mm:ss");
                                             lvi.SubItems[5].Text = fi.Length.ToString("#,##0");
 
-                                            it.ToolTipDetails = $"[= Идентичны (Синхронизировано)]\n" +
+                                            it.ToolTipDetails = $"[TG  =  ПК] (Идентичны / Синхронизировано)\n" +
                                                                   $"• Дата: {fi.LastWriteTime:dd.MM.yy HH:mm:ss}\n" +
                                                                   $"• Размер: {fi.Length:#,##0} байт\n" +
                                                                   $"• Источник: {it.FileRecord.SourcePath}";
@@ -818,18 +818,18 @@ public static class SmartSyncDialog
                                         var fi = new FileInfo(it.FileRecord.SourcePath);
                                         it.Status = SyncItemStatus.Identical;
                                         it.StatusText = "Обновлен на ПК";
-                                        it.DirectionSymbol = "=";
+                                        it.DirectionSymbol = "TG  =  ПК";
                                         it.DirectionText = "Синхронизировано";
                                         it.LocalSize = fi.Length;
                                         it.LocalWriteTime = fi.LastWriteTime;
 
                                         lvi.SubItems[1].Text = it.FileRecord.Size.ToString("#,##0");
                                         lvi.SubItems[2].Text = it.FileRecord.MTime.ToLocalTime().ToString("dd.MM.yy HH:mm:ss");
-                                        lvi.SubItems[3].Text = "=";
+                                        lvi.SubItems[3].Text = "TG  =  ПК";
                                         lvi.SubItems[4].Text = fi.LastWriteTime.ToString("dd.MM.yy HH:mm:ss");
                                         lvi.SubItems[5].Text = fi.Length.ToString("#,##0");
 
-                                        it.ToolTipDetails = $"[= Идентичны (Синхронизировано)]\n" +
+                                        it.ToolTipDetails = $"[TG  =  ПК] (Идентичны / Синхронизировано)\n" +
                                                               $"• Дата: {fi.LastWriteTime:dd.MM.yy HH:mm:ss}\n" +
                                                               $"• Размер: {fi.Length:#,##0} байт\n" +
                                                               $"• Источник: {it.FileRecord.SourcePath}";
