@@ -465,8 +465,44 @@ public static class SmartSyncDialog
                 int sortColumn = -1;
                 SortOrder sortOrder = SortOrder.None;
 
+                void UpdateSummaryLabel()
+                {
+                    int lNewer = 0, rNewer = 0, lOnly = 0, missing = 0, ident = 0, mismatch = 0, noSrc = 0;
+                    foreach (var it in items)
+                    {
+                        switch (it.Status)
+                        {
+                            case SyncItemStatus.LocalNewer: lNewer++; break;
+                            case SyncItemStatus.RemoteNewer: rNewer++; break;
+                            case SyncItemStatus.LocalOnly: lOnly++; break;
+                            case SyncItemStatus.Identical: ident++; break;
+                            case SyncItemStatus.SizeMismatch: mismatch++; break;
+                            case SyncItemStatus.SourceNotFound: missing++; break;
+                            case SyncItemStatus.NoSourceConfigured: noSrc++; break;
+                        }
+                    }
+
+                    localNewerCount = lNewer;
+                    remoteNewerCount = rNewer;
+                    localOnlyCount = lOnly;
+                    missingCount = missing;
+                    identicalCount = ident;
+                    mismatchCount = mismatch;
+                    noSourceCount = noSrc;
+
+                    string sumText = $"Режим: {(isMirror ? "Зеркало" : "Контейнер")}  |  Всего: {items.Count}  |  К обновлению: {localNewerCount + remoteNewerCount + localOnlyCount}  |  Идентичны: {identicalCount}";
+                    if (localOnlyCount > 0) sumText += $"  |  Новых на ПК: {localOnlyCount}";
+                    if (mismatchCount > 0) sumText += $"  |  Разный размер: {mismatchCount}";
+                    if (missingCount > 0) sumText += $"  |  Не найдены: {missingCount}";
+                    if (noSourceCount > 0) sumText += $"  |  Без привязки: {noSourceCount}";
+
+                    summaryLabel.Text = sumText;
+                }
+
                 void PopulateListView()
                 {
+                    UpdateSummaryLabel();
+
                     listView.BeginUpdate();
                     listView.Items.Clear();
 
@@ -976,20 +1012,6 @@ public static class SmartSyncDialog
                             form.BeginInvoke(() =>
                             {
                                 items = scannedItems;
-                                localNewerCount = lNewer;
-                                remoteNewerCount = rNewer;
-                                localOnlyCount = lOnly;
-                                missingCount = missing;
-                                identicalCount = ident;
-                                mismatchCount = mismatch;
-                                noSourceCount = noSrc;
-
-                                string sumText = $"Режим: {(isMirror ? "Зеркало" : "Контейнер")}  |  Всего: {items.Count}  |  К обновлению: {localNewerCount + remoteNewerCount + localOnlyCount}  |  Идентичны: {identicalCount}";
-                                if (localOnlyCount > 0) sumText += $"  |  Новых на ПК: {localOnlyCount}";
-                                if (mismatchCount > 0) sumText += $"  |  Разный размер: {mismatchCount}";
-                                if (missingCount > 0) sumText += $"  |  Не найдены: {missingCount}";
-                                summaryLabel.Text = sumText;
-
                                 PopulateListView();
 
                                 loadingPanel.Visible = false;
