@@ -161,7 +161,7 @@ public static class UiTheme
             AutoPopDelay = 6000,
             InitialDelay = 400,
             ReshowDelay = 200,
-            ShowAlways = true
+            ShowAlways = false
         };
     }
 

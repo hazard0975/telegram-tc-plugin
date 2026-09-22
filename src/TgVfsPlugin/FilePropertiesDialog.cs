@@ -379,20 +379,13 @@ public static class FilePropertiesDialog
 
                 int margin = 20;
                 int topMargin = 16;
-                int clientWidth = 474;
-                int contentWidth = clientWidth - margin * 2; // 434px
+                int clientWidth = 514;
+                int contentWidth = clientWidth - margin * 2; // 474px
+                int bottomPanelHeight = 52;
+                int contentBottom = 75 + 175 + topMargin; // 266px
+                int clientHeight = contentBottom + bottomPanelHeight; // 318px
 
-                using Form form = new Form()
-                {
-                    FormBorderStyle = FormBorderStyle.FixedDialog,
-                    Text = $"Свойства корзины: {channelName}",
-                    StartPosition = FormStartPosition.CenterScreen,
-                    MinimizeBox = false,
-                    MaximizeBox = false,
-                    TopMost = false,
-                    Font = UiTheme.DefaultFont,
-                    AutoScaleMode = AutoScaleMode.None
-                };
+                using Form form = UiTheme.CreateDialogForm($"Свойства корзины: {channelName}", clientWidth, clientHeight);
 
                 Panel headerPanel = new Panel()
                 {
@@ -444,7 +437,7 @@ public static class FilePropertiesDialog
 
                 int labelWidth = 155;
                 int valLeft = 175;
-                int valWidth = 245;
+                int valWidth = contentWidth - 30 - labelWidth;
 
                 Label filesLbl = new Label()
                 {
@@ -498,7 +491,7 @@ public static class FilePropertiesDialog
                 {
                     Left = 15,
                     Top = 104,
-                    Width = 405,
+                    Width = contentWidth - 30,
                     Height = 55,
                     ForeColor = Color.DimGray,
                     Text = "Файлы в корзине сохраняют свои версии в Telegram и могут быть восстановлены в исходные папки."
@@ -513,20 +506,12 @@ public static class FilePropertiesDialog
                 infoGroup.Controls.Add(noteLbl);
                 form.Controls.Add(infoGroup);
 
-                int bottomPanelHeight = 52;
-                int contentBottom = infoGroup.Bottom + topMargin;
-                int clientHeight = contentBottom + bottomPanelHeight;
-
-                form.ClientSize = new Size(clientWidth, clientHeight);
-                form.MinimumSize = form.Size;
-                form.MaximumSize = form.Size;
-
                 // Нижняя панель
                 Panel bottomPanel = UiTheme.CreateBottomPanel(52);
                 form.Controls.Add(bottomPanel);
 
-                Button restoreAllBtn = UiTheme.CreateButton("Восстановить всё", "Восстановить все файлы и папки из корзины в их исходные места в активном канале", toolTip, 130);
-                restoreAllBtn.Left = 20;
+                Button restoreAllBtn = UiTheme.CreateButton("Восстановить", "Восстановить все файлы и папки из корзины в их исходные места в активном канале", toolTip, 105);
+                restoreAllBtn.Left = margin;
                 restoreAllBtn.Top = 11;
                 restoreAllBtn.Enabled = totalItems > 0;
                 restoreAllBtn.Click += (s, e) =>
