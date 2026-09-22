@@ -475,10 +475,10 @@ public static unsafe class WfxExports
                 { 
                     Name = TrashDirName, 
                     IsDirectory = true, 
-                    Size = 0,
+                    Size = 0, 
                     Date = DateTime.Now 
                 });
-                state.Items.AddRange(_db.GetMounts());
+                state.Items.AddRange(_db.GetMounts(onlyActive: true));
                 Logger.Info("WFX", $"[DIR LIST] Root directory: Found {state.Items.Count} item(s) (Channels, Triggers & Trash)");
             }
             else
@@ -489,8 +489,8 @@ public static unsafe class WfxExports
                 {
                     if (string.IsNullOrEmpty(channelTitle))
                     {
-                        // Корень Корзины: выводим список всех доступных каналов
-                        state.Items.AddRange(_db.GetMounts());
+                        // Корень Корзины: выводим список каналов, находящихся в корзине или содержащих удаленные файлы
+                        state.Items.AddRange(_db.GetTrashMounts());
                         Logger.Info("WFX", $"[TRASH LIST] Trash Root: Found {state.Items.Count} channel folder(s)");
                     }
                     else
@@ -946,7 +946,7 @@ public static unsafe class WfxExports
         {
             try
             {
-                var mounts = _db?.GetMounts() ?? new List<VfsDatabase.VfsItem>();
+                var mounts = _db?.GetMounts(onlyActive: true) ?? new List<VfsDatabase.VfsItem>();
                 var folderNames = mounts.Select(m => m.Name).ToList();
                 string? selectedFolder = DeleteFolderDialog.Show(folderNames);
                 if (!string.IsNullOrEmpty(selectedFolder))
@@ -2110,30 +2110,14 @@ public static unsafe class WfxExports
             if (isInTrash)
             {
                 // Попытка удалить всю корзину конкретного канала, например [🗑] Корзина\Channel
-                var mount = _db.GetMountByName(channelName);
-                if (mount != null)
-                {
-                    _db.GetTrashStats(mount.Id, out int filesCount, out int dirsCount, out long totalSize);
-                    if (filesCount + dirsCount == 0)
-                    {
-                        return 1;
-                    }
-
-                    var trashRecords = _db.GetTrashFileRecords(mount.Id);
-                    PurgeTrashRecords(mount.Id, mount.ChannelId, trashRecords);
-                    return 1;
-                }
-            }
-            else
-            {
-                // Это корневая папка монтирования (активный канал)
+                // ВТОРОЙ ЭТАП: ОКОНЧАТЕЛЬНОЕ УДАЛЕНИЕ КАНАЛА ИЗ TELEGRAM С ПРЕДУПРЕЖДЕНИЕМ
                 var mount = _db.GetMountByName(channelName);
                 if (mount != null)
                 {
                     var dialogRes = System.Windows.Forms.MessageBox.Show(
-                        $"Вы действительно хотите удалить виртуальную папку '{channelName}'?\n\n" +
-                        $"⚠️ ВНИМАНИЕ: Это приведёт к удалению связанного канала и всех хранящихся в нём файлов в Telegram!",
-                        "Подтверждение удаления папки",
+                        $"Вы действительно хотите навсегда удалить канал '{channelName}' из Telegram?\n\n" +
+                        $"⚠️ ВНИМАНИЕ: Это приведёт к безвозвратному удалению канала и всех хранящихся в нём файлов в Telegram!",
+                        "Окончательное удаление канала",
                         System.Windows.Forms.MessageBoxButtons.YesNo,
                         System.Windows.Forms.MessageBoxIcon.Warning,
                         System.Windows.Forms.MessageBoxDefaultButton.Button2);
@@ -2147,7 +2131,7 @@ public static unsafe class WfxExports
                                 TelegramManager.DeleteChannelAsync(mount.ChannelId).GetAwaiter().GetResult();
                             }
                             _db.DeleteMount(mount.Id);
-                            Logger.Info("DB", $"[FOLDER DELETED] Mount/channel '{channelName}' deleted via FsRemoveDir.");
+                            Logger.Info("DB", $"[CHANNEL PURGED] Mount/channel '{channelName}' permanently deleted via FsRemoveDir in Trash.");
                             Win32Api.RefreshActivePanel();
                             TriggerCheckpoint(immediate: true);
                         }).GetAwaiter().GetResult();
@@ -2155,6 +2139,20 @@ public static unsafe class WfxExports
                         return 1; // true (успех)
                     }
                     return 0; // пользователь отменил
+                }
+            }
+            else
+            {
+                // Это корневая папка монтирования (активный канал в корне плагина)
+                // ПЕРВЫЙ ЭТАП: МЯГКОЕ УДАЛЕНИЕ В КОРЗИНУ БЕЗ ПРЕДУПРЕЖДЕНИЙ
+                var mount = _db.GetMountByName(channelName);
+                if (mount != null)
+                {
+                    _db.MoveMountToTrash(mount.Id);
+                    Logger.Info("DB", $"[CHANNEL MOVED TO TRASH] Mount/channel '{channelName}' moved to trash via FsRemoveDir without prompts.");
+                    Win32Api.RefreshActivePanel();
+                    TriggerCheckpoint(immediate: true);
+                    return 1; // true (успех для Total Commander)
                 }
             }
         }

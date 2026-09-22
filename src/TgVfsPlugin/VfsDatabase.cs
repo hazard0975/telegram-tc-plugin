@@ -45,7 +45,8 @@ public class VfsDatabase : IDisposable
                 channel_id INTEGER,
                 channel_name TEXT,
                 mode INTEGER,
-                created_at INTEGER
+                created_at INTEGER,
+                in_trash INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS files (
@@ -66,6 +67,18 @@ public class VfsDatabase : IDisposable
             CREATE INDEX IF NOT EXISTS idx_files_mount_parent ON files(mount_id, parent, in_trash);
         ";
         command.ExecuteNonQuery();
+
+        // Миграция: если таблица mounts уже была создана ранее без колонки in_trash
+        try
+        {
+            using var alterMountCmd = _connection.CreateCommand();
+            alterMountCmd.CommandText = "ALTER TABLE mounts ADD COLUMN in_trash INTEGER DEFAULT 0;";
+            alterMountCmd.ExecuteNonQuery();
+        }
+        catch
+        {
+            // Колонка уже существует
+        }
 
         // Миграция: если таблица files уже была создана ранее без колонки in_trash
         try
@@ -111,6 +124,7 @@ public class VfsDatabase : IDisposable
         public long ChannelId { get; set; }
         public string ChannelName { get; set; } = "";
         public int Mode { get; set; }
+        public int InTrash { get; set; }
     }
 
     private static DateTime ReadDateTime(SqliteDataReader reader, int index)
@@ -139,8 +153,8 @@ public class VfsDatabase : IDisposable
     {
         var cmd = _connection.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO mounts (id, local_path, channel_id, channel_name, mode, created_at)
-            VALUES (@id, @path, @cid, @cname, @mode, @dt)
+            INSERT INTO mounts (id, local_path, channel_id, channel_name, mode, created_at, in_trash)
+            VALUES (@id, @path, @cid, @cname, @mode, @dt, @trash)
         ";
         cmd.Parameters.AddWithValue("@id", mount.Id);
         cmd.Parameters.AddWithValue("@path", mount.LocalPath);
@@ -148,6 +162,7 @@ public class VfsDatabase : IDisposable
         cmd.Parameters.AddWithValue("@cname", mount.ChannelName);
         cmd.Parameters.AddWithValue("@mode", mount.Mode);
         cmd.Parameters.AddWithValue("@dt", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        cmd.Parameters.AddWithValue("@trash", mount.InTrash);
         cmd.ExecuteNonQuery();
     }
 
@@ -171,7 +186,7 @@ public class VfsDatabase : IDisposable
     public MountInfo? GetMountByName(string name)
     {
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name FROM mounts WHERE channel_name = @cname COLLATE NOCASE";
+        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name, in_trash FROM mounts WHERE channel_name = @cname COLLATE NOCASE";
         cmd.Parameters.AddWithValue("@cname", name);
         using var reader = cmd.ExecuteReader();
         if (reader.Read())
@@ -182,7 +197,8 @@ public class VfsDatabase : IDisposable
                 LocalPath = reader.GetString(1),
                 ChannelId = reader.GetInt64(2),
                 ChannelName = reader.GetString(4),
-                Mode = reader.GetInt32(3)
+                Mode = reader.GetInt32(3),
+                InTrash = reader.IsDBNull(5) ? 0 : reader.GetInt32(5)
             };
         }
         return null;
@@ -191,7 +207,7 @@ public class VfsDatabase : IDisposable
     public MountInfo? GetMountById(string id)
     {
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name FROM mounts WHERE id = @id";
+        cmd.CommandText = "SELECT id, local_path, channel_id, mode, channel_name, in_trash FROM mounts WHERE id = @id";
         cmd.Parameters.AddWithValue("@id", id);
         using var reader = cmd.ExecuteReader();
         if (reader.Read())
@@ -202,17 +218,49 @@ public class VfsDatabase : IDisposable
                 LocalPath = reader.GetString(1),
                 ChannelId = reader.GetInt64(2),
                 ChannelName = reader.GetString(4),
-                Mode = reader.GetInt32(3)
+                Mode = reader.GetInt32(3),
+                InTrash = reader.IsDBNull(5) ? 0 : reader.GetInt32(5)
             };
         }
         return null;
     }
 
-    public System.Collections.Generic.List<VfsItem> GetMounts()
+    public System.Collections.Generic.List<VfsItem> GetMounts(bool onlyActive = true)
     {
         var items = new System.Collections.Generic.List<VfsItem>();
         var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT channel_name, created_at FROM mounts";
+        if (onlyActive)
+        {
+            cmd.CommandText = "SELECT channel_name, created_at FROM mounts WHERE (in_trash IS NULL OR in_trash = 0)";
+        }
+        else
+        {
+            cmd.CommandText = "SELECT channel_name, created_at FROM mounts";
+        }
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            items.Add(new VfsItem 
+            { 
+                Name = reader.GetString(0), 
+                IsDirectory = true, 
+                Size = 0,
+                Date = ReadDateTime(reader, 1)
+            });
+        }
+        return items;
+    }
+
+    public System.Collections.Generic.List<VfsItem> GetTrashMounts()
+    {
+        var items = new System.Collections.Generic.List<VfsItem>();
+        var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT DISTINCT m.channel_name, m.created_at 
+            FROM mounts m
+            LEFT JOIN files f ON f.mount_id = m.id AND f.in_trash = 1
+            WHERE (m.in_trash = 1) OR (f.uid IS NOT NULL)
+        ";
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
@@ -809,6 +857,7 @@ public class VfsDatabase : IDisposable
 
     public int RestoreAllTrash(string mountId)
     {
+        RestoreMount(mountId);
         var trashRecords = GetTrashFileRecords(mountId);
         if (trashRecords == null || trashRecords.Count == 0) return 0;
 
@@ -1213,6 +1262,25 @@ public class VfsDatabase : IDisposable
         cmd.Parameters.AddWithValue("@mid", mountId);
         cmd.Parameters.AddWithValue("@exactPath", cleanPath);
         cmd.Parameters.AddWithValue("@prefixPath", cleanPath + "\\%");
+        cmd.ExecuteNonQuery();
+    }
+
+    public void MoveMountToTrash(string mountId)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE mounts SET in_trash = 1 WHERE id = @mid;
+            UPDATE files SET in_trash = 1 WHERE mount_id = @mid;
+        ";
+        cmd.Parameters.AddWithValue("@mid", mountId);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void RestoreMount(string mountId)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "UPDATE mounts SET in_trash = 0 WHERE id = @mid";
+        cmd.Parameters.AddWithValue("@mid", mountId);
         cmd.ExecuteNonQuery();
     }
 
