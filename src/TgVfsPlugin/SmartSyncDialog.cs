@@ -745,6 +745,8 @@ public static class SmartSyncDialog
 
                                             db.EnsureParentDirectoriesExist(it.FileRecord.MountId, it.FileRecord.Parent);
                                             var fi = new FileInfo(it.FileRecord.SourcePath);
+                                            int newVer = string.IsNullOrEmpty(it.FileRecord.Uid) ? 1 : it.FileRecord.Ver + 1;
+
                                             db.AddFile(new VfsDatabase.FileRecord
                                             {
                                                 Uid = Guid.NewGuid().ToString("N"),
@@ -756,7 +758,7 @@ public static class SmartSyncDialog
                                                 Size = fi.Length,
                                                 TgMessageId = msgId,
                                                 InTrash = 0,
-                                                Ver = it.FileRecord.Ver + 1,
+                                                Ver = newVer,
                                                 SourcePath = it.FileRecord.SourcePath
                                             });
 
@@ -764,6 +766,7 @@ public static class SmartSyncDialog
                                             it.StatusText = "Загружен в TG";
                                             it.DirectionSymbol = "TG  =  ПК";
                                             it.DirectionText = "Синхронизировано";
+                                            it.FileRecord.Ver = newVer;
                                             it.FileRecord.Size = fi.Length;
                                             it.FileRecord.MTime = fi.LastWriteTimeUtc;
                                             it.LocalSize = fi.Length;
