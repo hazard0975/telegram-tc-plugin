@@ -387,23 +387,41 @@ public static class SmartSyncDialog
                 Label lblTime = CreateCardField("Прошло времени:", lblY + (lblStep * 5));
                 Label lblDirection = CreateCardField("Направление:", lblY + (lblStep * 6));
 
-                Button pauseBtn = UiTheme.CreateButton("⏸ Пауза", "Приостановить передачу данных", toolTip, 110);
-                pauseBtn.Left = cardPanel.Width - 120;
+                Button pauseBtn = UiTheme.CreateButton("⏸ Пауза", "Приостановить или возобновить передачу данных", toolTip, 110);
+                pauseBtn.Left = cardPanel.Width - 125;
                 pauseBtn.Top = 15;
                 pauseBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
-                Button cancelTransferBtn = UiTheme.CreateButton("⛔ Отменить", "Отменить выполняемую передачу", toolTip, 110);
-                cancelTransferBtn.Left = cardPanel.Width - 120;
-                cancelTransferBtn.Top = 55;
-                cancelTransferBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-
                 cardPanel.Controls.Add(pauseBtn);
-                cardPanel.Controls.Add(cancelTransferBtn);
 
                 syncProgressPanel.Controls.Add(lblOperationTitle);
                 syncProgressPanel.Controls.Add(pbCurrentFile);
                 syncProgressPanel.Controls.Add(cardPanel);
                 form.Controls.Add(syncProgressPanel);
+
+                void UpdateSyncLayout()
+                {
+                    if (form.IsDisposed) return;
+
+                    syncProgressPanel.Left = 20;
+                    syncProgressPanel.Width = form.ClientSize.Width - 40;
+                    syncProgressPanel.Top = bottomPanel.Top - syncProgressPanel.Height - 10;
+
+                    cardPanel.Width = syncProgressPanel.Width;
+                    pbCurrentFile.Width = syncProgressPanel.Width;
+                    pauseBtn.Left = cardPanel.Width - pauseBtn.Width - 15;
+
+                    if (syncProgressPanel.Visible)
+                    {
+                        listView.Height = syncProgressPanel.Top - listView.Top - 8;
+                    }
+                    else
+                    {
+                        listView.Height = bottomPanel.Top - listView.Top - 10;
+                    }
+                }
+
+                form.Resize += (s, e) => UpdateSyncLayout();
 
                 // Кнопки управления в нижней панели
                 Button selectUpdatesBtn = UiTheme.CreateButton("Выбрать разные", "Отметить галочками все файлы, требующие синхронизации", toolTip, 130);
@@ -1069,11 +1087,14 @@ public static class SmartSyncDialog
                     }
                 };
 
-                cancelTransferBtn.Click += (s, e) =>
+                closeBtn.Click += (s, e) =>
                 {
-                    cancellationRequested = true;
-                    cts?.Cancel();
-                    pauseGate.Set();
+                    if (closeBtn.Text == "Отмена")
+                    {
+                        cancellationRequested = true;
+                        cts?.Cancel();
+                        pauseGate.Set();
+                    }
                 };
 
                 syncBtn.Click += async (s, e) =>
@@ -1117,9 +1138,9 @@ public static class SmartSyncDialog
                     toolTip.SetToolTip(closeBtn, "Прервать выполняемую синхронизацию");
                     closeBtn.DialogResult = DialogResult.None;
 
-                    // Разворачиваем информационную панель передач
+                    // Разворачиваем информационную панель передач и пересчитываем геометрию
                     syncProgressPanel.Visible = true;
-                    listView.Height = form.ClientSize.Height - bottomPanel.Height - 105 - syncProgressPanel.Height;
+                    UpdateSyncLayout();
 
                     int updated = 0;
                     int errors = 0;
@@ -1131,140 +1152,210 @@ public static class SmartSyncDialog
                     long lastSampledTotalBytes = 0;
                     double currentSpeedBytesPerSec = 0;
 
-                    try
+                    await Task.Run(async () =>
                     {
-                        foreach (var it in items)
+                        try
                         {
-                            if (cancellationRequested || cts.Token.IsCancellationRequested)
-                            {
-                                break;
-                            }
-
-                            if (!it.IsChecked) continue;
-
-                            processed++;
-                            long currentFileTotalSize = (it.Status == SyncItemStatus.LocalOnly || it.Status == SyncItemStatus.LocalNewer)
-                                ? it.LocalSize
-                                : it.FileRecord.Size;
-
-                            bool isUpload = (it.Status == SyncItemStatus.LocalNewer || it.Status == SyncItemStatus.LocalOnly);
-
-                            lblOperationTitle.Text = isUpload ? "Загрузка в Telegram..." : "Скачивание из Telegram...";
-                            pbCurrentFile.Value = 0;
-                            lblCurFileName.Text = it.FileRecord.Name;
-                            lblFilesCount.Text = $"{processed} из {totalChecked}";
-                            lblDirection.Text = isUpload ? "Диск ПК → Telegram Cloud (VFS)" : "Telegram Cloud (VFS) → Диск ПК";
-
-                            Func<long, long, bool> progressHandler = (transferred, total) =>
+                            foreach (var it in items)
                             {
                                 if (cancellationRequested || cts.Token.IsCancellationRequested)
                                 {
-                                    return true;
+                                    break;
                                 }
 
-                                if (speedTimer.ElapsedMilliseconds >= 400)
-                                {
-                                    double sec = speedTimer.Elapsed.TotalSeconds;
-                                    long currentTotal = completedBytesAllFiles + transferred;
-                                    long diff = currentTotal - lastSampledTotalBytes;
-                                    currentSpeedBytesPerSec = sec > 0 ? (diff / sec) : 0;
-                                    lastSampledTotalBytes = currentTotal;
-                                    speedTimer.Restart();
-                                }
+                                if (!it.IsChecked) continue;
 
-                                int filePct = total > 0 ? (int)Math.Clamp((transferred * 100) / total, 0, 100) : 0;
-                                long currentTotalBytes = completedBytesAllFiles + transferred;
-                                int overallPct = totalBytesAllFiles > 0 ? (int)Math.Clamp((currentTotalBytes * 100) / totalBytesAllFiles, 0, 100) : 0;
+                                processed++;
+                                long currentFileTotalSize = (it.Status == SyncItemStatus.LocalOnly || it.Status == SyncItemStatus.LocalNewer)
+                                    ? it.LocalSize
+                                    : it.FileRecord.Size;
+
+                                bool isUpload = (it.Status == SyncItemStatus.LocalNewer || it.Status == SyncItemStatus.LocalOnly);
 
                                 if (form.IsHandleCreated && !form.IsDisposed)
                                 {
                                     form.BeginInvoke(() =>
                                     {
                                         if (form.IsDisposed) return;
-
-                                        pbCurrentFile.Value = filePct;
-                                        lblOperationTitle.Text = $"{(isUpload ? "Загрузка в Telegram..." : "Скачивание из Telegram...")} ({filePct}%)";
-
-                                        lblCurFileBytes.Text = $"{filePct}% ({Logger.FormatBytes(transferred)} / {Logger.FormatBytes(total)})";
-                                        lblTotalBytes.Text = $"{overallPct}% ({Logger.FormatBytes(currentTotalBytes)} / {Logger.FormatBytes(totalBytesAllFiles)})";
-
-                                        if (isPaused)
-                                        {
-                                            lblSpeed.Text = "Пауза";
-                                        }
-                                        else
-                                        {
-                                            lblSpeed.Text = $"{FormatSpeed(currentSpeedBytesPerSec)} ({FormatBits(currentSpeedBytesPerSec * 8)})";
-                                        }
-
-                                        TimeSpan elapsed = totalTimer.Elapsed;
-                                        string elapsedStr = elapsed.ToString(@"hh\:mm\:ss");
-                                        if (currentSpeedBytesPerSec > 0 && totalBytesAllFiles > currentTotalBytes)
-                                        {
-                                            double remainingSec = (totalBytesAllFiles - currentTotalBytes) / currentSpeedBytesPerSec;
-                                            TimeSpan eta = TimeSpan.FromSeconds(remainingSec);
-                                            lblTime.Text = $"{elapsedStr}  (осталось: ~{eta:hh\\:mm\\:ss})";
-                                        }
-                                        else
-                                        {
-                                            lblTime.Text = elapsedStr;
-                                        }
+                                        lblOperationTitle.Text = isUpload ? "Загрузка в Telegram..." : "Скачивание из Telegram...";
+                                        pbCurrentFile.Value = 0;
+                                        lblCurFileName.Text = it.FileRecord.Name;
+                                        lblFilesCount.Text = $"{processed} из {totalChecked}";
+                                        lblDirection.Text = isUpload ? "Диск ПК → Telegram Cloud (VFS)" : "Telegram Cloud (VFS) → Диск ПК";
                                     });
                                 }
 
-                                Application.DoEvents();
-                                return false;
-                            };
-
-                            if (isUpload && !string.IsNullOrEmpty(it.FileRecord.SourcePath))
-                            {
-                                try
+                                Func<long, long, bool> progressHandler = (transferred, total) =>
                                 {
-                                    if (File.Exists(it.FileRecord.SourcePath))
+                                    if (cancellationRequested || cts.Token.IsCancellationRequested)
                                     {
-                                        string caption = string.IsNullOrEmpty(it.FileRecord.Parent) ? it.FileRecord.Name : $"{it.FileRecord.Parent}\\{it.FileRecord.Name}";
-                                        int msgId = await TelegramManager.UploadAndSendFileAsync(
+                                        return true;
+                                    }
+
+                                    if (speedTimer.ElapsedMilliseconds >= 400)
+                                    {
+                                        double sec = speedTimer.Elapsed.TotalSeconds;
+                                        long currentTotal = completedBytesAllFiles + transferred;
+                                        long diff = currentTotal - lastSampledTotalBytes;
+                                        currentSpeedBytesPerSec = sec > 0 ? (diff / sec) : 0;
+                                        lastSampledTotalBytes = currentTotal;
+                                        speedTimer.Restart();
+                                    }
+
+                                    int filePct = total > 0 ? (int)Math.Clamp((transferred * 100) / total, 0, 100) : 0;
+                                    long currentTotalBytes = completedBytesAllFiles + transferred;
+                                    int overallPct = totalBytesAllFiles > 0 ? (int)Math.Clamp((currentTotalBytes * 100) / totalBytesAllFiles, 0, 100) : 0;
+
+                                    if (form.IsHandleCreated && !form.IsDisposed)
+                                    {
+                                        form.BeginInvoke(() =>
+                                        {
+                                            if (form.IsDisposed) return;
+
+                                            pbCurrentFile.Value = filePct;
+                                            lblOperationTitle.Text = $"{(isUpload ? "Загрузка в Telegram..." : "Скачивание из Telegram...")} ({filePct}%)";
+
+                                            lblCurFileBytes.Text = $"{filePct}% ({Logger.FormatBytes(transferred)} / {Logger.FormatBytes(total)})";
+                                            lblTotalBytes.Text = $"{overallPct}% ({Logger.FormatBytes(currentTotalBytes)} / {Logger.FormatBytes(totalBytesAllFiles)})";
+
+                                            if (isPaused)
+                                            {
+                                                lblSpeed.Text = "Пауза";
+                                            }
+                                            else
+                                            {
+                                                lblSpeed.Text = $"{FormatSpeed(currentSpeedBytesPerSec)} ({FormatBits(currentSpeedBytesPerSec * 8)})";
+                                            }
+
+                                            TimeSpan elapsed = totalTimer.Elapsed;
+                                            string elapsedStr = elapsed.ToString(@"hh\:mm\:ss");
+                                            if (currentSpeedBytesPerSec > 0 && totalBytesAllFiles > currentTotalBytes)
+                                            {
+                                                double remainingSec = (totalBytesAllFiles - currentTotalBytes) / currentSpeedBytesPerSec;
+                                                TimeSpan eta = TimeSpan.FromSeconds(remainingSec);
+                                                lblTime.Text = $"{elapsedStr}  (осталось: ~{eta:hh\\:mm\\:ss})";
+                                            }
+                                            else
+                                            {
+                                                lblTime.Text = elapsedStr;
+                                            }
+                                        });
+                                    }
+
+                                    return false;
+                                };
+
+                                if (isUpload && !string.IsNullOrEmpty(it.FileRecord.SourcePath))
+                                {
+                                    try
+                                    {
+                                        if (File.Exists(it.FileRecord.SourcePath))
+                                        {
+                                            string caption = string.IsNullOrEmpty(it.FileRecord.Parent) ? it.FileRecord.Name : $"{it.FileRecord.Parent}\\{it.FileRecord.Name}";
+                                            int msgId = await TelegramManager.UploadAndSendFileAsync(
+                                                channelId,
+                                                it.FileRecord.SourcePath,
+                                                it.FileRecord.Name,
+                                                caption,
+                                                onProgress: progressHandler,
+                                                cancellationToken: cts.Token,
+                                                pauseGate: pauseGate);
+
+                                            if (msgId > 0)
+                                            {
+                                                if (!string.IsNullOrEmpty(it.FileRecord.Uid))
+                                                {
+                                                    db.MoveFileToTrash(it.FileRecord.Uid);
+                                                }
+
+                                                db.EnsureParentDirectoriesExist(it.FileRecord.MountId, it.FileRecord.Parent);
+                                                var fi = new FileInfo(it.FileRecord.SourcePath);
+                                                int newVer = string.IsNullOrEmpty(it.FileRecord.Uid) ? 1 : it.FileRecord.Ver + 1;
+
+                                                db.AddFile(new VfsDatabase.FileRecord
+                                                {
+                                                    Uid = Guid.NewGuid().ToString("N"),
+                                                    MountId = it.FileRecord.MountId,
+                                                    IsDir = false,
+                                                    Name = it.FileRecord.Name,
+                                                    Parent = it.FileRecord.Parent,
+                                                    MTime = fi.LastWriteTimeUtc,
+                                                    Size = fi.Length,
+                                                    TgMessageId = msgId,
+                                                    InTrash = 0,
+                                                    Ver = newVer,
+                                                    SourcePath = it.FileRecord.SourcePath
+                                                });
+
+                                                it.Status = SyncItemStatus.Identical;
+                                                it.StatusText = "Загружен в TG";
+                                                it.DirectionSymbol = "TG  =  ПК";
+                                                it.DirectionText = "Синхронизировано";
+                                                it.FileRecord.Ver = newVer;
+                                                it.FileRecord.Size = fi.Length;
+                                                it.FileRecord.MTime = fi.LastWriteTimeUtc;
+                                                it.LocalSize = fi.Length;
+                                                it.LocalWriteTime = fi.LastWriteTime;
+                                                it.IsChecked = false;
+
+                                                it.ToolTipDetails = $"[TG  =  ПК] (Идентичны / Синхронизировано)\n" +
+                                                                      $"• Дата: {fi.LastWriteTime:dd.MM.yy HH:mm:ss}\n" +
+                                                                      $"• Размер: {fi.Length:#,##0} байт\n" +
+                                                                      $"• Источник: {it.FileRecord.SourcePath}";
+
+                                                updated++;
+                                                completedBytesAllFiles += currentFileTotalSize;
+                                            }
+                                            else
+                                            {
+                                                errors++;
+                                            }
+                                        }
+                                    }
+                                    catch (OperationCanceledException)
+                                    {
+                                        cancellationRequested = true;
+                                        break;
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Logger.Error("UI", $"Upload error for '{it.FileRecord.Name}': {ex.Message}", ex);
+                                        errors++;
+                                    }
+                                }
+                                else if (it.Status == SyncItemStatus.RemoteNewer && !string.IsNullOrEmpty(it.FileRecord.SourcePath))
+                                {
+                                    try
+                                    {
+                                        string dir = Path.GetDirectoryName(it.FileRecord.SourcePath) ?? "";
+                                        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                                        {
+                                            Directory.CreateDirectory(dir);
+                                        }
+
+                                        string tempFile = it.FileRecord.SourcePath + ".tmp_sync";
+                                        await TelegramManager.DownloadFileAsync(
                                             channelId,
-                                            it.FileRecord.SourcePath,
-                                            it.FileRecord.Name,
-                                            caption,
+                                            it.FileRecord.TgMessageId,
+                                            tempFile,
                                             onProgress: progressHandler,
                                             cancellationToken: cts.Token,
                                             pauseGate: pauseGate);
 
-                                        if (msgId > 0)
+                                        if (File.Exists(tempFile))
                                         {
-                                            if (!string.IsNullOrEmpty(it.FileRecord.Uid))
+                                            if (File.Exists(it.FileRecord.SourcePath))
                                             {
-                                                db.MoveFileToTrash(it.FileRecord.Uid);
+                                                File.Delete(it.FileRecord.SourcePath);
                                             }
+                                            File.Move(tempFile, it.FileRecord.SourcePath);
+                                            File.SetLastWriteTimeUtc(it.FileRecord.SourcePath, it.FileRecord.MTime.ToUniversalTime());
 
-                                            db.EnsureParentDirectoriesExist(it.FileRecord.MountId, it.FileRecord.Parent);
                                             var fi = new FileInfo(it.FileRecord.SourcePath);
-                                            int newVer = string.IsNullOrEmpty(it.FileRecord.Uid) ? 1 : it.FileRecord.Ver + 1;
-
-                                            db.AddFile(new VfsDatabase.FileRecord
-                                            {
-                                                Uid = Guid.NewGuid().ToString("N"),
-                                                MountId = it.FileRecord.MountId,
-                                                IsDir = false,
-                                                Name = it.FileRecord.Name,
-                                                Parent = it.FileRecord.Parent,
-                                                MTime = fi.LastWriteTimeUtc,
-                                                Size = fi.Length,
-                                                TgMessageId = msgId,
-                                                InTrash = 0,
-                                                Ver = newVer,
-                                                SourcePath = it.FileRecord.SourcePath
-                                            });
-
                                             it.Status = SyncItemStatus.Identical;
-                                            it.StatusText = "Загружен в TG";
+                                            it.StatusText = "Обновлен на ПК";
                                             it.DirectionSymbol = "TG  =  ПК";
                                             it.DirectionText = "Синхронизировано";
-                                            it.FileRecord.Ver = newVer;
-                                            it.FileRecord.Size = fi.Length;
-                                            it.FileRecord.MTime = fi.LastWriteTimeUtc;
                                             it.LocalSize = fi.Length;
                                             it.LocalWriteTime = fi.LastWriteTime;
                                             it.IsChecked = false;
@@ -1282,105 +1373,52 @@ public static class SmartSyncDialog
                                             errors++;
                                         }
                                     }
-                                }
-                                catch (OperationCanceledException)
-                                {
-                                    cancellationRequested = true;
-                                    break;
-                                }
-                                catch (Exception ex)
-                                {
-                                    Logger.Error("UI", $"Upload error for '{it.FileRecord.Name}': {ex.Message}", ex);
-                                    errors++;
-                                }
-                            }
-                            else if (it.Status == SyncItemStatus.RemoteNewer && !string.IsNullOrEmpty(it.FileRecord.SourcePath))
-                            {
-                                try
-                                {
-                                    string dir = Path.GetDirectoryName(it.FileRecord.SourcePath) ?? "";
-                                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                                    catch (OperationCanceledException)
                                     {
-                                        Directory.CreateDirectory(dir);
+                                        cancellationRequested = true;
+                                        break;
                                     }
-
-                                    string tempFile = it.FileRecord.SourcePath + ".tmp_sync";
-                                    await TelegramManager.DownloadFileAsync(
-                                        channelId,
-                                        it.FileRecord.TgMessageId,
-                                        tempFile,
-                                        onProgress: progressHandler,
-                                        cancellationToken: cts.Token,
-                                        pauseGate: pauseGate);
-
-                                    if (File.Exists(tempFile))
+                                    catch (Exception ex)
                                     {
-                                        if (File.Exists(it.FileRecord.SourcePath))
-                                        {
-                                            File.Delete(it.FileRecord.SourcePath);
-                                        }
-                                        File.Move(tempFile, it.FileRecord.SourcePath);
-                                        File.SetLastWriteTimeUtc(it.FileRecord.SourcePath, it.FileRecord.MTime.ToUniversalTime());
-
-                                        var fi = new FileInfo(it.FileRecord.SourcePath);
-                                        it.Status = SyncItemStatus.Identical;
-                                        it.StatusText = "Обновлен на ПК";
-                                        it.DirectionSymbol = "TG  =  ПК";
-                                        it.DirectionText = "Синхронизировано";
-                                        it.LocalSize = fi.Length;
-                                        it.LocalWriteTime = fi.LastWriteTime;
-                                        it.IsChecked = false;
-
-                                        it.ToolTipDetails = $"[TG  =  ПК] (Идентичны / Синхронизировано)\n" +
-                                                              $"• Дата: {fi.LastWriteTime:dd.MM.yy HH:mm:ss}\n" +
-                                                              $"• Размер: {fi.Length:#,##0} байт\n" +
-                                                              $"• Источник: {it.FileRecord.SourcePath}";
-
-                                        updated++;
-                                        completedBytesAllFiles += currentFileTotalSize;
-                                    }
-                                    else
-                                    {
+                                        Logger.Error("UI", $"Download error for '{it.FileRecord.Name}': {ex.Message}", ex);
                                         errors++;
                                     }
                                 }
-                                catch (OperationCanceledException)
-                                {
-                                    cancellationRequested = true;
-                                    break;
-                                }
-                                catch (Exception ex)
-                                {
-                                    Logger.Error("UI", $"Download error for '{it.FileRecord.Name}': {ex.Message}", ex);
-                                    errors++;
-                                }
                             }
                         }
+                        finally
+                        {
+                            if (form.IsHandleCreated && !form.IsDisposed)
+                            {
+                                form.Invoke(() =>
+                                {
+                                    if (form.IsDisposed) return;
 
-                        Win32Api.RefreshActivePanel();
-                        PopulateListView();
+                                    Win32Api.RefreshActivePanel();
+                                    PopulateListView();
 
-                        string statusMsg = cancellationRequested
-                            ? $"Синхронизация отменена пользователем.\nУспешно обработано: {updated}\nОшибок: {errors}"
-                            : $"Синхронизация завершена.\nУспешно обработано: {updated}\nОшибок: {errors}";
+                                    string statusMsg = cancellationRequested
+                                        ? $"Синхронизация отменена пользователем.\nУспешно обработано: {updated}\nОшибок: {errors}"
+                                        : $"Синхронизация завершена.\nУспешно обработано: {updated}\nОшибок: {errors}";
 
-                        MessageBox.Show(form, statusMsg, "Smart Sync", MessageBoxButtons.OK, cancellationRequested ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
-                    }
-                    finally
-                    {
-                        syncProgressPanel.Visible = false;
-                        listView.Height = form.ClientSize.Height - bottomPanel.Height - 115;
+                                    MessageBox.Show(form, statusMsg, "Smart Sync", MessageBoxButtons.OK, cancellationRequested ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
 
-                        syncBtn.Enabled = true;
-                        selectUpdatesBtn.Enabled = true;
-                        clearSelectionBtn.Enabled = true;
-                        hideIdenticalCb.Enabled = true;
-                        listView.Enabled = true;
+                                    syncProgressPanel.Visible = false;
+                                    UpdateSyncLayout();
 
-                        closeBtn.Text = "Закрыть";
-                        toolTip.SetToolTip(closeBtn, "Закрыть окно синхронизации");
-                        closeBtn.DialogResult = DialogResult.Cancel;
-                    }
+                                    syncBtn.Enabled = true;
+                                    selectUpdatesBtn.Enabled = true;
+                                    clearSelectionBtn.Enabled = true;
+                                    hideIdenticalCb.Enabled = true;
+                                    listView.Enabled = true;
+
+                                    closeBtn.Text = "Закрыть";
+                                    toolTip.SetToolTip(closeBtn, "Закрыть окно синхронизации");
+                                    closeBtn.DialogResult = DialogResult.Cancel;
+                                });
+                            }
+                        }
+                    });
                 };
 
                 // Сохранение положения формы при закрытии
