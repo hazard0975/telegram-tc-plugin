@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -99,7 +100,7 @@ public static class SmartSyncDialog
                 string modeTitle = isMirror ? "Зеркало" : "Контейнер";
 
                 int initWidth = 1080;
-                int initHeight = 620;
+                int initHeight = 660;
                 bool initMaximized = false;
 
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_width"), out int savedW) && savedW >= 840) initWidth = savedW;
@@ -114,7 +115,7 @@ public static class SmartSyncDialog
                 using Form form = new Form()
                 {
                     ClientSize = new Size(initWidth, initHeight),
-                    MinimumSize = new Size(880, 520),
+                    MinimumSize = new Size(880, 560),
                     FormBorderStyle = FormBorderStyle.Sizable,
                     Text = $"Умная синхронизация (Smart Sync — {modeTitle}) — \\{channelName}\\{(string.IsNullOrEmpty(folderPath) ? "" : folderPath)}",
                     StartPosition = FormStartPosition.CenterScreen,
@@ -240,7 +241,7 @@ public static class SmartSyncDialog
 
                 form.Controls.Add(listView);
 
-                // Оверлей загрузки (Лоадер)
+                // Оверлей загрузки (Лоадер при открытии)
                 Panel loadingPanel = new Panel()
                 {
                     Left = listView.Left,
@@ -299,30 +300,110 @@ public static class SmartSyncDialog
                 loadingPanel.BringToFront();
                 CenterLoadingPanelControls();
 
-                // Элементы индикации прогресса передачи (при синхронизации)
-                Label progressLabel = new Label()
+                // -------------------------------------------------------------
+                // Панель подробной информации о передаче файлов (при синхронизации)
+                // -------------------------------------------------------------
+                Panel syncProgressPanel = new Panel()
                 {
                     Left = 20,
-                    Top = form.ClientSize.Height - bottomPanel.Height - 50,
+                    Top = form.ClientSize.Height - bottomPanel.Height - 200,
                     Width = form.ClientSize.Width - 40,
-                    Height = 20,
-                    Font = new Font("Segoe UI", 9, FontStyle.Regular),
-                    ForeColor = Color.FromArgb(40, 40, 40),
+                    Height = 190,
                     Visible = false,
                     Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
                 };
-                form.Controls.Add(progressLabel);
 
-                ProgressBar progressBar = new ProgressBar()
+                Label lblOperationTitle = new Label()
                 {
-                    Left = 20,
-                    Top = form.ClientSize.Height - bottomPanel.Height - 26,
-                    Width = form.ClientSize.Width - 40,
-                    Height = 16,
-                    Visible = false,
-                    Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+                    Left = 0,
+                    Top = 0,
+                    Width = syncProgressPanel.Width - 240,
+                    Height = 22,
+                    Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                    Text = "Подготовка к передаче..."
                 };
-                form.Controls.Add(progressBar);
+
+                ProgressBar pbCurrentFile = new ProgressBar()
+                {
+                    Left = 0,
+                    Top = 24,
+                    Width = syncProgressPanel.Width,
+                    Height = 16,
+                    Minimum = 0,
+                    Maximum = 100,
+                    Value = 0,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                };
+
+                Panel cardPanel = new Panel()
+                {
+                    Left = 0,
+                    Top = 44,
+                    Width = syncProgressPanel.Width,
+                    Height = 142,
+                    BorderStyle = BorderStyle.FixedSingle,
+                    BackColor = Color.FromArgb(250, 250, 252),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                };
+
+                int lblY = 6;
+                int lblStep = 18;
+
+                Label CreateCardField(string prefix, int topY)
+                {
+                    Label titleLbl = new Label()
+                    {
+                        Left = 10,
+                        Top = topY,
+                        Width = 125,
+                        Height = 20,
+                        Text = prefix,
+                        Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
+                        ForeColor = Color.FromArgb(100, 100, 100)
+                    };
+
+                    Label valLbl = new Label()
+                    {
+                        Left = 135,
+                        Top = topY,
+                        Width = cardPanel.Width - 260,
+                        Height = 20,
+                        Text = "-",
+                        Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                        ForeColor = Color.FromArgb(30, 30, 30),
+                        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                    };
+
+                    cardPanel.Controls.Add(titleLbl);
+                    cardPanel.Controls.Add(valLbl);
+                    return valLbl;
+                }
+
+                Label lblCurFileName = CreateCardField("Текущий файл:", lblY);
+                Label lblCurFileBytes = CreateCardField("Загружено:", lblY + lblStep);
+                Label lblFilesCount = CreateCardField("Файлы:", lblY + (lblStep * 2));
+                Label lblTotalBytes = CreateCardField("Объем данных:", lblY + (lblStep * 3));
+                Label lblSpeed = CreateCardField("Скорость:", lblY + (lblStep * 4));
+                Label lblTime = CreateCardField("Прошло времени:", lblY + (lblStep * 5));
+                Label lblDirection = CreateCardField("Направление:", lblY + (lblStep * 6));
+
+                Button pauseBtn = UiTheme.CreateButton("⏸ Пауза", "Приостановить передачу данных", toolTip, 110);
+                pauseBtn.Left = cardPanel.Width - 120;
+                pauseBtn.Top = 15;
+                pauseBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                Button cancelTransferBtn = UiTheme.CreateButton("⛔ Отменить", "Отменить выполняемую передачу", toolTip, 110);
+                cancelTransferBtn.Left = cardPanel.Width - 120;
+                cancelTransferBtn.Top = 55;
+                cancelTransferBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                cardPanel.Controls.Add(pauseBtn);
+                cardPanel.Controls.Add(cancelTransferBtn);
+
+                syncProgressPanel.Controls.Add(lblOperationTitle);
+                syncProgressPanel.Controls.Add(pbCurrentFile);
+                syncProgressPanel.Controls.Add(cardPanel);
+                form.Controls.Add(syncProgressPanel);
 
                 // Кнопки управления в нижней панели
                 Button selectUpdatesBtn = UiTheme.CreateButton("Выбрать разные", "Отметить галочками все файлы, требующие синхронизации", toolTip, 130);
@@ -957,12 +1038,54 @@ public static class SmartSyncDialog
                     rowToolTip.Hide(listView);
                 };
 
+                // Переменные паузы и отмены
+                ManualResetEventSlim pauseGate = new ManualResetEventSlim(true);
+                CancellationTokenSource? cts = null;
+                bool isPaused = false;
                 bool cancellationRequested = false;
+
+                pauseBtn.Click += (s, e) =>
+                {
+                    if (!isPaused)
+                    {
+                        pauseGate.Reset();
+                        isPaused = true;
+                        pauseBtn.Text = "▶ Продолжить";
+                        toolTip.SetToolTip(pauseBtn, "Возобновить передачу данных");
+                        lblSpeed.Text = "Пауза";
+                    }
+                    else
+                    {
+                        pauseGate.Set();
+                        isPaused = false;
+                        pauseBtn.Text = "⏸ Пауза";
+                        toolTip.SetToolTip(pauseBtn, "Приостановить передачу данных");
+                    }
+                };
+
+                cancelTransferBtn.Click += (s, e) =>
+                {
+                    cancellationRequested = true;
+                    cts?.Cancel();
+                    pauseGate.Set();
+                };
 
                 syncBtn.Click += async (s, e) =>
                 {
                     int totalChecked = 0;
-                    foreach (var it in items) if (it.IsChecked) totalChecked++;
+                    long totalBytesAllFiles = 0;
+
+                    foreach (var it in items)
+                    {
+                        if (it.IsChecked)
+                        {
+                            totalChecked++;
+                            long sz = (it.Status == SyncItemStatus.LocalOnly || it.Status == SyncItemStatus.LocalNewer)
+                                ? it.LocalSize
+                                : it.FileRecord.Size;
+                            totalBytesAllFiles += Math.Max(0, sz);
+                        }
+                    }
 
                     if (totalChecked == 0)
                     {
@@ -971,6 +1094,13 @@ public static class SmartSyncDialog
                     }
 
                     cancellationRequested = false;
+                    isPaused = false;
+                    pauseGate.Set();
+                    pauseBtn.Text = "⏸ Пауза";
+
+                    cts?.Dispose();
+                    cts = new CancellationTokenSource();
+
                     syncBtn.Enabled = false;
                     selectUpdatesBtn.Enabled = false;
                     clearSelectionBtn.Enabled = false;
@@ -981,23 +1111,25 @@ public static class SmartSyncDialog
                     toolTip.SetToolTip(closeBtn, "Прервать выполняемую синхронизацию");
                     closeBtn.DialogResult = DialogResult.None;
 
-                    progressLabel.Visible = true;
-                    progressBar.Visible = true;
-                    progressBar.Minimum = 0;
-                    progressBar.Maximum = totalChecked;
-                    progressBar.Value = 0;
-
-                    listView.Height = form.ClientSize.Height - bottomPanel.Height - 165;
+                    // Разворачиваем информационную панель передач
+                    syncProgressPanel.Visible = true;
+                    listView.Height = form.ClientSize.Height - bottomPanel.Height - 105 - syncProgressPanel.Height;
 
                     int updated = 0;
                     int errors = 0;
                     int processed = 0;
+                    long completedBytesAllFiles = 0;
+
+                    var totalTimer = System.Diagnostics.Stopwatch.StartNew();
+                    var speedTimer = System.Diagnostics.Stopwatch.StartNew();
+                    long lastSampledTotalBytes = 0;
+                    double currentSpeedBytesPerSec = 0;
 
                     try
                     {
                         foreach (var it in items)
                         {
-                            if (cancellationRequested)
+                            if (cancellationRequested || cts.Token.IsCancellationRequested)
                             {
                                 break;
                             }
@@ -1005,18 +1137,95 @@ public static class SmartSyncDialog
                             if (!it.IsChecked) continue;
 
                             processed++;
-                            progressBar.Value = Math.Min(processed, totalChecked);
-                            progressLabel.Text = $"Синхронизация {processed} из {totalChecked}: {it.FileRecord.Name}...";
-                            Application.DoEvents();
+                            long currentFileTotalSize = (it.Status == SyncItemStatus.LocalOnly || it.Status == SyncItemStatus.LocalNewer)
+                                ? it.LocalSize
+                                : it.FileRecord.Size;
 
-                            if ((it.Status == SyncItemStatus.LocalNewer || it.Status == SyncItemStatus.LocalOnly) && !string.IsNullOrEmpty(it.FileRecord.SourcePath))
+                            bool isUpload = (it.Status == SyncItemStatus.LocalNewer || it.Status == SyncItemStatus.LocalOnly);
+
+                            lblOperationTitle.Text = isUpload ? "Загрузка в Telegram..." : "Скачивание из Telegram...";
+                            pbCurrentFile.Value = 0;
+                            lblCurFileName.Text = it.FileRecord.Name;
+                            lblFilesCount.Text = $"{processed} из {totalChecked}";
+                            lblDirection.Text = isUpload ? "Диск ПК → Telegram Cloud (VFS)" : "Telegram Cloud (VFS) → Диск ПК";
+
+                            Func<long, long, bool> progressHandler = (transferred, total) =>
+                            {
+                                if (cancellationRequested || cts.Token.IsCancellationRequested)
+                                {
+                                    return true;
+                                }
+
+                                if (speedTimer.ElapsedMilliseconds >= 400)
+                                {
+                                    double sec = speedTimer.Elapsed.TotalSeconds;
+                                    long currentTotal = completedBytesAllFiles + transferred;
+                                    long diff = currentTotal - lastSampledTotalBytes;
+                                    currentSpeedBytesPerSec = sec > 0 ? (diff / sec) : 0;
+                                    lastSampledTotalBytes = currentTotal;
+                                    speedTimer.Restart();
+                                }
+
+                                int filePct = total > 0 ? (int)Math.Clamp((transferred * 100) / total, 0, 100) : 0;
+                                long currentTotalBytes = completedBytesAllFiles + transferred;
+                                int overallPct = totalBytesAllFiles > 0 ? (int)Math.Clamp((currentTotalBytes * 100) / totalBytesAllFiles, 0, 100) : 0;
+
+                                if (form.IsHandleCreated && !form.IsDisposed)
+                                {
+                                    form.BeginInvoke(() =>
+                                    {
+                                        if (form.IsDisposed) return;
+
+                                        pbCurrentFile.Value = filePct;
+                                        lblOperationTitle.Text = $"{(isUpload ? "Загрузка в Telegram..." : "Скачивание из Telegram...")} ({filePct}%)";
+
+                                        lblCurFileBytes.Text = $"{filePct}% ({Logger.FormatBytes(transferred)} / {Logger.FormatBytes(total)})";
+                                        lblTotalBytes.Text = $"{overallPct}% ({Logger.FormatBytes(currentTotalBytes)} / {Logger.FormatBytes(totalBytesAllFiles)})";
+
+                                        if (isPaused)
+                                        {
+                                            lblSpeed.Text = "Пауза";
+                                        }
+                                        else
+                                        {
+                                            lblSpeed.Text = $"{FormatSpeed(currentSpeedBytesPerSec)} ({FormatBits(currentSpeedBytesPerSec * 8)})";
+                                        }
+
+                                        TimeSpan elapsed = totalTimer.Elapsed;
+                                        string elapsedStr = elapsed.ToString(@"hh\:mm\:ss");
+                                        if (currentSpeedBytesPerSec > 0 && totalBytesAllFiles > currentTotalBytes)
+                                        {
+                                            double remainingSec = (totalBytesAllFiles - currentTotalBytes) / currentSpeedBytesPerSec;
+                                            TimeSpan eta = TimeSpan.FromSeconds(remainingSec);
+                                            lblTime.Text = $"{elapsedStr}  (осталось: ~{eta:hh\\:mm\\:ss})";
+                                        }
+                                        else
+                                        {
+                                            lblTime.Text = elapsedStr;
+                                        }
+                                    });
+                                }
+
+                                Application.DoEvents();
+                                return false;
+                            };
+
+                            if (isUpload && !string.IsNullOrEmpty(it.FileRecord.SourcePath))
                             {
                                 try
                                 {
                                     if (File.Exists(it.FileRecord.SourcePath))
                                     {
                                         string caption = string.IsNullOrEmpty(it.FileRecord.Parent) ? it.FileRecord.Name : $"{it.FileRecord.Parent}\\{it.FileRecord.Name}";
-                                        int msgId = await TelegramManager.UploadAndSendFileAsync(channelId, it.FileRecord.SourcePath, it.FileRecord.Name, caption);
+                                        int msgId = await TelegramManager.UploadAndSendFileAsync(
+                                            channelId,
+                                            it.FileRecord.SourcePath,
+                                            it.FileRecord.Name,
+                                            caption,
+                                            onProgress: progressHandler,
+                                            cancellationToken: cts.Token,
+                                            pauseGate: pauseGate);
+
                                         if (msgId > 0)
                                         {
                                             if (!string.IsNullOrEmpty(it.FileRecord.Uid))
@@ -1060,6 +1269,7 @@ public static class SmartSyncDialog
                                                                   $"• Источник: {it.FileRecord.SourcePath}";
 
                                             updated++;
+                                            completedBytesAllFiles += currentFileTotalSize;
                                         }
                                         else
                                         {
@@ -1067,8 +1277,14 @@ public static class SmartSyncDialog
                                         }
                                     }
                                 }
-                                catch
+                                catch (OperationCanceledException)
                                 {
+                                    cancellationRequested = true;
+                                    break;
+                                }
+                                catch (Exception ex)
+                                {
+                                    Logger.Error("UI", $"Upload error for '{it.FileRecord.Name}': {ex.Message}", ex);
                                     errors++;
                                 }
                             }
@@ -1083,7 +1299,14 @@ public static class SmartSyncDialog
                                     }
 
                                     string tempFile = it.FileRecord.SourcePath + ".tmp_sync";
-                                    await TelegramManager.DownloadFileAsync(channelId, it.FileRecord.TgMessageId, tempFile);
+                                    await TelegramManager.DownloadFileAsync(
+                                        channelId,
+                                        it.FileRecord.TgMessageId,
+                                        tempFile,
+                                        onProgress: progressHandler,
+                                        cancellationToken: cts.Token,
+                                        pauseGate: pauseGate);
+
                                     if (File.Exists(tempFile))
                                     {
                                         if (File.Exists(it.FileRecord.SourcePath))
@@ -1108,14 +1331,21 @@ public static class SmartSyncDialog
                                                               $"• Источник: {it.FileRecord.SourcePath}";
 
                                         updated++;
+                                        completedBytesAllFiles += currentFileTotalSize;
                                     }
                                     else
                                     {
                                         errors++;
                                     }
                                 }
-                                catch
+                                catch (OperationCanceledException)
                                 {
+                                    cancellationRequested = true;
+                                    break;
+                                }
+                                catch (Exception ex)
+                                {
+                                    Logger.Error("UI", $"Download error for '{it.FileRecord.Name}': {ex.Message}", ex);
                                     errors++;
                                 }
                             }
@@ -1125,13 +1355,16 @@ public static class SmartSyncDialog
                         PopulateListView();
 
                         string statusMsg = cancellationRequested
-                            ? $"Синхронизация отменена пользователем.\nОбработано: {updated}\nОшибок: {errors}"
+                            ? $"Синхронизация отменена пользователем.\nУспешно обработано: {updated}\nОшибок: {errors}"
                             : $"Синхронизация завершена.\nУспешно обработано: {updated}\nОшибок: {errors}";
 
                         MessageBox.Show(form, statusMsg, "Smart Sync", MessageBoxButtons.OK, cancellationRequested ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
                     }
                     finally
                     {
+                        syncProgressPanel.Visible = false;
+                        listView.Height = form.ClientSize.Height - bottomPanel.Height - 115;
+
                         syncBtn.Enabled = true;
                         selectUpdatesBtn.Enabled = true;
                         clearSelectionBtn.Enabled = true;
@@ -1141,92 +1374,75 @@ public static class SmartSyncDialog
                         closeBtn.Text = "Закрыть";
                         toolTip.SetToolTip(closeBtn, "Закрыть окно синхронизации");
                         closeBtn.DialogResult = DialogResult.Cancel;
-
-                        progressLabel.Visible = false;
-                        progressBar.Visible = false;
-                        listView.Height = form.ClientSize.Height - bottomPanel.Height - 115;
                     }
                 };
 
-                closeBtn.Click += (s, e) =>
-                {
-                    if (!syncBtn.Enabled)
-                    {
-                        cancellationRequested = true;
-                    }
-                };
-
-                bottomPanel.Controls.Add(selectUpdatesBtn);
-                bottomPanel.Controls.Add(clearSelectionBtn);
-                bottomPanel.Controls.Add(syncBtn);
-                bottomPanel.Controls.Add(closeBtn);
-                form.CancelButton = closeBtn;
-
+                // Сохранение положения формы при закрытии
                 form.FormClosing += (s, e) =>
                 {
-                    try
+                    if (closeBtn.Text == "Отмена")
                     {
-                        SettingsManager.SaveSetting("smartsync_hide_identical", hideIdenticalCb.Checked ? "1" : "0");
-
-                        if (listView.Columns.Count >= 7)
-                        {
-                            SettingsManager.SaveSetting("smartsync_col_vfs", listView.Columns[0].Width.ToString());
-                            SettingsManager.SaveSetting("smartsync_col_tg_size", listView.Columns[1].Width.ToString());
-                            SettingsManager.SaveSetting("smartsync_col_tg_date", listView.Columns[2].Width.ToString());
-                            SettingsManager.SaveSetting("smartsync_col_direction", listView.Columns[3].Width.ToString());
-                            SettingsManager.SaveSetting("smartsync_col_pc_date", listView.Columns[4].Width.ToString());
-                            SettingsManager.SaveSetting("smartsync_col_pc_size", listView.Columns[5].Width.ToString());
-                            SettingsManager.SaveSetting("smartsync_col_source", listView.Columns[6].Width.ToString());
-                        }
-
-                        if (form.WindowState == FormWindowState.Maximized)
-                        {
-                            SettingsManager.SaveSetting("smartsync_maximized", "1");
-                            SettingsManager.SaveSetting("smartsync_width", form.RestoreBounds.Width.ToString());
-                            SettingsManager.SaveSetting("smartsync_height", form.RestoreBounds.Height.ToString());
-                        }
-                        else if (form.WindowState == FormWindowState.Normal)
-                        {
-                            SettingsManager.SaveSetting("smartsync_maximized", "0");
-                            SettingsManager.SaveSetting("smartsync_width", form.Width.ToString());
-                            SettingsManager.SaveSetting("smartsync_height", form.Height.ToString());
-                        }
+                        cancellationRequested = true;
+                        cts?.Cancel();
+                        pauseGate.Set();
                     }
-                    catch (Exception ex)
+
+                    bool isMax = form.WindowState == FormWindowState.Maximized;
+                    SettingsManager.SaveSetting("smartsync_maximized", isMax ? "1" : "0");
+                    SettingsManager.SaveSetting("smartsync_hide_identical", hideIdenticalCb.Checked ? "1" : "0");
+
+                    if (!isMax)
                     {
-                        Logger.Warn("UI", $"Failed to save SmartSyncDialog geometry: {ex.Message}");
+                        SettingsManager.SaveSetting("smartsync_width", form.ClientSize.Width.ToString());
+                        SettingsManager.SaveSetting("smartsync_height", form.ClientSize.Height.ToString());
+                    }
+
+                    if (listView.Columns.Count >= 7)
+                    {
+                        SettingsManager.SaveSetting("smartsync_col_vfs", listView.Columns[0].Width.ToString());
+                        SettingsManager.SaveSetting("smartsync_col_tg_size", listView.Columns[1].Width.ToString());
+                        SettingsManager.SaveSetting("smartsync_col_tg_date", listView.Columns[2].Width.ToString());
+                        SettingsManager.SaveSetting("smartsync_col_direction", listView.Columns[3].Width.ToString());
+                        SettingsManager.SaveSetting("smartsync_col_pc_date", listView.Columns[4].Width.ToString());
+                        SettingsManager.SaveSetting("smartsync_col_pc_size", listView.Columns[5].Width.ToString());
+                        SettingsManager.SaveSetting("smartsync_col_source", listView.Columns[6].Width.ToString());
                     }
                 };
 
-                form.ShowModalTc();
+                form.ShowDialog();
             }
             catch (Exception ex)
             {
-                Logger.Error("UI", "SmartSyncDialog exception", ex);
+                Logger.Error("UI", $"Fatal error in SmartSyncDialog: {ex.Message}", ex);
             }
         });
     }
 
+    private static string FormatSpeed(double bytesPerSec)
+    {
+        if (bytesPerSec <= 0) return "0 Б/с";
+        if (bytesPerSec >= 1024 * 1024)
+            return $"{bytesPerSec / (1024 * 1024):0.0} МБ/с";
+        if (bytesPerSec >= 1024)
+            return $"{bytesPerSec / 1024:0.0} КБ/с";
+        return $"{bytesPerSec:0} Б/с";
+    }
+
+    private static string FormatBits(double bitsPerSec)
+    {
+        if (bitsPerSec <= 0) return "0 Мбит/с";
+        if (bitsPerSec >= 1_000_000)
+            return $"{bitsPerSec / 1_000_000:0.0} Мбит/с";
+        if (bitsPerSec >= 1_000)
+            return $"{bitsPerSec / 1_000:0.0} Кбит/с";
+        return $"{bitsPerSec:0} бит/с";
+    }
+
     private static string FormatTimeSpan(TimeSpan span)
     {
-        if (span.TotalDays >= 1)
-        {
-            int days = (int)span.TotalDays;
-            int hours = span.Hours;
-            return hours > 0 ? $"{days} дн. {hours} ч." : $"{days} дн.";
-        }
-        if (span.TotalHours >= 1)
-        {
-            int hours = (int)span.TotalHours;
-            int mins = span.Minutes;
-            return mins > 0 ? $"{hours} ч. {mins} мин." : $"{hours} ч.";
-        }
-        if (span.TotalMinutes >= 1)
-        {
-            int mins = (int)span.TotalMinutes;
-            int secs = span.Seconds;
-            return secs > 0 ? $"{mins} мин. {secs} сек." : $"{mins} мин.";
-        }
-        return $"{(int)span.TotalSeconds} сек.";
+        if (span.TotalDays >= 1) return $"{span.Days} дн {span.Hours} ч";
+        if (span.TotalHours >= 1) return $"{span.Hours} ч {span.Minutes} мин";
+        if (span.TotalMinutes >= 1) return $"{span.Minutes} мин {span.Seconds} сек";
+        return $"{span.Seconds} сек";
     }
 }
