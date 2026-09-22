@@ -1569,6 +1569,55 @@ public class VfsDatabase : IDisposable
         return list;
     }
 
+    public List<FileRecord> GetAllFilesRecursive(string mountId, string? rootFolder)
+    {
+        var list = new List<FileRecord>();
+        string cleanFolder = string.IsNullOrEmpty(rootFolder) ? "" : rootFolder.Trim('\\', '/').Replace('/', '\\');
+
+        using var cmd = _connection.CreateCommand();
+        if (string.IsNullOrEmpty(cleanFolder))
+        {
+            cmd.CommandText = @"
+                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver, source_path
+                FROM files
+                WHERE mount_id = @mid AND isdir = 0 AND (in_trash IS NULL OR in_trash = 0)
+                ORDER BY name ASC";
+            cmd.Parameters.AddWithValue("@mid", mountId);
+        }
+        else
+        {
+            cmd.CommandText = @"
+                SELECT uid, mount_id, isdir, name, parent, mtime, size, tg_message_id, in_trash, ver, source_path
+                FROM files
+                WHERE mount_id = @mid AND isdir = 0 AND (in_trash IS NULL OR in_trash = 0)
+                  AND (parent = @exactPath COLLATE NOCASE OR parent LIKE @prefixPath COLLATE NOCASE)
+                ORDER BY name ASC";
+            cmd.Parameters.AddWithValue("@mid", mountId);
+            cmd.Parameters.AddWithValue("@exactPath", cleanFolder);
+            cmd.Parameters.AddWithValue("@prefixPath", cleanFolder + "\\%");
+        }
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new FileRecord
+            {
+                Uid = reader.GetString(0),
+                MountId = reader.GetString(1),
+                IsDir = reader.GetInt32(2) == 1,
+                Name = reader.GetString(3),
+                Parent = reader.IsDBNull(4) ? null : reader.GetString(4),
+                MTime = ReadDateTime(reader, 5),
+                Size = reader.GetInt64(6),
+                TgMessageId = reader.GetInt32(7),
+                InTrash = reader.IsDBNull(8) ? 0 : reader.GetInt32(8),
+                Ver = reader.IsDBNull(9) ? 1 : reader.GetInt32(9),
+                SourcePath = reader.IsDBNull(10) ? null : reader.GetString(10)
+            });
+        }
+        return list;
+    }
+
     public void UpdateFileSourcePath(string uid, string? sourcePath)
     {
         using var cmd = _connection.CreateCommand();

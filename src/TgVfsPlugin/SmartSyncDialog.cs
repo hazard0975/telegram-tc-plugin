@@ -13,8 +13,10 @@ public enum SyncItemStatus
     Identical,           // Файлы совпадают (размер и время изменения)
     LocalNewer,          // На ПК файл новее -> обновить в TG
     RemoteNewer,         // В Telegram файл новее -> обновить на ПК
-    SizeMismatch,        // Даты совпадают, но размеры отличаются (конфликт / неоднозначность)
-    SourceNotFound       // Локальный файл-источник на диске отсутствует
+    LocalOnly,           // Новый файл на диске ПК (отсутствует в VFS) -> загрузить в TG
+    SizeMismatch,        // Даты совпадают, но размеры отличаются (конфликт / несовпадение)
+    SourceNotFound,      // Локальный файл-источник на диске отсутствует
+    NoSourceConfigured   // У элемента VFS в Контейнере отсутствует привязанный локальный путь
 }
 
 public class SmartSyncItem
@@ -40,6 +42,10 @@ public static class SmartSyncDialog
                 Win32Api.EnsureVisualStyles();
                 using ToolTip toolTip = UiTheme.CreateToolTip();
 
+                var mountInfo = db.GetMountById(mountId);
+                bool isMirror = mountInfo != null && mountInfo.Mode == 0 && !string.IsNullOrEmpty(mountInfo.LocalPath);
+                string modeTitle = isMirror ? "Зеркало" : "Контейнер";
+
                 int initWidth = 1080;
                 int initHeight = 620;
                 bool initMaximized = false;
@@ -55,7 +61,7 @@ public static class SmartSyncDialog
                     ClientSize = new Size(initWidth, initHeight),
                     MinimumSize = new Size(880, 520),
                     FormBorderStyle = FormBorderStyle.Sizable,
-                    Text = $"Умная синхронизация (Smart Sync) — \\{channelName}\\{(string.IsNullOrEmpty(folderPath) ? "" : folderPath)}",
+                    Text = $"Умная синхронизация (Smart Sync — {modeTitle}) — \\{channelName}\\{(string.IsNullOrEmpty(folderPath) ? "" : folderPath)}",
                     StartPosition = FormStartPosition.CenterScreen,
                     MinimizeBox = true,
                     MaximizeBox = true,
@@ -82,7 +88,9 @@ public static class SmartSyncDialog
                     Top = 10,
                     Width = 800,
                     Height = 22,
-                    Text = "Сравнение версий с локальными оригиналами на ПК",
+                    Text = isMirror
+                        ? $"Синхронизация папки-зеркала: {mountInfo!.LocalPath}"
+                        : "Сравнение элементов контейнера с оригиналами на ПК",
                     Font = UiTheme.HeaderTitleFont,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
@@ -94,7 +102,9 @@ public static class SmartSyncDialog
                     Width = 800,
                     Height = 22,
                     ForeColor = UiTheme.LabelForeColor,
-                    Text = "Отслеживание актуальности файлов виртуальной подборки и оригинальных файлов на дисках ПК",
+                    Text = isMirror
+                        ? "Двустороннее отслеживание изменений между структурой VFS и локальным диском"
+                        : "Проверка актуальности элементов виртуальной подборки и оригиналов на дисках ПК",
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
@@ -106,146 +116,341 @@ public static class SmartSyncDialog
                 Panel bottomPanel = UiTheme.CreateBottomPanel(52);
                 form.Controls.Add(bottomPanel);
 
-                // Сканирование элементов из БД
-                var dbFiles = db.GetFilesWithSourcePathRecursive(mountId, folderPath);
                 List<SmartSyncItem> items = new();
 
                 int localNewerCount = 0;
                 int remoteNewerCount = 0;
+                int localOnlyCount = 0;
                 int missingCount = 0;
                 int identicalCount = 0;
                 int mismatchCount = 0;
+                int noSourceCount = 0;
 
-                foreach (var file in dbFiles)
+                if (isMirror)
                 {
-                    if (string.IsNullOrEmpty(file.SourcePath)) continue;
+                    // ----------------------------------------------------
+                    // Двусторонняя логика для режима «Зеркало» (Mode == 0)
+                    // ----------------------------------------------------
+                    string mirrorRoot = mountInfo!.LocalPath!;
+                    string targetSubFolder = string.IsNullOrEmpty(folderPath) ? "" : folderPath.Trim('\\', '/').Replace('/', '\\');
+                    string targetLocalDir = string.IsNullOrEmpty(targetSubFolder) ? mirrorRoot : Path.Combine(mirrorRoot, targetSubFolder);
 
-                    var item = new SmartSyncItem { FileRecord = file };
-                    string vfsFileName = file.Name;
-                    string srcFileName = Path.GetFileName(file.SourcePath);
-                    bool isRenamed = !string.IsNullOrEmpty(srcFileName) &&
-                                     !string.Equals(vfsFileName, srcFileName, StringComparison.OrdinalIgnoreCase);
+                    var vfsFiles = db.GetAllFilesRecursive(mountId, folderPath);
+                    var vfsMap = new Dictionary<string, VfsDatabase.FileRecord>(StringComparer.OrdinalIgnoreCase);
 
-                    string renameHeader = isRenamed ? $"🏷️ [Файл переименован в VFS]\nОригинальное имя на ПК: {srcFileName}\n\n" : "";
-
-                    DateTime remoteLocalTime = file.MTime.ToLocalTime();
-
-                    if (!File.Exists(file.SourcePath))
+                    foreach (var file in vfsFiles)
                     {
-                        item.Status = SyncItemStatus.SourceNotFound;
-                        item.StatusText = "Не найден на ПК";
-                        item.DirectionSymbol = "❌";
-                        item.DirectionText = "Пропуск";
-                        item.ToolTipDetails = $"{renameHeader}[❌ Файл-источник не найден на диске ПК]\n" +
-                                              $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
-                                              $"• Ожидаемый путь на ПК: {file.SourcePath}\n" +
-                                              $"(возможно, диск отключен или файл был удален/перемещен)";
-                        missingCount++;
+                        string relPath = string.IsNullOrEmpty(file.Parent) ? file.Name : Path.Combine(file.Parent, file.Name);
+                        vfsMap[relPath] = file;
+
+                        string expectedPath = Path.Combine(mirrorRoot, relPath);
+                        file.SourcePath = expectedPath;
                     }
-                    else
+
+                    // Сканирование физического локального диска ПК
+                    if (Directory.Exists(targetLocalDir))
                     {
                         try
                         {
-                            var fi = new FileInfo(file.SourcePath);
-                            item.LocalSize = fi.Length;
-                            item.LocalWriteTime = fi.LastWriteTime;
-
-                            long localUnix = new DateTimeOffset(fi.LastWriteTimeUtc).ToUnixTimeSeconds();
-                            long remoteUnix = new DateTimeOffset(file.MTime.ToUniversalTime()).ToUnixTimeSeconds();
-                            long diff = localUnix - remoteUnix;
-
-                            if (Math.Abs(diff) <= 2)
+                            var diskFiles = Directory.EnumerateFiles(targetLocalDir, "*", SearchOption.AllDirectories);
+                            foreach (var diskPath in diskFiles)
                             {
-                                // Даты совпадают в пределах 2 сек
-                                if (item.LocalSize == file.Size)
+                                string relPath = Path.GetRelativePath(mirrorRoot, diskPath);
+
+                                if (!vfsMap.ContainsKey(relPath))
                                 {
-                                    item.Status = SyncItemStatus.Identical;
-                                    item.StatusText = "Идентичны";
-                                    item.DirectionSymbol = "=";
-                                    item.DirectionText = "Синхронизировано";
-                                    item.ToolTipDetails = $"{renameHeader}[= Идентичны]\n" +
-                                                          $"• Дата: {remoteLocalTime:dd.MM.yy HH:mm:ss}\n" +
-                                                          $"• Размер: {file.Size:#,##0} байт\n" +
-                                                          $"• Источник: {file.SourcePath}";
-                                    identicalCount++;
+                                    // Новый файл на локальном диске, которого ещё нет в VFS
+                                    try
+                                    {
+                                        var fi = new FileInfo(diskPath);
+                                        string relDir = Path.GetDirectoryName(relPath) ?? "";
+                                        string fileName = Path.GetFileName(diskPath);
+
+                                        var syntheticRecord = new VfsDatabase.FileRecord
+                                        {
+                                            Uid = "",
+                                            MountId = mountId,
+                                            IsDir = false,
+                                            Name = fileName,
+                                            Parent = string.IsNullOrEmpty(relDir) ? null : relDir,
+                                            MTime = fi.LastWriteTimeUtc,
+                                            Size = fi.Length,
+                                            TgMessageId = 0,
+                                            InTrash = 0,
+                                            Ver = 1,
+                                            SourcePath = diskPath
+                                        };
+
+                                        var newItem = new SmartSyncItem
+                                        {
+                                            FileRecord = syntheticRecord,
+                                            Status = SyncItemStatus.LocalOnly,
+                                            StatusText = "Новый на ПК",
+                                            DirectionSymbol = "-->>",
+                                            DirectionText = "ПК -> Telegram",
+                                            LocalSize = fi.Length,
+                                            LocalWriteTime = fi.LastWriteTime,
+                                            ToolTipDetails = $"[-->> Новый файл на локальном диске ПК]\n" +
+                                                             $"• Отсутствует в VFS и Telegram\n" +
+                                                             $"• Путь на ПК: {diskPath}\n" +
+                                                             $"• Размер: {fi.Length:#,##0} байт\n" +
+                                                             $"• Дата: {fi.LastWriteTime:dd.MM.yy HH:mm:ss}\n" +
+                                                             $"(отметьте для выгрузки в Telegram)"
+                                        };
+
+                                        items.Add(newItem);
+                                        localOnlyCount++;
+                                    }
+                                    catch
+                                    {
+                                        // Игнорируем файлы без прав доступа
+                                    }
                                 }
-                                else
-                                {
-                                    // Даты равны, но размеры отличаются (конфликт / несовпадение размеров)
-                                    item.Status = SyncItemStatus.SizeMismatch;
-                                    item.StatusText = "⚠️ Разный размер";
-                                    item.DirectionSymbol = "≠";
-                                    item.DirectionText = "Требует решения";
-                                    item.ToolTipDetails = $"{renameHeader}[⚠️ Несовпадение размеров при совпадающей дате]\n" +
-                                                          $"• Диск ПК:  {item.LocalSize:#,##0} байт ({item.LocalWriteTime:dd.MM.yy HH:mm:ss})\n" +
-                                                          $"• Telegram: {file.Size:#,##0} байт ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
-                                                          $"• Разница размера: {Math.Abs(item.LocalSize - file.Size):#,##0} байт\n" +
-                                                          $"• Источник: {file.SourcePath}";
-                                    mismatchCount++;
-                                }
-                            }
-                            else if (diff > 2)
-                            {
-                                // Файл на ПК свежее, чем в Telegram
-                                item.Status = SyncItemStatus.LocalNewer;
-                                item.StatusText = "На ПК новее";
-                                item.DirectionSymbol = "-->>";
-                                item.DirectionText = "ПК -> Telegram";
-
-                                TimeSpan span = fi.LastWriteTimeUtc - file.MTime.ToUniversalTime();
-                                string diffStr = FormatTimeSpan(span);
-
-                                item.ToolTipDetails = $"{renameHeader}[-->> На ПК новее] (ПК -->> Telegram)\n" +
-                                                      $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
-                                                      $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
-                                                      $"• Опережение:      на {diffStr}\n" +
-                                                      $"• Источник:        {file.SourcePath}";
-                                localNewerCount++;
-                            }
-                            else
-                            {
-                                // Файл в Telegram свежее, чем на ПК (diff < -2)
-                                item.Status = SyncItemStatus.RemoteNewer;
-                                item.StatusText = "В TG новее";
-                                item.DirectionSymbol = "<<--";
-                                item.DirectionText = "Telegram -> ПК";
-
-                                TimeSpan span = file.MTime.ToUniversalTime() - fi.LastWriteTimeUtc;
-                                string diffStr = FormatTimeSpan(span);
-
-                                item.ToolTipDetails = $"{renameHeader}[<<-- В Telegram новее] (Telegram <<-- ПК)\n" +
-                                                      $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
-                                                      $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
-                                                      $"• Опережение:       на {diffStr}\n" +
-                                                      $"• Источник:         {file.SourcePath}";
-                                remoteNewerCount++;
                             }
                         }
                         catch (Exception ex)
                         {
-                            item.Status = SyncItemStatus.SourceNotFound;
-                            item.StatusText = "Ошибка доступа";
-                            item.DirectionSymbol = "❌";
-                            item.DirectionText = "Пропуск";
-                            item.ToolTipDetails = $"{renameHeader}[❌ Ошибка доступа к файлу на ПК]\n" +
-                                                  $"• Ошибка: {ex.Message}\n" +
-                                                  $"• Путь: {file.SourcePath}";
-                            missingCount++;
+                            Logger.Warn("UI", $"SmartSync disk scan error in '{targetLocalDir}': {ex.Message}");
                         }
                     }
-                    items.Add(item);
+
+                    // Обработка всех элементов VFS
+                    foreach (var file in vfsFiles)
+                    {
+                        var item = new SmartSyncItem { FileRecord = file };
+                        DateTime remoteLocalTime = file.MTime.ToLocalTime();
+                        string expectedPath = file.SourcePath!;
+
+                        if (!File.Exists(expectedPath))
+                        {
+                            item.Status = SyncItemStatus.RemoteNewer;
+                            item.StatusText = "Отсутствует на ПК";
+                            item.DirectionSymbol = "<<--";
+                            item.DirectionText = "Telegram -> ПК";
+                            item.ToolTipDetails = $"[<<-- Файл отсутствует на локальном диске ПК]\n" +
+                                                  $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
+                                                  $"• Ожидаемый путь: {expectedPath}\n" +
+                                                  $"(отметьте для скачивания из Telegram на ПК)";
+                            remoteNewerCount++;
+                        }
+                        else
+                        {
+                            try
+                            {
+                                var fi = new FileInfo(expectedPath);
+                                item.LocalSize = fi.Length;
+                                item.LocalWriteTime = fi.LastWriteTime;
+
+                                long localUnix = new DateTimeOffset(fi.LastWriteTimeUtc).ToUnixTimeSeconds();
+                                long remoteUnix = new DateTimeOffset(file.MTime.ToUniversalTime()).ToUnixTimeSeconds();
+                                long diff = localUnix - remoteUnix;
+
+                                if (Math.Abs(diff) <= 2)
+                                {
+                                    if (item.LocalSize == file.Size)
+                                    {
+                                        item.Status = SyncItemStatus.Identical;
+                                        item.StatusText = "Идентичны";
+                                        item.DirectionSymbol = "=";
+                                        item.DirectionText = "Синхронизировано";
+                                        item.ToolTipDetails = $"[= Идентичны]\n" +
+                                                              $"• Дата: {remoteLocalTime:dd.MM.yy HH:mm:ss}\n" +
+                                                              $"• Размер: {file.Size:#,##0} байт\n" +
+                                                              $"• Источник: {expectedPath}";
+                                        identicalCount++;
+                                    }
+                                    else
+                                    {
+                                        item.Status = SyncItemStatus.SizeMismatch;
+                                        item.StatusText = "⚠️ Разный размер";
+                                        item.DirectionSymbol = "≠";
+                                        item.DirectionText = "Требует решения";
+                                        item.ToolTipDetails = $"[⚠️ Несовпадение размеров при совпадающей дате]\n" +
+                                                              $"• Диск ПК:  {item.LocalSize:#,##0} байт ({item.LocalWriteTime:dd.MM.yy HH:mm:ss})\n" +
+                                                              $"• Telegram: {file.Size:#,##0} байт ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
+                                                              $"• Разница размера: {Math.Abs(item.LocalSize - file.Size):#,##0} байт\n" +
+                                                              $"• Источник: {expectedPath}";
+                                        mismatchCount++;
+                                    }
+                                }
+                                else if (diff > 2)
+                                {
+                                    item.Status = SyncItemStatus.LocalNewer;
+                                    item.StatusText = "На ПК новее";
+                                    item.DirectionSymbol = "-->>";
+                                    item.DirectionText = "ПК -> Telegram";
+
+                                    TimeSpan span = fi.LastWriteTimeUtc - file.MTime.ToUniversalTime();
+                                    string diffStr = FormatTimeSpan(span);
+
+                                    item.ToolTipDetails = $"[-->> На ПК новее] (ПК -->> Telegram)\n" +
+                                                          $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
+                                                          $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
+                                                          $"• Опережение:      на {diffStr}\n" +
+                                                          $"• Источник:        {expectedPath}";
+                                    localNewerCount++;
+                                }
+                                else
+                                {
+                                    item.Status = SyncItemStatus.RemoteNewer;
+                                    item.StatusText = "В TG новее";
+                                    item.DirectionSymbol = "<<--";
+                                    item.DirectionText = "Telegram -> ПК";
+
+                                    TimeSpan span = file.MTime.ToUniversalTime() - fi.LastWriteTimeUtc;
+                                    string diffStr = FormatTimeSpan(span);
+
+                                    item.ToolTipDetails = $"[<<-- В Telegram новее] (Telegram <<-- ПК)\n" +
+                                                          $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
+                                                          $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
+                                                          $"• Опережение:       на {diffStr}\n" +
+                                                          $"• Источник:         {expectedPath}";
+                                    remoteNewerCount++;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                item.Status = SyncItemStatus.SourceNotFound;
+                                item.StatusText = "Ошибка доступа";
+                                item.DirectionSymbol = "❌";
+                                item.DirectionText = "Пропуск";
+                                item.ToolTipDetails = $"[❌ Ошибка доступа к файлу на ПК]\n• Ошибка: {ex.Message}\n• Путь: {expectedPath}";
+                                missingCount++;
+                            }
+                        }
+
+                        items.Add(item);
+                    }
+                }
+                else
+                {
+                    // ----------------------------------------------------
+                    // Точечная логика для режима «Контейнер» (Mode == 1)
+                    // ----------------------------------------------------
+                    var dbFiles = db.GetAllFilesRecursive(mountId, folderPath);
+
+                    foreach (var file in dbFiles)
+                    {
+                        var item = new SmartSyncItem { FileRecord = file };
+                        DateTime remoteLocalTime = file.MTime.ToLocalTime();
+
+                        if (string.IsNullOrEmpty(file.SourcePath))
+                        {
+                            item.Status = SyncItemStatus.NoSourceConfigured;
+                            item.StatusText = "Виртуальный";
+                            item.DirectionSymbol = "❌";
+                            item.DirectionText = "Пропуск";
+                            item.ToolTipDetails = $"[❌ Нет источника на ПК]\nФайл создан в VFS и не привязан к локальному файлу.";
+                            noSourceCount++;
+                        }
+                        else if (!File.Exists(file.SourcePath))
+                        {
+                            item.Status = SyncItemStatus.SourceNotFound;
+                            item.StatusText = "Не найден на ПК";
+                            item.DirectionSymbol = "❌";
+                            item.DirectionText = "Пропуск";
+                            item.ToolTipDetails = $"[❌ Файл-источник не найден на диске ПК]\n" +
+                                                  $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
+                                                  $"• Ожидаемый путь: {file.SourcePath}\n" +
+                                                  $"(диск отключен или файл удален)";
+                            missingCount++;
+                        }
+                        else
+                        {
+                            try
+                            {
+                                var fi = new FileInfo(file.SourcePath);
+                                item.LocalSize = fi.Length;
+                                item.LocalWriteTime = fi.LastWriteTime;
+
+                                long localUnix = new DateTimeOffset(fi.LastWriteTimeUtc).ToUnixTimeSeconds();
+                                long remoteUnix = new DateTimeOffset(file.MTime.ToUniversalTime()).ToUnixTimeSeconds();
+                                long diff = localUnix - remoteUnix;
+
+                                if (Math.Abs(diff) <= 2)
+                                {
+                                    if (item.LocalSize == file.Size)
+                                    {
+                                        item.Status = SyncItemStatus.Identical;
+                                        item.StatusText = "Идентичны";
+                                        item.DirectionSymbol = "=";
+                                        item.DirectionText = "Синхронизировано";
+                                        item.ToolTipDetails = $"[= Идентичны]\n" +
+                                                              $"• Дата: {remoteLocalTime:dd.MM.yy HH:mm:ss}\n" +
+                                                              $"• Размер: {file.Size:#,##0} байт\n" +
+                                                              $"• Источник: {file.SourcePath}";
+                                        identicalCount++;
+                                    }
+                                    else
+                                    {
+                                        item.Status = SyncItemStatus.SizeMismatch;
+                                        item.StatusText = "⚠️ Разный размер";
+                                        item.DirectionSymbol = "≠";
+                                        item.DirectionText = "Требует решения";
+                                        item.ToolTipDetails = $"[⚠️ Несовпадение размеров при совпадающей дате]\n" +
+                                                              $"• Диск ПК:  {item.LocalSize:#,##0} байт ({item.LocalWriteTime:dd.MM.yy HH:mm:ss})\n" +
+                                                              $"• Telegram: {file.Size:#,##0} байт ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
+                                                              $"• Разница размера: {Math.Abs(item.LocalSize - file.Size):#,##0} байт\n" +
+                                                              $"• Источник: {file.SourcePath}";
+                                        mismatchCount++;
+                                    }
+                                }
+                                else if (diff > 2)
+                                {
+                                    item.Status = SyncItemStatus.LocalNewer;
+                                    item.StatusText = "На ПК новее";
+                                    item.DirectionSymbol = "-->>";
+                                    item.DirectionText = "ПК -> Telegram";
+
+                                    TimeSpan span = fi.LastWriteTimeUtc - file.MTime.ToUniversalTime();
+                                    string diffStr = FormatTimeSpan(span);
+
+                                    item.ToolTipDetails = $"[-->> На ПК новее] (ПК -->> Telegram)\n" +
+                                                          $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
+                                                          $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
+                                                          $"• Опережение:      на {diffStr}\n" +
+                                                          $"• Источник:        {file.SourcePath}";
+                                    localNewerCount++;
+                                }
+                                else
+                                {
+                                    item.Status = SyncItemStatus.RemoteNewer;
+                                    item.StatusText = "В TG новее";
+                                    item.DirectionSymbol = "<<--";
+                                    item.DirectionText = "Telegram -> ПК";
+
+                                    TimeSpan span = file.MTime.ToUniversalTime() - fi.LastWriteTimeUtc;
+                                    string diffStr = FormatTimeSpan(span);
+
+                                    item.ToolTipDetails = $"[<<-- В Telegram новее] (Telegram <<-- ПК)\n" +
+                                                          $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
+                                                          $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
+                                                          $"• Опережение:       на {diffStr}\n" +
+                                                          $"• Источник:         {file.SourcePath}";
+                                    remoteNewerCount++;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                item.Status = SyncItemStatus.SourceNotFound;
+                                item.StatusText = "Ошибка доступа";
+                                item.DirectionSymbol = "❌";
+                                item.DirectionText = "Пропуск";
+                                item.ToolTipDetails = $"[❌ Ошибка доступа к файлу на ПК]\n• Ошибка: {ex.Message}\n• Путь: {file.SourcePath}";
+                                missingCount++;
+                            }
+                        }
+
+                        items.Add(item);
+                    }
                 }
 
                 // Информационная сводка
-                string summaryText = $"Файлов с источником: {items.Count}  |  Требуют обновления: {localNewerCount + remoteNewerCount}  |  Идентичны: {identicalCount}";
-                if (mismatchCount > 0)
-                {
-                    summaryText += $"  |  Разный размер: {mismatchCount}";
-                }
-                if (missingCount > 0)
-                {
-                    summaryText += $"  |  Не найдены на диске: {missingCount}";
-                }
+                string summaryText = $"Режим: {(isMirror ? "Зеркало" : "Контейнер")}  |  Элементов: {items.Count}  |  К обновлению: {localNewerCount + remoteNewerCount + localOnlyCount}  |  Идентичны: {identicalCount}";
+                if (localOnlyCount > 0) summaryText += $"  |  Новых на ПК: {localOnlyCount}";
+                if (mismatchCount > 0) summaryText += $"  |  Разный размер: {mismatchCount}";
+                if (missingCount > 0) summaryText += $"  |  Не найдены на диске: {missingCount}";
+                if (noSourceCount > 0) summaryText += $"  |  Без источника: {noSourceCount}";
 
                 Label summaryLabel = new Label()
                 {
@@ -271,14 +476,12 @@ public static class SmartSyncDialog
                     CheckBoxes = true,
                     FullRowSelect = true,
                     GridLines = true,
-                    ShowItemToolTips = false // Отключаем встроенные, так как используем наш точный многострочный ToolTip для всех ячеек
+                    ShowItemToolTips = false
                 };
 
-                // Включаем двойную буферизацию для устранения мерцания при ресайзе и растягивании колонок
                 typeof(Control).GetProperty("DoubleBuffered", BindingFlags.NonPublic | BindingFlags.Instance)?
                     .SetValue(listView, true, null);
 
-                // Загружаем сохраненную ширину 7 колонок
                 int colVfsWidth = 260;
                 int colTgSizeWidth = 85;
                 int colTgDateWidth = 145;
@@ -295,7 +498,6 @@ public static class SmartSyncDialog
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_col_pc_size"), out int cpc_s) && cpc_s >= 40) colPcSizeWidth = cpc_s;
                 if (int.TryParse(SettingsManager.GetSetting("smartsync_col_source"), out int csrc) && csrc >= 50) colSrcWidth = csrc;
 
-                // 7 колонок в стиле Total Commander
                 listView.Columns.Add("Путь в VFS", colVfsWidth, HorizontalAlignment.Left);
                 listView.Columns.Add("Размер (TG)", colTgSizeWidth, HorizontalAlignment.Right);
                 listView.Columns.Add("Дата (TG)", colTgDateWidth, HorizontalAlignment.Left);
@@ -311,20 +513,17 @@ public static class SmartSyncDialog
                         ? item.FileRecord.Name
                         : $"{item.FileRecord.Parent}\\{item.FileRecord.Name}";
 
-                    string vfsFileName = item.FileRecord.Name;
-                    string srcFileName = !string.IsNullOrEmpty(item.FileRecord.SourcePath)
-                        ? Path.GetFileName(item.FileRecord.SourcePath)
-                        : "";
-                    bool isRenamed = !string.IsNullOrEmpty(srcFileName) &&
-                                     !string.Equals(vfsFileName, srcFileName, StringComparison.OrdinalIgnoreCase);
+                    string itemText = vfsDisplayPath;
 
-                    string itemText = isRenamed ? $"🏷️ {vfsDisplayPath}" : vfsDisplayPath;
-
-                    string tgSizeText = item.FileRecord.Size.ToString("#,##0");
-                    string tgDateText = item.FileRecord.MTime.ToLocalTime().ToString("dd.MM.yy HH:mm:ss");
+                    string tgSizeText = item.Status == SyncItemStatus.LocalOnly ? "-" : item.FileRecord.Size.ToString("#,##0");
+                    string tgDateText = item.Status == SyncItemStatus.LocalOnly ? "-" : item.FileRecord.MTime.ToLocalTime().ToString("dd.MM.yy HH:mm:ss");
                     string dirSymbol = item.DirectionSymbol;
-                    string pcDateText = item.Status == SyncItemStatus.SourceNotFound ? "-" : item.LocalWriteTime.ToString("dd.MM.yy HH:mm:ss");
-                    string pcSizeText = item.Status == SyncItemStatus.SourceNotFound ? "-" : item.LocalSize.ToString("#,##0");
+                    string pcDateText = (item.Status == SyncItemStatus.SourceNotFound || item.Status == SyncItemStatus.NoSourceConfigured)
+                        ? "-"
+                        : item.LocalWriteTime.ToString("dd.MM.yy HH:mm:ss");
+                    string pcSizeText = (item.Status == SyncItemStatus.SourceNotFound || item.Status == SyncItemStatus.NoSourceConfigured)
+                        ? "-"
+                        : item.LocalSize.ToString("#,##0");
                     string pcPathText = item.FileRecord.SourcePath ?? "";
 
                     var lvi = new ListViewItem(itemText);
@@ -341,39 +540,46 @@ public static class SmartSyncDialog
                     Color rowBg;
                     Font rowFont;
 
-                    if (item.Status == SyncItemStatus.LocalNewer)
+                    if (item.Status == SyncItemStatus.LocalOnly)
                     {
                         lvi.Checked = true;
-                        rowFg = Color.FromArgb(0, 110, 0); // Зеленый цвет Total Commander
-                        rowBg = Color.FromArgb(235, 248, 235); // Мягкий светло-зеленый фон
+                        rowFg = Color.FromArgb(0, 120, 0);
+                        rowBg = Color.FromArgb(235, 248, 235);
+                        rowFont = new Font(listView.Font, FontStyle.Bold);
+                    }
+                    else if (item.Status == SyncItemStatus.LocalNewer)
+                    {
+                        lvi.Checked = true;
+                        rowFg = Color.FromArgb(0, 110, 0);
+                        rowBg = Color.FromArgb(235, 248, 235);
                         rowFont = new Font(listView.Font, FontStyle.Bold);
                     }
                     else if (item.Status == SyncItemStatus.RemoteNewer)
                     {
                         lvi.Checked = true;
-                        rowFg = Color.FromArgb(0, 70, 180); // Синий цвет Total Commander
-                        rowBg = Color.FromArgb(235, 244, 255); // Мягкий светло-голубой фон
+                        rowFg = Color.FromArgb(0, 70, 180);
+                        rowBg = Color.FromArgb(235, 244, 255);
                         rowFont = new Font(listView.Font, FontStyle.Bold);
                     }
                     else if (item.Status == SyncItemStatus.SizeMismatch)
                     {
                         lvi.Checked = false;
-                        rowFg = Color.FromArgb(180, 100, 0); // Оранжево-коричневый
-                        rowBg = Color.FromArgb(255, 247, 230); // Мягкий янтарный фон
+                        rowFg = Color.FromArgb(180, 100, 0);
+                        rowBg = Color.FromArgb(255, 247, 230);
                         rowFont = new Font(listView.Font, FontStyle.Bold);
                     }
-                    else if (item.Status == SyncItemStatus.SourceNotFound)
+                    else if (item.Status == SyncItemStatus.SourceNotFound || item.Status == SyncItemStatus.NoSourceConfigured)
                     {
                         lvi.Checked = false;
-                        rowFg = Color.FromArgb(170, 0, 0); // Красный
-                        rowBg = Color.FromArgb(255, 235, 235); // Мягкий светло-розовый фон
+                        rowFg = Color.FromArgb(170, 0, 0);
+                        rowBg = Color.FromArgb(255, 235, 235);
                         rowFont = new Font(listView.Font, FontStyle.Bold);
                     }
                     else
                     {
                         lvi.Checked = false;
-                        rowFg = Color.FromArgb(90, 90, 90); // Серый (Идентичны)
-                        rowBg = (rowIndex % 2 == 0) ? Color.White : Color.FromArgb(248, 249, 250); // Мягкая зебра
+                        rowFg = Color.FromArgb(90, 90, 90);
+                        rowBg = (rowIndex % 2 == 0) ? Color.White : Color.FromArgb(248, 249, 250);
                         rowFont = new Font(listView.Font, FontStyle.Regular);
                     }
 
@@ -388,14 +594,12 @@ public static class SmartSyncDialog
                         sub.Font = rowFont;
                     }
 
-                    // Для центральной колонки направления (<=>) делаем крупный жирный шрифт 14pt Bold
                     lvi.SubItems[3].Font = new Font("Segoe UI", 14f, FontStyle.Bold);
 
                     listView.Items.Add(lvi);
                     rowIndex++;
                 }
 
-                // Интерактивные многострочные всплывающие подсказки по всей строке ListView
                 ToolTip rowToolTip = new ToolTip()
                 {
                     AutoPopDelay = 12000,
@@ -407,7 +611,6 @@ public static class SmartSyncDialog
                 };
 
                 ListViewItem? lastHoveredItem = null;
-                Point lastHoverPos = Point.Empty;
 
                 listView.MouseMove += (s, e) =>
                 {
@@ -417,7 +620,6 @@ public static class SmartSyncDialog
                         if (hit.Item != lastHoveredItem)
                         {
                             lastHoveredItem = hit.Item;
-                            lastHoverPos = e.Location;
                             if (hit.Item.Tag is SmartSyncItem syncItem && !string.IsNullOrEmpty(syncItem.ToolTipDetails))
                             {
                                 rowToolTip.Show(syncItem.ToolTipDetails, listView, e.X + 16, e.Y + 16, 10000);
@@ -460,8 +662,8 @@ public static class SmartSyncDialog
 
                 form.Controls.Add(listView);
 
-                // Кнопки управления в нижней панели по нативному стандарту Windows/TC
-                Button selectUpdatesBtn = UiTheme.CreateButton("Выбрать разные", "Отметить галочками все файлы, у которых не совпадает версия на ПК и в Telegram", toolTip, 130);
+                // Кнопки управления в нижней панели
+                Button selectUpdatesBtn = UiTheme.CreateButton("Выбрать разные", "Отметить галочками все файлы, требующие синхронизации", toolTip, 130);
                 selectUpdatesBtn.Left = margin;
                 selectUpdatesBtn.Top = 11;
                 selectUpdatesBtn.Anchor = AnchorStyles.Top | AnchorStyles.Left;
@@ -471,7 +673,9 @@ public static class SmartSyncDialog
                     {
                         if (lvi.Tag is SmartSyncItem it)
                         {
-                            lvi.Checked = (it.Status == SyncItemStatus.LocalNewer || it.Status == SyncItemStatus.RemoteNewer);
+                            lvi.Checked = (it.Status == SyncItemStatus.LocalNewer ||
+                                           it.Status == SyncItemStatus.RemoteNewer ||
+                                           it.Status == SyncItemStatus.LocalOnly);
                         }
                     }
                 };
@@ -511,7 +715,7 @@ public static class SmartSyncDialog
                         {
                             if (!lvi.Checked || lvi.Tag is not SmartSyncItem it) continue;
 
-                            if (it.Status == SyncItemStatus.LocalNewer && !string.IsNullOrEmpty(it.FileRecord.SourcePath))
+                            if ((it.Status == SyncItemStatus.LocalNewer || it.Status == SyncItemStatus.LocalOnly) && !string.IsNullOrEmpty(it.FileRecord.SourcePath))
                             {
                                 try
                                 {
@@ -521,7 +725,11 @@ public static class SmartSyncDialog
                                         int msgId = await TelegramManager.UploadAndSendFileAsync(channelId, it.FileRecord.SourcePath, it.FileRecord.Name, caption);
                                         if (msgId > 0)
                                         {
-                                            db.MoveFileToTrash(it.FileRecord.Uid);
+                                            if (!string.IsNullOrEmpty(it.FileRecord.Uid))
+                                            {
+                                                db.MoveFileToTrash(it.FileRecord.Uid);
+                                            }
+
                                             var fi = new FileInfo(it.FileRecord.SourcePath);
                                             db.AddFile(new VfsDatabase.FileRecord
                                             {
@@ -539,7 +747,7 @@ public static class SmartSyncDialog
                                             });
 
                                             it.Status = SyncItemStatus.Identical;
-                                            it.StatusText = "Обновлен в TG";
+                                            it.StatusText = "Загружен в TG";
                                             it.DirectionSymbol = "=";
                                             it.DirectionText = "Синхронизировано";
                                             it.FileRecord.Size = fi.Length;
@@ -630,7 +838,7 @@ public static class SmartSyncDialog
                         }
 
                         Win32Api.RefreshActivePanel();
-                        MessageBox.Show(form, $"Синхронизация завершена.\nОбновлено файлов: {updated}\nОшибок: {errors}", "Smart Sync", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show(form, $"Синхронизация завершена.\nОбработано элементов: {updated}\nОшибок: {errors}", "Smart Sync", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                     finally
                     {
@@ -651,7 +859,6 @@ public static class SmartSyncDialog
                 {
                     try
                     {
-                        // Сохраняем ширины всех 7 колонок
                         if (listView.Columns.Count >= 7)
                         {
                             SettingsManager.SaveSetting("smartsync_col_vfs", listView.Columns[0].Width.ToString());
@@ -663,11 +870,9 @@ public static class SmartSyncDialog
                             SettingsManager.SaveSetting("smartsync_col_source", listView.Columns[6].Width.ToString());
                         }
 
-                        // Сохраняем состояние окна (развернуто или нормальное) и размеры
                         if (form.WindowState == FormWindowState.Maximized)
                         {
                             SettingsManager.SaveSetting("smartsync_maximized", "1");
-                            // RestoreBounds сохраняет обычный размер до разворачивания
                             SettingsManager.SaveSetting("smartsync_width", form.RestoreBounds.Width.ToString());
                             SettingsManager.SaveSetting("smartsync_height", form.RestoreBounds.Height.ToString());
                         }
