@@ -8,9 +8,20 @@ namespace TgVfsPlugin;
 
 public static class DeleteFolderDialog
 {
-    public static string? Show(List<string> folderNames)
+    public class FolderOption
     {
-        if (folderNames == null || folderNames.Count == 0)
+        public string Name { get; set; } = "";
+        public bool IsInTrash { get; set; }
+
+        public override string ToString()
+        {
+            return IsInTrash ? $"{Name} [в Корзине]" : Name;
+        }
+    }
+
+    public static string? Show(List<FolderOption> folderOptions)
+    {
+        if (folderOptions == null || folderOptions.Count == 0)
         {
             MessageBox.Show("Нет подключенных виртуальных папок для удаления.", "Удаление папки", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return null;
@@ -51,7 +62,7 @@ public static class DeleteFolderDialog
                 combo.Width = contentWidth;
                 combo.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-                foreach (var folder in folderNames)
+                foreach (var folder in folderOptions)
                 {
                     combo.Items.Add(folder);
                 }
@@ -88,9 +99,9 @@ public static class DeleteFolderDialog
                     combo.Focus();
                 };
 
-                if (form.ShowModalTc() == DialogResult.OK && combo.SelectedItem != null)
+                if (form.ShowModalTc() == DialogResult.OK && combo.SelectedItem is FolderOption opt)
                 {
-                    selectedFolder = combo.SelectedItem.ToString();
+                    selectedFolder = opt.Name;
                 }
             }
             catch (Exception ex)
@@ -100,5 +111,11 @@ public static class DeleteFolderDialog
         });
 
         return selectedFolder;
+    }
+
+    public static string? Show(List<string> folderNames)
+    {
+        var options = folderNames?.Select(f => new FolderOption { Name = f, IsInTrash = false }).ToList() ?? new List<FolderOption>();
+        return Show(options);
     }
 }

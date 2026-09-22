@@ -946,9 +946,13 @@ public static unsafe class WfxExports
         {
             try
             {
-                var mounts = _db?.GetMounts(onlyActive: true) ?? new List<VfsDatabase.VfsItem>();
-                var folderNames = mounts.Select(m => m.Name).ToList();
-                string? selectedFolder = DeleteFolderDialog.Show(folderNames);
+                var mounts = _db?.GetAllMounts() ?? new List<VfsDatabase.MountInfo>();
+                var folderOptions = mounts.Select(m => new DeleteFolderDialog.FolderOption 
+                { 
+                    Name = m.ChannelName, 
+                    IsInTrash = m.InTrash == 1 
+                }).ToList();
+                string? selectedFolder = DeleteFolderDialog.Show(folderOptions);
                 if (!string.IsNullOrEmpty(selectedFolder))
                 {
                     var mount = _db?.GetMountByName(selectedFolder);
@@ -985,9 +989,10 @@ public static unsafe class WfxExports
             }
             catch (Exception ex)
             {
-                Logger.Error("WFX", "Delete folder error", ex);
+                Logger.Error("WFX", $"Ошибка при удалении папки: {ex.Message}\n{ex.StackTrace}");
+                System.Windows.Forms.MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
-
+            
             return Win32Api.FS_EXEC_OK;
         }
 
@@ -2109,37 +2114,15 @@ public static unsafe class WfxExports
         {
             if (isInTrash)
             {
-                // Попытка удалить всю корзину конкретного канала, например [🗑] Корзина\Channel
-                // ВТОРОЙ ЭТАП: ОКОНЧАТЕЛЬНОЕ УДАЛЕНИЕ КАНАЛА ИЗ TELEGRAM С ПРЕДУПРЕЖДЕНИЕМ
-                var mount = _db.GetMountByName(channelName);
-                if (mount != null)
-                {
-                    var dialogRes = System.Windows.Forms.MessageBox.Show(
-                        $"Вы действительно хотите навсегда удалить канал '{channelName}' из Telegram?\n\n" +
-                        $"⚠️ ВНИМАНИЕ: Это приведёт к безвозвратному удалению канала и всех хранящихся в нём файлов в Telegram!",
-                        "Окончательное удаление канала",
-                        System.Windows.Forms.MessageBoxButtons.YesNo,
-                        System.Windows.Forms.MessageBoxIcon.Warning,
-                        System.Windows.Forms.MessageBoxDefaultButton.Button2);
-
-                    if (dialogRes == System.Windows.Forms.DialogResult.Yes)
-                    {
-                        System.Threading.Tasks.Task.Run(() =>
-                        {
-                            if (mount.ChannelId != 0)
-                            {
-                                TelegramManager.DeleteChannelAsync(mount.ChannelId).GetAwaiter().GetResult();
-                            }
-                            _db.DeleteMount(mount.Id);
-                            Logger.Info("DB", $"[CHANNEL PURGED] Mount/channel '{channelName}' permanently deleted via FsRemoveDir in Trash.");
-                            Win32Api.RefreshActivePanel();
-                            TriggerCheckpoint(immediate: true);
-                        }).GetAwaiter().GetResult();
-
-                        return 1; // true (успех)
-                    }
-                    return 0; // пользователь отменил
-                }
+                // Попытка удалить всю корзину конкретного канала по F8 в Total Commander
+                // Блокируем, чтобы исключить пофайловое удаление и случайные сбои
+                System.Windows.Forms.MessageBox.Show(
+                    $"Удаление папки канала из корзины заблокировано.\n\n" +
+                    $"Для окончательного удаления канала используйте пункт [❌] Удалить папку в корне плагина.",
+                    "Удаление канала",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                return 0; // отказ (false)
             }
             else
             {
