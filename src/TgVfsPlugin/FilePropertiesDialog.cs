@@ -377,10 +377,19 @@ public static class FilePropertiesDialog
                 db.GetTrashStats(mountId, out int filesCount, out int dirsCount, out long totalTrashSize);
                 int totalItems = filesCount + dirsCount;
 
+                // Создаем кнопки заранее для точного динамического расчета ширины под любой DPI
+                Button restoreAllBtn = UiTheme.CreateButton("Восстановить", "Восстановить все файлы и папки из корзины в их исходные места в активном канале", toolTip, 105);
+                Button cleanBtn = UiTheme.CreateButton("Очистить", "Безвозвратно удалить все файлы корзины и их сообщения в Telegram", toolTip, 85);
+                Button navBtn = UiTheme.CreateButton("К каналу", "Перейти в корень активного канала в Total Commander", toolTip, 85);
+                Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно свойств корзины", toolTip, 85, dialogResult: DialogResult.OK);
+
                 int margin = 20;
                 int topMargin = 16;
-                int clientWidth = 430;
-                int contentWidth = clientWidth - margin * 2; // 390px
+                int gap = 10;
+                int buttonsWidthSum = restoreAllBtn.Width + cleanBtn.Width + navBtn.Width + closeBtn.Width;
+                int minContentWidth = buttonsWidthSum + (3 * gap); // Ширина ряда кнопок с зазорами по 10px
+                int clientWidth = Math.Max(460, minContentWidth + margin * 2);
+                int contentWidth = clientWidth - margin * 2;
                 int bottomPanelHeight = 52;
                 int contentBottom = 75 + 175 + topMargin; // 266px
                 int clientHeight = contentBottom + bottomPanelHeight; // 318px
@@ -510,7 +519,6 @@ public static class FilePropertiesDialog
                 Panel bottomPanel = UiTheme.CreateBottomPanel(52);
                 form.Controls.Add(bottomPanel);
 
-                Button restoreAllBtn = UiTheme.CreateButton("Восстановить", "Восстановить все файлы и папки из корзины в их исходные места в активном канале", toolTip, 105);
                 restoreAllBtn.Left = margin;
                 restoreAllBtn.Top = 11;
                 restoreAllBtn.Enabled = totalItems > 0;
@@ -535,8 +543,7 @@ public static class FilePropertiesDialog
                     }
                 };
 
-                Button cleanBtn = UiTheme.CreateButton("Очистить", "Безвозвратно удалить все файлы корзины и их сообщения в Telegram", toolTip, 85);
-                cleanBtn.Left = restoreAllBtn.Right + 10;
+                cleanBtn.Left = restoreAllBtn.Right + gap;
                 cleanBtn.Top = 11;
                 cleanBtn.Enabled = totalItems > 0;
                 cleanBtn.Click += (s, e) =>
@@ -566,8 +573,7 @@ public static class FilePropertiesDialog
                     }
                 };
 
-                Button navBtn = UiTheme.CreateButton("К каналу", "Перейти в корень активного канала в Total Commander", toolTip, 85);
-                navBtn.Left = cleanBtn.Right + 10;
+                navBtn.Left = cleanBtn.Right + gap;
                 navBtn.Top = 11;
                 navBtn.Click += (s, e) =>
                 {
@@ -577,8 +583,7 @@ public static class FilePropertiesDialog
                     form.Close();
                 };
 
-                Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно свойств корзины", toolTip, 85, dialogResult: DialogResult.OK);
-                closeBtn.Left = navBtn.Right + 10;
+                closeBtn.Left = navBtn.Right + gap;
                 closeBtn.Top = 11;
 
                 bottomPanel.Controls.Add(restoreAllBtn);
