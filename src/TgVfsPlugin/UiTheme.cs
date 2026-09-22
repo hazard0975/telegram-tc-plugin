@@ -124,7 +124,8 @@ public static class UiTheme
 
         if (!string.IsNullOrWhiteSpace(tooltip) && toolTipProvider != null)
         {
-            toolTipProvider.SetToolTip(btn, tooltip);
+            btn.MouseEnter += (s, e) => toolTipProvider.SetToolTip(btn, tooltip);
+            btn.MouseLeave += (s, e) => toolTipProvider.SetToolTip(btn, null);
         }
 
         return btn;

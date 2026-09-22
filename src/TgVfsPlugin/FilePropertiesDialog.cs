@@ -379,8 +379,8 @@ public static class FilePropertiesDialog
 
                 int margin = 20;
                 int topMargin = 16;
-                int clientWidth = 514;
-                int contentWidth = clientWidth - margin * 2; // 474px
+                int clientWidth = 430;
+                int contentWidth = clientWidth - margin * 2; // 390px
                 int bottomPanelHeight = 52;
                 int contentBottom = 75 + 175 + topMargin; // 266px
                 int clientHeight = contentBottom + bottomPanelHeight; // 318px
@@ -578,9 +578,8 @@ public static class FilePropertiesDialog
                 };
 
                 Button closeBtn = UiTheme.CreateButton("Закрыть", "Закрыть окно свойств корзины", toolTip, 85, dialogResult: DialogResult.OK);
-                closeBtn.Left = form.ClientSize.Width - margin - closeBtn.Width;
+                closeBtn.Left = navBtn.Right + 10;
                 closeBtn.Top = 11;
-                closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
                 bottomPanel.Controls.Add(restoreAllBtn);
                 bottomPanel.Controls.Add(cleanBtn);
