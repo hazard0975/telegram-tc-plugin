@@ -404,38 +404,49 @@ public static class TelegramManager
         var fi = new FileInfo(localPath);
         Logger.Info("TG", $"Uploading file '{fileName}' ({Logger.FormatBytes(fi.Length)}) to channel '{chat.Title}' ({channelId})...");
         
-        FileStream fileStream = new FileStream(
-            localPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete,
-            bufferSize: 65536,
-            options: FileOptions.Asynchronous | FileOptions.SequentialScan);
-
-        Stream effectiveStream = (pauseGate != null)
-            ? new PausableStream(fileStream, pauseGate, cancellationToken)
-            : fileStream;
-
         InputFileBase inputFile;
-        try
+        if (fi.Length == 0)
         {
-            inputFile = await _client.UploadFileAsync(effectiveStream, fileName, (progress, total) =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (onProgress != null)
-                {
-                    bool abort = onProgress(progress, total);
-                    if (abort)
-                    {
-                        throw new OperationCanceledException("Upload cancelled by user in Total Commander.");
-                    }
-                }
-            });
+            long fileId = (long)(Random.Shared.NextInt64());
+            Logger.Info("TG", $"Uploading 0-byte empty file '{fileName}' (file_id={fileId})...");
+            await _client.Upload_SaveFilePart(fileId, 0, Array.Empty<byte>());
+            inputFile = new InputFile { id = fileId, parts = 1, name = fileName };
+            onProgress?.Invoke(0, 0);
         }
-        finally
+        else
         {
-            try { effectiveStream.Dispose(); } catch { }
-            try { fileStream.Dispose(); } catch { }
+            FileStream fileStream = new FileStream(
+                localPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                bufferSize: 65536,
+                options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+            Stream effectiveStream = (pauseGate != null)
+                ? new PausableStream(fileStream, pauseGate, cancellationToken)
+                : fileStream;
+
+            try
+            {
+                inputFile = await _client.UploadFileAsync(effectiveStream, fileName, (progress, total) =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (onProgress != null)
+                    {
+                        bool abort = onProgress(progress, total);
+                        if (abort)
+                        {
+                            throw new OperationCanceledException("Upload cancelled by user in Total Commander.");
+                        }
+                    }
+                });
+            }
+            finally
+            {
+                try { effectiveStream.Dispose(); } catch { }
+                try { fileStream.Dispose(); } catch { }
+            }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -535,6 +546,24 @@ public static class TelegramManager
         else
         {
             throw new NotSupportedException($"Unsupported media type in message {messageId}: {targetMsg.media.GetType().Name}");
+        }
+
+        if (docToDownload != null && expectedTotalBytes == 0)
+        {
+            Logger.Info("TG", $"0-byte document in message {messageId}. Creating empty local file '{targetLocalPath}'...");
+            string targetDir0 = Path.GetDirectoryName(targetLocalPath) ?? "";
+            if (!string.IsNullOrEmpty(targetDir0) && !Directory.Exists(targetDir0))
+            {
+                Directory.CreateDirectory(targetDir0);
+            }
+            if (File.Exists(targetLocalPath))
+            {
+                File.Delete(targetLocalPath);
+            }
+            File.WriteAllBytes(targetLocalPath, Array.Empty<byte>());
+            onProgress?.Invoke(0, 0);
+            Logger.Info("TG", $"0-byte file successfully downloaded and saved as: '{targetLocalPath}'");
+            return;
         }
 
         // Подготовка временного файла .tgpart
