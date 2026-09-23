@@ -1221,6 +1221,9 @@ public static unsafe class WfxExports
                 return Win32Api.FS_FILE_WRITEERROR;
             }
 
+            int targetVer = existingFile != null ? existingFile.Ver + 1 : 1;
+            string initialCaption = $"[v{targetVer}] {subPath}";
+
             long currentPercent = 0;
             bool userAborted = false;
             int messageId = 0;
@@ -1236,7 +1239,7 @@ public static unsafe class WfxExports
                         mount.ChannelId,
                         localPath,
                         fileName,
-                        subPath,
+                        initialCaption,
                         onProgress: (sent, total) =>
                         {
                             int pct = total > 0 ? (int)((sent * 100) / total) : 0;
