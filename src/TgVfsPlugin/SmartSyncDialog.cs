@@ -317,10 +317,11 @@ public static class SmartSyncDialog
                 {
                     Left = 0,
                     Top = 0,
-                    Width = syncProgressPanel.Width - 240,
+                    Width = syncProgressPanel.Width,
                     Height = 22,
                     Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                    Text = "Подготовка к передаче..."
+                    Text = "Подготовка к передаче...",
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
                 ProgressBar pbCurrentFile = new ProgressBar()
@@ -748,7 +749,7 @@ public static class SmartSyncDialog
                                                     ToolTipDetails = $"[TG <<-- ПК] (Новый файл на локальном диске ПК)\n" +
                                                                      $"• Отсутствует в VFS и Telegram\n" +
                                                                      $"• Путь на ПК: {diskPath}\n" +
-                                                                     $"• Размер: {fi.Length:#,##0} байт\n" +
+                                                                     $"• Размер: {FormatSizeShort(fi.Length)}\n" +
                                                                      $"• Дата: {fi.LastWriteTime:dd.MM.yy HH:mm:ss}\n" +
                                                                      $"(отметьте для выгрузки с ПК в Telegram)",
                                                     IsChecked = true
@@ -780,7 +781,7 @@ public static class SmartSyncDialog
                                     item.DirectionSymbol = "TG -->> ПК";
                                     item.DirectionText = "TG -> ПК";
                                     item.ToolTipDetails = $"[TG -->> ПК] (Файл отсутствует на локальном диске ПК)\n" +
-                                                          $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
+                                                          $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({FormatSizeShort(file.Size)})\n" +
                                                           $"• Ожидаемый путь: {expectedPath}\n" +
                                                           $"(отметьте для скачивания из Telegram на ПК)";
                                     item.IsChecked = true;
@@ -808,7 +809,7 @@ public static class SmartSyncDialog
                                                 item.DirectionText = "Синхронизировано";
                                                 item.ToolTipDetails = $"[TG  =  ПК] (Идентичны)\n" +
                                                                       $"• Дата: {remoteLocalTime:dd.MM.yy HH:mm:ss}\n" +
-                                                                      $"• Размер: {file.Size:#,##0} байт\n" +
+                                                                      $"• Размер: {FormatSizeShort(file.Size)}\n" +
                                                                       $"• Источник: {expectedPath}";
                                                 item.IsChecked = false;
                                                 ident++;
@@ -820,9 +821,9 @@ public static class SmartSyncDialog
                                                 item.DirectionSymbol = "TG  ≠  ПК";
                                                 item.DirectionText = "Требует решения";
                                                 item.ToolTipDetails = $"[TG  ≠  ПК] (Несовпадение размеров при совпадающей дате)\n" +
-                                                                      $"• Диск ПК:  {item.LocalSize:#,##0} байт ({item.LocalWriteTime:dd.MM.yy HH:mm:ss})\n" +
-                                                                      $"• Telegram: {file.Size:#,##0} байт ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
-                                                                      $"• Разница размера: {Math.Abs(item.LocalSize - file.Size):#,##0} байт\n" +
+                                                                      $"• Диск ПК:  {FormatSizeShort(item.LocalSize)} ({item.LocalWriteTime:dd.MM.yy HH:mm:ss})\n" +
+                                                                      $"• Telegram: {FormatSizeShort(file.Size)} ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
+                                                                      $"• Разница:  {FormatSizeShort(Math.Abs(item.LocalSize - file.Size))}\n" +
                                                                       $"• Источник: {expectedPath}";
                                                 item.IsChecked = false;
                                                 mismatch++;
@@ -839,8 +840,8 @@ public static class SmartSyncDialog
                                             string diffStr = FormatTimeSpan(span);
 
                                             item.ToolTipDetails = $"[TG <<-- ПК] (На ПК новее — выгрузка в TG)\n" +
-                                                                  $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
-                                                                  $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
+                                                                  $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({FormatSizeShort(item.LocalSize)})\n" +
+                                                                  $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({FormatSizeShort(file.Size)})\n" +
                                                                   $"• Опережение:      на {diffStr}\n" +
                                                                   $"• Источник:        {expectedPath}";
                                             item.IsChecked = true;
@@ -857,8 +858,8 @@ public static class SmartSyncDialog
                                             string diffStr = FormatTimeSpan(span);
 
                                             item.ToolTipDetails = $"[TG -->> ПК] (В Telegram новее — скачивание на ПК)\n" +
-                                                                  $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
-                                                                  $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
+                                                                  $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({FormatSizeShort(file.Size)})\n" +
+                                                                  $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({FormatSizeShort(item.LocalSize)})\n" +
                                                                   $"• Опережение:       на {diffStr}\n" +
                                                                   $"• Источник:         {expectedPath}";
                                             item.IsChecked = true;
@@ -906,7 +907,7 @@ public static class SmartSyncDialog
                                     item.DirectionSymbol = "TG  ❌  ПК";
                                     item.DirectionText = "Пропуск";
                                     item.ToolTipDetails = $"[TG  ❌  ПК] (Файл-источник не найден на диске ПК)\n" +
-                                                          $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
+                                                          $"• Telegram: {remoteLocalTime:dd.MM.yy HH:mm:ss} ({FormatSizeShort(file.Size)})\n" +
                                                           $"• Ожидаемый путь: {file.SourcePath}\n" +
                                                           $"(диск отключен или файл удален)";
                                     item.IsChecked = false;
@@ -934,7 +935,7 @@ public static class SmartSyncDialog
                                                 item.DirectionText = "Синхронизировано";
                                                 item.ToolTipDetails = $"[TG  =  ПК] (Идентичны)\n" +
                                                                       $"• Дата: {remoteLocalTime:dd.MM.yy HH:mm:ss}\n" +
-                                                                      $"• Размер: {file.Size:#,##0} байт\n" +
+                                                                      $"• Размер: {FormatSizeShort(file.Size)}\n" +
                                                                       $"• Источник: {file.SourcePath}";
                                                 item.IsChecked = false;
                                                 ident++;
@@ -946,9 +947,9 @@ public static class SmartSyncDialog
                                                 item.DirectionSymbol = "TG  ≠  ПК";
                                                 item.DirectionText = "Требует решения";
                                                 item.ToolTipDetails = $"[TG  ≠  ПК] (Несовпадение размеров при совпадающей дате)\n" +
-                                                                      $"• Диск ПК:  {item.LocalSize:#,##0} байт ({item.LocalWriteTime:dd.MM.yy HH:mm:ss})\n" +
-                                                                      $"• Telegram: {file.Size:#,##0} байт ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
-                                                                      $"• Разница размера: {Math.Abs(item.LocalSize - file.Size):#,##0} байт\n" +
+                                                                      $"• Диск ПК:  {FormatSizeShort(item.LocalSize)} ({item.LocalWriteTime:dd.MM.yy HH:mm:ss})\n" +
+                                                                      $"• Telegram: {FormatSizeShort(file.Size)} ({remoteLocalTime:dd.MM.yy HH:mm:ss})\n" +
+                                                                      $"• Разница:  {FormatSizeShort(Math.Abs(item.LocalSize - file.Size))}\n" +
                                                                       $"• Источник: {file.SourcePath}";
                                                 item.IsChecked = false;
                                                 mismatch++;
@@ -965,8 +966,8 @@ public static class SmartSyncDialog
                                             string diffStr = FormatTimeSpan(span);
 
                                             item.ToolTipDetails = $"[TG <<-- ПК] (На ПК новее — выгрузка в TG)\n" +
-                                                                  $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
-                                                                  $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
+                                                                  $"• Диск ПК (новее): {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({FormatSizeShort(item.LocalSize)})\n" +
+                                                                  $"• Telegram:        {remoteLocalTime:dd.MM.yy HH:mm:ss} ({FormatSizeShort(file.Size)})\n" +
                                                                   $"• Опережение:      на {diffStr}\n" +
                                                                   $"• Источник:        {file.SourcePath}";
                                             item.IsChecked = true;
@@ -983,8 +984,8 @@ public static class SmartSyncDialog
                                             string diffStr = FormatTimeSpan(span);
 
                                             item.ToolTipDetails = $"[TG -->> ПК] (В Telegram новее — скачивание на ПК)\n" +
-                                                                  $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({file.Size:#,##0} байт)\n" +
-                                                                  $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({item.LocalSize:#,##0} байт)\n" +
+                                                                  $"• Telegram (новее): {remoteLocalTime:dd.MM.yy HH:mm:ss} ({FormatSizeShort(file.Size)})\n" +
+                                                                  $"• Диск ПК:          {item.LocalWriteTime:dd.MM.yy HH:mm:ss} ({FormatSizeShort(item.LocalSize)})\n" +
                                                                   $"• Опережение:       на {diffStr}\n" +
                                                                   $"• Источник:         {file.SourcePath}";
                                             item.IsChecked = true;
@@ -1232,7 +1233,7 @@ public static class SmartSyncDialog
                                     form.BeginInvoke(() =>
                                     {
                                         if (form.IsDisposed) return;
-                                        lblOperationTitle.Text = isUpload ? "Загрузка в Telegram..." : "Скачивание из Telegram...";
+                                        lblOperationTitle.Text = isUpload ? $"Загрузка в Telegram: {it.FileRecord.Name} (0%)" : $"Скачивание из Telegram: {it.FileRecord.Name} (0%)";
                                         pbCurrentFile.Value = 0;
                                         string displayPath = !string.IsNullOrEmpty(it.FileRecord.SourcePath)
                                             ? it.FileRecord.SourcePath
@@ -1271,7 +1272,7 @@ public static class SmartSyncDialog
                                             if (form.IsDisposed) return;
 
                                             pbCurrentFile.Value = filePct;
-                                            lblOperationTitle.Text = $"{(isUpload ? "Загрузка в Telegram..." : "Скачивание из Telegram...")} ({filePct}%)";
+                                            lblOperationTitle.Text = $"{(isUpload ? $"Загрузка в Telegram: {it.FileRecord.Name}" : $"Скачивание из Telegram: {it.FileRecord.Name}")} ({filePct}%)";
 
                                             lblCurFileBytes.Text = $"{filePct}% ({FormatSizeShort(transferred)} / {FormatSizeShort(total)})";
                                             lblTotalBytes.Text = $"{overallPct}% ({FormatSizeShort(currentTotalBytes)} / {FormatSizeShort(totalBytesAllFiles)})";
