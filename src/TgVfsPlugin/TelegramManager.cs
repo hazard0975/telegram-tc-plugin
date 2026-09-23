@@ -404,49 +404,56 @@ public static class TelegramManager
         var fi = new FileInfo(localPath);
         Logger.Info("TG", $"Uploading file '{fileName}' ({Logger.FormatBytes(fi.Length)}) to channel '{chat.Title}' ({channelId})...");
         
-        InputFileBase inputFile;
         if (fi.Length == 0)
         {
-            long fileId = (long)(Random.Shared.NextInt64());
-            Logger.Info("TG", $"Uploading 0-byte empty file '{fileName}' (file_id={fileId})...");
-            await _client.Upload_SaveFilePart(fileId, 0, Array.Empty<byte>());
-            inputFile = new InputFile { id = fileId, parts = 1, name = fileName };
+            Logger.Info("TG", $"Registering 0-byte file '{fileName}' via channel message...");
+            cancellationToken.ThrowIfCancellationRequested();
             onProgress?.Invoke(0, 0);
+
+            string markerText = $"📄 {fileName} (0 Б)";
+            if (!string.IsNullOrWhiteSpace(relativeCaption) && !string.Equals(relativeCaption, fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                markerText += $"\n{relativeCaption}";
+            }
+
+            var msg = await _client.SendMessageAsync(chat, markerText);
+            onProgress?.Invoke(0, 0);
+            Logger.Info("TG", $"0-byte file '{fileName}' registered! Telegram MsgId: {msg.id}");
+            return msg.id;
         }
-        else
+
+        FileStream fileStream = new FileStream(
+            localPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 65536,
+            options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+        Stream effectiveStream = (pauseGate != null)
+            ? new PausableStream(fileStream, pauseGate, cancellationToken)
+            : fileStream;
+
+        InputFileBase inputFile;
+        try
         {
-            FileStream fileStream = new FileStream(
-                localPath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete,
-                bufferSize: 65536,
-                options: FileOptions.Asynchronous | FileOptions.SequentialScan);
-
-            Stream effectiveStream = (pauseGate != null)
-                ? new PausableStream(fileStream, pauseGate, cancellationToken)
-                : fileStream;
-
-            try
+            inputFile = await _client.UploadFileAsync(effectiveStream, fileName, (progress, total) =>
             {
-                inputFile = await _client.UploadFileAsync(effectiveStream, fileName, (progress, total) =>
+                cancellationToken.ThrowIfCancellationRequested();
+                if (onProgress != null)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (onProgress != null)
+                    bool abort = onProgress(progress, total);
+                    if (abort)
                     {
-                        bool abort = onProgress(progress, total);
-                        if (abort)
-                        {
-                            throw new OperationCanceledException("Upload cancelled by user in Total Commander.");
-                        }
+                        throw new OperationCanceledException("Upload cancelled by user in Total Commander.");
                     }
-                });
-            }
-            finally
-            {
-                try { effectiveStream.Dispose(); } catch { }
-                try { fileStream.Dispose(); } catch { }
-            }
+                }
+            });
+        }
+        finally
+        {
+            try { effectiveStream.Dispose(); } catch { }
+            try { fileStream.Dispose(); } catch { }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -524,9 +531,27 @@ public static class TelegramManager
             targetMsg = regularMessages.messages?.OfType<TL.Message>().FirstOrDefault(m => m.id == messageId);
         }
 
-        if (targetMsg == null || targetMsg.media == null)
+        if (targetMsg == null)
         {
-            throw new FileNotFoundException($"Message {messageId} or its media not found in channel {channelId}.");
+            throw new FileNotFoundException($"Message {messageId} not found in channel {channelId}.");
+        }
+
+        if (targetMsg.media == null)
+        {
+            Logger.Info("TG", $"Message {messageId} is a 0-byte file marker without media. Creating empty local file '{targetLocalPath}'...");
+            string targetDir0 = Path.GetDirectoryName(targetLocalPath) ?? "";
+            if (!string.IsNullOrEmpty(targetDir0) && !Directory.Exists(targetDir0))
+            {
+                Directory.CreateDirectory(targetDir0);
+            }
+            if (File.Exists(targetLocalPath))
+            {
+                File.Delete(targetLocalPath);
+            }
+            File.WriteAllBytes(targetLocalPath, Array.Empty<byte>());
+            onProgress?.Invoke(0, 0);
+            Logger.Info("TG", $"0-byte file successfully created: '{targetLocalPath}'");
+            return;
         }
 
         Document? docToDownload = null;
